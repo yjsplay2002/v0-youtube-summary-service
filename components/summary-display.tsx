@@ -75,7 +75,8 @@ export function SummaryDisplay() {
   )
 }
 
-// Simple markdown renderer (in a real app, you'd use a proper markdown library)
+// Enhance the markdown renderer to better handle the new format
+
 function renderMarkdown(markdown: string): string {
   return markdown
     .replace(/^# (.*$)/gm, "<h1>$1</h1>")
@@ -83,5 +84,15 @@ function renderMarkdown(markdown: string): string {
     .replace(/^### (.*$)/gm, "<h3>$1</h3>")
     .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.*?)\*/g, "<em>$1</em>")
+    .replace(/^- (.*$)/gm, "<li>$1</li>")
+    .replace(/^🔹 (.*$)/gm, "<strong>🔹 $1</strong>")
+    .replace(/^📍 (.*$)/gm, "<h3 class='text-blue-600'>📍 $1</h3>")
+    .replace(/^🕒 (.*$)/gm, "<p class='text-gray-500'>🕒 $1</p>")
+    .replace(/^📝 요약: (.*$)/gm, "<p class='bg-gray-100 p-2 rounded my-2'>📝 <strong>요약:</strong> $1</p>")
+    .replace(/---/g, "<hr class='my-4'>")
+    .replace(
+      /(#\w+)/g,
+      "<span class='inline-block bg-blue-100 text-blue-800 rounded-full px-2 py-1 text-xs font-semibold mr-1 mb-1'>$1</span>",
+    )
     .replace(/\n/g, "<br />")
 }
