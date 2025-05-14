@@ -113,12 +113,17 @@ export async function getSummary(videoId: string): Promise<string | null> {
 
 // Generate summary using AI
 async function generateSummary(transcript: string): Promise<string> {
+  console.log('Starting generateSummary function');
+  
   try {
     // Check if OpenAI API key is available
     if (!process.env.OPENAI_API_KEY) {
-      throw new Error("OPENAI_API_KEY is missing. Please add it to your environment variables.")
+      console.error('OPENAI_API_KEY is missing');
+      throw new Error("OPENAI_API_KEY is missing. Please add it to your environment variables.");
     }
 
+    console.log('API Key found, preparing prompt...');
+    
     // Prepare the prompt for the AI
     const prompt = `다음 YouTube 동영상 트랜스크립트를 분석하여 한국어로 요약해주세요. 
 
@@ -130,42 +135,87 @@ async function generateSummary(transcript: string): Promise<string> {
 5. 마지막에 해시태그 3-5개 추가
 
 트랜스크립트:
-${transcript}`;
+${transcript.substring(0, 200)}...`; // Log only first 200 chars of transcript
 
+    console.log('Sending request to OpenAI API...');
+    
     // Call OpenAI API
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const apiUrl = 'https://api.openai.com/v1/chat/completions';
+    console.log(`API URL: ${apiUrl}`);
+    
+    const requestBody = {
+      model: 'gpt-4-turbo',
+      messages: [
+        {
+          role: 'system',
+          content: '당신은 유용한 AI 어시스턴트입니다. 한국어로 대답해주세요.'
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 1000
+    };
+    
+    console.log('Request body prepared, sending request...');
+    
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Accept': 'application/json'
       },
-      body: JSON.stringify({
-        model: 'gpt-4-turbo',
-        messages: [
-          {
-            role: 'system',
-            content: '당신은 유용한 AI 어시스턴트입니다. 한국어로 대답해주세요.'
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 1000
-      })
+      body: JSON.stringify(requestBody)
+    });
+
+    console.log(`Received response with status: ${response.status}`);
+    
+    const responseData = await response.json().catch(async (parseError) => {
+      console.error('Error parsing JSON response:', parseError);
+      const textResponse = await response.text();
+      console.error('Raw response text:', textResponse);
+      throw new Error(`Failed to parse API response: ${parseError.message}`);
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`OpenAI API error: ${JSON.stringify(errorData)}`);
+      console.error('API Error Response:', responseData);
+      throw new Error(`OpenAI API error: ${JSON.stringify(responseData)}`);
     }
 
-    const data = await response.json();
-    return data.choices[0].message.content;
+    console.log('Successfully received response from OpenAI API');
+    
+    if (!responseData.choices || !responseData.choices[0] || !responseData.choices[0].message) {
+      console.error('Unexpected API response format:', responseData);
+      throw new Error('Unexpected response format from OpenAI API');
+    }
+    
+    const summary = responseData.choices[0].message.content;
+    console.log('Generated summary length:', summary.length);
+    
+    return summary;
   } catch (error) {
-    console.error("Error generating summary:", error);
-    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+    console.error("Error in generateSummary:", error);
+    
+    let errorMessage = "An unknown error occurred";
+    
+    if (error instanceof Error) {
+      errorMessage = error.message;
+      if ('response' in error) {
+        try {
+          const errorResponse = (error as any).response;
+          errorMessage += `\nResponse status: ${errorResponse.status}`;
+          const errorBody = await errorResponse.text().catch(() => 'Could not read error body');
+          errorMessage += `\nError body: ${errorBody}`;
+        } catch (nestedError) {
+          console.error('Error processing error response:', nestedError);
+        }
+      }
+    }
+    
+    console.error('Final error message:', errorMessage);
     throw new Error(`Failed to generate summary: ${errorMessage}`);
   }
 }
