@@ -4,6 +4,7 @@
  * 유튜브 관련 함수 모음 (ID 추출, 상세정보, 자막 등)
  */
 import { YoutubeTranscript } from 'youtube-transcript';
+import { Innertube } from 'youtubei.js'; // 추가: 자막 언어 코드 추출용
 
 // Function to extract video ID from YouTube URL
 export function extractVideoId(url: string): string | null {
@@ -49,7 +50,32 @@ export async function fetchTranscriptWithNpm(videoId: string): Promise<string | 
   console.log(`[fetchTranscriptWithNpm] 요청 videoId: ${videoId}`);
   try {
     console.log(`[fetchTranscriptWithNpm] YoutubeTranscript.fetchTranscript 호출 중...`);
-    let transcriptArr = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'ko' });
+    // youtubei.js로 자막 언어 코드 목록 확인
+const youtube: any = await Innertube.create();
+const info: any = await youtube.getInfo(videoId);
+const captionTracks: any[] | undefined = info.captions?.caption_tracks;
+let selectedLang = 'ko';
+if (captionTracks) {
+  const availableLanguages = captionTracks.map((track: any) => ({
+    languageCode: track.language_code,
+    languageName: track.name.simple_text
+  }));
+  console.log('[fetchTranscriptWithNpm] Available languages:', availableLanguages);
+  // 우선순위: ko > en > 첫 번째 언어
+  const langCodes = availableLanguages.map((l: { languageCode: string; languageName: string }) => l.languageCode);
+  if (langCodes.includes('ko')) {
+    selectedLang = 'ko';
+  } else if (langCodes.includes('en')) {
+    selectedLang = 'en';
+  } else if (langCodes.length > 0) {
+    selectedLang = langCodes[0];
+  }
+  console.log(`[fetchTranscriptWithNpm] 선택된 자막 언어: ${selectedLang}`);
+} else {
+  console.log('[fetchTranscriptWithNpm] No captions available for this video.');
+  return null;
+}
+let transcriptArr = await YoutubeTranscript.fetchTranscript(videoId, { lang: selectedLang });
     if (!transcriptArr || transcriptArr.length === 0) {
       console.log(`[fetchTranscriptWithNpm] 자막을 찾을 수 없음: ${videoId}`);
       return null;
