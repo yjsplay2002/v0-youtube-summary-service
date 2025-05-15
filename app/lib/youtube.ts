@@ -64,6 +64,7 @@ export async function fetchTranscriptWithNpm(videoId: string): Promise<string | 
     const errMsg = err?.message || String(err);
     const availableLangsMatch = errMsg.match(/Available languages: ([a-zA-Z, ]+)/);
     if (errMsg.includes('No transcripts are available in ko')) {
+      console.log(`[fetchTranscriptWithNpm] 'ko' 자막 없음 오류 감지, fallback 언어 선택 절차 시작: ${errMsg}`);
       let fallbackLang = 'en';
       if (availableLangsMatch) {
         const langs = availableLangsMatch[1].split(',').map((l: string) => l.trim()).filter(Boolean);
