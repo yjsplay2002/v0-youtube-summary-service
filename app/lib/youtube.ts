@@ -60,24 +60,25 @@ export async function fetchTranscriptWithNpm(videoId: string): Promise<string | 
     const errMsg = err?.message || String(err);
     const availableLangsMatch = errMsg.match(/Available languages: ([a-zA-Z, ]+)/);
     if (errMsg.includes('No transcripts are available in ko') && availableLangsMatch) {
-      const langs = availableLangsMatch[1].split(',').map(l => l.trim()).filter(Boolean);
+      const langs = availableLangsMatch[1].split(',').map((l: string) => l.trim()).filter(Boolean);
+      let fallbackLang = 'en';
       if (langs.length > 0) {
-        const fallbackLang = langs[0];
-        try {
-          console.log(`[fetchTranscriptWithNpm] ko 자막 없음, ${fallbackLang} 자막으로 재시도: ${videoId}`);
-          const transcriptArr = await YoutubeTranscript.fetchTranscript(videoId, { lang: fallbackLang });
-          if (!transcriptArr || transcriptArr.length === 0) {
-            console.log(`[fetchTranscriptWithNpm] ${fallbackLang} 자막도 없음: ${videoId}`);
-            return null;
-          }
-          const transcript = transcriptArr.map(t => t.text).join(' ');
-          console.log(`[fetchTranscriptWithNpm] ${fallbackLang} 자막 가져오기 성공: ${transcript.substring(0, 100)}...`);
-          console.log(`[fetchTranscriptWithNpm] ${fallbackLang} 자막 세그먼트 수: ${transcriptArr.length}`);
-          return transcript;
-        } catch (langErr) {
-          console.error(`[fetchTranscriptWithNpm] ${fallbackLang} 자막 재시도 실패:`, langErr);
+        fallbackLang = langs[0];
+      }
+      try {
+        console.log(`[fetchTranscriptWithNpm] ko 자막 없음, ${fallbackLang} 자막으로 재시도: ${videoId}`);
+        const transcriptArr = await YoutubeTranscript.fetchTranscript(videoId, { lang: fallbackLang });
+        if (!transcriptArr || transcriptArr.length === 0) {
+          console.log(`[fetchTranscriptWithNpm] ${fallbackLang} 자막도 없음: ${videoId}`);
           return null;
         }
+        const transcript = transcriptArr.map(t => t.text).join(' ');
+        console.log(`[fetchTranscriptWithNpm] ${fallbackLang} 자막 가져오기 성공: ${transcript.substring(0, 100)}...`);
+        console.log(`[fetchTranscriptWithNpm] ${fallbackLang} 자막 세그먼트 수: ${transcriptArr.length}`);
+        return transcript;
+      } catch (langErr) {
+        console.error(`[fetchTranscriptWithNpm] ${fallbackLang} 자막 재시도 실패:`, langErr);
+        return null;
       }
     }
     return null;
