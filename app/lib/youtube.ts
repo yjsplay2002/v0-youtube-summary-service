@@ -10,7 +10,11 @@ export function extractVideoId(url: string): string | null {
   console.log(`[extractVideoId] 입력 URL: ${url}`);
   const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
   const match = url.match(regExp);
-  const videoId = match && match[7].length === 11 ? match[7] : null;
+  if (!match || !match[7] || match[7].length !== 11) {
+    console.warn(`[extractVideoId] 올바르지 않은 유튜브 URL이거나 videoId 추출 실패: ${url}`);
+    return null;
+  }
+  const videoId = match[7];
   console.log(`[extractVideoId] 추출된 videoId: ${videoId}`);
   return videoId;
 }
