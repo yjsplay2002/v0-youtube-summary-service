@@ -106,7 +106,7 @@ export async function fetchTranscriptWithNpm(videoId: string): Promise<string | 
     }
     return null;
   }
-}
+
 
 // Function to fetch YouTube transcript (legacy, direct fetch)
 export async function fetchTranscriptLegacy(videoId: string, apiKey: string): Promise<string | null> {
