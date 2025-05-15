@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Loader2, AlertCircle } from "lucide-react"
 import { summarizeYoutubeVideo, fetchVideoDetailsServer } from "@/app/actions"
+import { getSummary } from "@/app/actions"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useRouter } from "next/navigation"
 
@@ -16,7 +17,14 @@ import { extractYoutubeVideoId } from "./youtube-form-utils"
 import YouTube, { YouTubePlayer, YouTubeEvent } from "react-youtube"
 import { VideoPlayerProvider } from "@/components/VideoPlayerContext"
 
+import { createContext } from "react";
+
+export const LoadingContext = createContext(false);
+
 export function YoutubeForm() {
+  // 추가 state
+  const [summaryExists, setSummaryExists] = useState(false);
+  const [loadingStage, setLoadingStage] = useState<"none"|"transcript"|"summary">("none");
   const [youtubeUrl, setYoutubeUrl] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
@@ -36,47 +44,56 @@ export function YoutubeForm() {
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  e.preventDefault()
 
-    if (!youtubeUrl) {
-      setError("Please enter a YouTube URL")
-      return
-    }
-
-    try {
-      setIsLoading(true)
-      setError("")
-      setShowApiKeyError(false)
-
-      // Call the server action to process the YouTube URL
-      const result = await summarizeYoutubeVideo(youtubeUrl)
-
-      if (result.success && result.videoId) {
-        // Handle successful processing by navigating to the results page
-        router.push(`/?videoId=${result.videoId}`)
-      } else {
-        // Handle error from server action
-        if (result.error?.includes("OPENAI_API_KEY is missing")) {
-          setShowApiKeyError(true)
-        } else {
-          setError(result.error || "Failed to process the video")
-        }
-      }
-    } catch (err) {
-      console.error(err)
-      const errorMessage = err instanceof Error ? err.message : "Failed to process the video"
-
-      if (errorMessage.includes("OPENAI_API_KEY is missing")) {
-        setShowApiKeyError(true)
-      } else {
-        setError(errorMessage)
-      }
-    } finally {
-      setIsLoading(false)
-    }
+  if (!youtubeUrl) {
+    setError("Please enter a YouTube URL")
+    return
   }
 
+  try {
+    setIsLoading(true)
+    setLoadingStage("transcript");
+    setError("")
+    setShowApiKeyError(false)
+
+    // Call the server action to process the YouTube URL
+    const result = await summarizeYoutubeVideo(youtubeUrl)
+
+    setLoadingStage("summary");
+
+    if (result.success && result.videoId) {
+      setLoadingStage("none");
+      // Handle successful processing by navigating to the results page
+      router.push(`/?videoId=${result.videoId}`)
+    } else {
+      setLoadingStage("none");
+      // Handle error from server action
+      if (result.error?.includes("OPENAI_API_KEY is missing")) {
+        setShowApiKeyError(true)
+      } else {
+        setError(result.error || "Failed to process the video")
+      }
+    }
+  } catch (err) {
+    setLoadingStage("none");
+    console.error(err)
+    const errorMessage = err instanceof Error ? err.message : "Failed to process the video"
+
+    if (errorMessage.includes("OPENAI_API_KEY is missing")) {
+      setShowApiKeyError(true)
+    } else {
+      setError(errorMessage)
+    }
+  } finally {
+    setIsLoading(false)
+    setLoadingStage("none");
+  }
+}
+
+
   return (
+    <LoadingContext.Provider value={isLoading}>
     <VideoPlayerProvider value={{ seekTo }}>
       <Card>
         <CardContent className="pt-6">
@@ -107,42 +124,70 @@ export function YoutubeForm() {
                 placeholder="Enter YouTube URL (e.g., https://www.youtube.com/watch?v=dQw4w9WgXcQ)"
                 value={youtubeUrl}
                 onChange={async (e) => {
-                  const value = e.target.value;
-                  setYoutubeUrl(value);
-                  setVideoInfo(null);
-                  setError("");
-                  // debounce
-                  if (videoFetchTimeout.current) clearTimeout(videoFetchTimeout.current);
-                  videoFetchTimeout.current = setTimeout(async () => {
-                    const videoId = extractYoutubeVideoId(value);
-                    if (videoId) {
-                      try {
-                        setVideoLoading(true);
-                        const info = await fetchVideoDetailsServer(videoId);
-                        setVideoInfo(info.items[0]);
-                      } catch (err) {
-                        setVideoInfo(null);
-                      } finally {
-                        setVideoLoading(false);
-                      }
-                    } else {
-                      setVideoInfo(null);
-                    }
-                  }, 500);
-                }}
+  const value = e.target.value;
+  setYoutubeUrl(value);
+  setVideoInfo(null);
+  setError("");
+  setSummaryExists(false);
+  // debounce
+  if (videoFetchTimeout.current) clearTimeout(videoFetchTimeout.current);
+  videoFetchTimeout.current = setTimeout(async () => {
+    const videoId = extractYoutubeVideoId(value);
+    if (videoId) {
+      try {
+        setVideoLoading(true);
+        const info = await fetchVideoDetailsServer(videoId);
+        setVideoInfo(info.items[0]);
+      } catch (err) {
+        setVideoInfo(null);
+      } finally {
+        setVideoLoading(false);
+      }
+      // summary DB 조회 후 있으면 즉시 페이지 이동
+      try {
+        const summary = await getSummary(videoId);
+        if (summary && summary.trim() !== "") {
+          setSummaryExists(true);
+          router.push(`/?videoId=${videoId}`);
+        } else {
+          setSummaryExists(false);
+        }
+      } catch (err) {
+        setSummaryExists(false);
+      }
+    } else {
+      setVideoInfo(null);
+      setSummaryExists(false);
+    }
+  }, 500);
+}}
                 className="w-full"
                 disabled={isLoading}
               />
-              <Button type="submit" className="shrink-0" disabled={isLoading} style={{minWidth:120}}>
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  "Summarize Video"
-                )}
-              </Button>
+              <Button type="submit" className="shrink-0" disabled={isLoading || summaryExists} style={{minWidth:120}}>
+  {summaryExists ? (
+    "Already summarized"
+  ) : isLoading ? (
+    loadingStage === "transcript" ? (
+      <>
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        Fetching transcript...
+      </>
+    ) : loadingStage === "summary" ? (
+      <>
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        Summarizing...
+      </>
+    ) : (
+      <>
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        Processing...
+      </>
+    )
+  ) : (
+    "Summarize Video"
+  )}
+</Button>
             </div>
             {error && <p className="text-sm text-red-500 mt-1">{error}</p>}
             {/* 영상 미리보기 */}
@@ -179,5 +224,6 @@ export function YoutubeForm() {
       </CardContent>
     </Card>
     </VideoPlayerProvider>
+    </LoadingContext.Provider>
   )
 }

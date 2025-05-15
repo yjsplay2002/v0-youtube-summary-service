@@ -45,19 +45,36 @@ export async function fetchTranscriptWithNpm(videoId: string): Promise<string | 
   console.log(`[fetchTranscriptWithNpm] 요청 videoId: ${videoId}`);
   try {
     console.log(`[fetchTranscriptWithNpm] YoutubeTranscript.fetchTranscript 호출 중...`);
-    const transcriptArr = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'ko' });
-    
+    let transcriptArr = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'ko' });
     if (!transcriptArr || transcriptArr.length === 0) {
       console.log(`[fetchTranscriptWithNpm] 자막을 찾을 수 없음: ${videoId}`);
       return null;
     }
-    
     const transcript = transcriptArr.map(t => t.text).join(' ');
     console.log(`[fetchTranscriptWithNpm] 자막 가져오기 성공: ${transcript.substring(0, 100)}...`);
     console.log(`[fetchTranscriptWithNpm] 자막 세그먼트 수: ${transcriptArr.length}`);
     return transcript;
-  } catch (err) {
+  } catch (err: any) {
     console.error(`[fetchTranscriptWithNpm] 오류 발생:`, err);
+    // ko 자막이 없고, en 자막이 가능한 경우 en으로 재시도
+    const errMsg = err?.message || String(err);
+    if (errMsg.includes('No transcripts are available in ko') && errMsg.includes('Available languages: en')) {
+      try {
+        console.log(`[fetchTranscriptWithNpm] ko 자막 없음, en 자막으로 재시도: ${videoId}`);
+        const transcriptArr = await YoutubeTranscript.fetchTranscript(videoId, { lang: 'en' });
+        if (!transcriptArr || transcriptArr.length === 0) {
+          console.log(`[fetchTranscriptWithNpm] en 자막도 없음: ${videoId}`);
+          return null;
+        }
+        const transcript = transcriptArr.map(t => t.text).join(' ');
+        console.log(`[fetchTranscriptWithNpm] en 자막 가져오기 성공: ${transcript.substring(0, 100)}...`);
+        console.log(`[fetchTranscriptWithNpm] en 자막 세그먼트 수: ${transcriptArr.length}`);
+        return transcript;
+      } catch (enErr) {
+        console.error(`[fetchTranscriptWithNpm] en 자막 재시도 실패:`, enErr);
+        return null;
+      }
+    }
     return null;
   }
 }

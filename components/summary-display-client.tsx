@@ -8,6 +8,7 @@ import { Copy, Check } from "lucide-react"
 import { useVideoPlayer } from "@/components/VideoPlayerContext"
 
 export function SummaryDisplayClient({ summary }: { summary: string }) {
+  console.log("[SummaryDisplayClient] summary prop:", summary, "type:", typeof summary, "length:", summary?.length);
   const [copied, setCopied] = useState(false)
   const { seekTo } = useVideoPlayer();
 
@@ -21,12 +22,12 @@ export function SummaryDisplayClient({ summary }: { summary: string }) {
     // 1. [mm:ss](링크) → button (a 변환보다 먼저!)
     markdown = markdown.replace(/\[(\d{1,2}):(\d{2})\]\([^\)]+\)/g, (match, m, s) => {
       const seconds = parseInt(m, 10) * 60 + parseInt(s, 10);
-      return `<button class='inline underline text-blue-600 cursor-pointer timestamp-btn' data-seconds='${seconds}'>[${m}:${s}]</button>`;
+      return `<button class='inline underline text-sky-400 cursor-pointer timestamp-btn' data-seconds='${seconds}'>[${m}:${s}]</button>`;
     });
     // 2. [mm:ss] 단독 → button
     markdown = markdown.replace(/\[(\d{1,2}):(\d{2})\]/g, (match, m, s) => {
       const seconds = parseInt(m, 10) * 60 + parseInt(s, 10);
-      return `<button class='inline underline text-blue-600 cursor-pointer timestamp-btn' data-seconds='${seconds}'>${match}</button>`;
+      return `<button class='inline underline text-sky-400 cursor-pointer timestamp-btn' data-seconds='${seconds}'>${match}</button>`;
     });
     return renderMarkdown(markdown);
   }
