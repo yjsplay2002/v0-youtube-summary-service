@@ -53,6 +53,7 @@ export async function fetchTranscriptWithNpm(videoId: string): Promise<string | 
     // youtubei.js로 자막 언어 코드 목록 확인
 const youtube: any = await Innertube.create();
 const info: any = await youtube.getInfo(videoId);
+console.log('[DEBUG] info.captions 존재:', !!info.captions);
 const captionTracks: any[] | undefined = info.captions?.caption_tracks;
 let selectedLang = 'ko';
 if (captionTracks) {
