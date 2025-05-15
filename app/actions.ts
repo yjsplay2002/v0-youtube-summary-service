@@ -1,266 +1,113 @@
-"use server"
+"use server";
 
-import { revalidatePath } from "next/cache"
+import { extractVideoId, fetchTranscriptWithNpm, fetchTranscriptLegacy, getVideoDetails } from "./lib/youtube";
+import { generateSummary, formatSummaryAsMarkdown } from "./lib/summary";
 
-// Function to extract video ID from YouTube URL
-function extractVideoId(url: string): string | null {
-  const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/
-  const match = url.match(regExp)
-  return match && match[7].length === 11 ? match[7] : null
-}
-
-// Function to fetch YouTube transcript
-async function fetchTranscript(videoId: string): Promise<string> {
+// 서버 액션: 유튜브 URL을 받아 자막을 가져오고 요약을 생성
+export async function summarizeYoutubeVideo(youtubeUrl: string): Promise<{ success: boolean; videoId?: string; error?: string; summary?: string }> {
+  console.log(`[summarizeYoutubeVideo] 요청 URL: ${youtubeUrl}`);
   try {
-    // First, try to get the video title and description using YouTube Data API
-    const apiKey = process.env.YOUTUBE_API_KEY;
-    if (!apiKey) {
-      throw new Error('YOUTUBE_API_KEY is not set in environment variables');
+    // 1. 비디오 ID 추출
+    const videoId = extractVideoId(youtubeUrl);
+    if (!videoId) {
+      console.error(`[summarizeYoutubeVideo] 유효하지 않은 URL: ${youtubeUrl}`);
+      return { success: false, error: "유효하지 않은 YouTube URL입니다." };
     }
+    console.log(`[summarizeYoutubeVideo] 추출된 videoId: ${videoId}`);
 
-    // Get video details to include in the transcript
-    const videoUrl = `https://www.googleapis.com/youtube/v3/videos?id=${videoId}&part=snippet&key=${apiKey}`;
-    const videoResponse = await fetch(videoUrl);
-    const videoData = await videoResponse.json();
+    // 2. 자막 가져오기 (npm 패키지 우선, 실패시 legacy)
+    console.log(`[summarizeYoutubeVideo] fetchTranscriptWithNpm 시도 중...`);
+    let transcript = await fetchTranscriptWithNpm(videoId);
     
-    if (!videoResponse.ok || !videoData.items || videoData.items.length === 0) {
-      throw new Error('Failed to fetch video details from YouTube API');
-    }
-
-    const videoSnippet = videoData.items[0].snippet;
-    const videoTitle = videoSnippet.title;
-    const videoDescription = videoSnippet.description;
-    const channelTitle = videoSnippet.channelTitle;
-    const publishedAt = new Date(videoSnippet.publishedAt).toLocaleDateString();
-
-    // For the actual transcript, we'll use a third-party service
-    // Note: This requires a server-side proxy to avoid CORS issues
-    const transcriptUrl = `https://youtube-transcript-api.vercel.app/api/transcript?videoId=${videoId}`;
-    const transcriptResponse = await fetch(transcriptUrl);
-    
-    if (!transcriptResponse.ok) {
-      throw new Error('Failed to fetch transcript from YouTube');
+    if (!transcript) {
+      console.log(`[summarizeYoutubeVideo] npm 패키지로 자막 가져오기 실패, legacy 방식 시도 중...`);
+      const apiKey = process.env.YOUTUBE_API_KEY || "";
+      transcript = await fetchTranscriptLegacy(videoId, apiKey);
     }
     
-    const transcriptData = await transcriptResponse.json();
+    if (!transcript) {
+      console.error(`[summarizeYoutubeVideo] 자막을 찾을 수 없음: ${videoId}`);
+      return { success: false, videoId, error: "자막을 찾을 수 없습니다." };
+    }
     
-    // Combine all transcript text
-    let fullTranscript = `Title: ${videoTitle}\n`;
-    fullTranscript += `Channel: ${channelTitle}\n`;
-    fullTranscript += `Published: ${publishedAt}\n\n`;
-    fullTranscript += `Description:\n${videoDescription}\n\n`;
-    fullTranscript += `Transcript:\n`;
-    
-    transcriptData.transcript.forEach((entry: any) => {
-      fullTranscript += `${entry.text} `;
-    });
+    console.log(`[summarizeYoutubeVideo] 자막 가져오기 성공, 길이: ${transcript.length} 문자`);
 
-    return fullTranscript;
-  } catch (error) {
-    console.error("Error fetching transcript:", error);
-    const errorMessage = error instanceof Error 
-      ? error.message 
-      : 'An unknown error occurred while fetching the transcript';
-    throw new Error(`Failed to fetch video transcript: ${errorMessage}`);
+    // 3. 요약 생성
+    console.log(`[summarizeYoutubeVideo] 요약 생성 시작...`);
+    const summary = await generateSummary(transcript);
+    const markdown = formatSummaryAsMarkdown(summary, videoId);
+    
+    // 4. 요약 결과 저장 및 반환
+    console.log(`[summarizeYoutubeVideo] 요약 생성 완료, 길이: ${markdown.length} 문자`);
+    
+    // 요약 결과를 파일로 저장
+    await saveSummary(videoId, markdown);
+    console.log(`[summarizeYoutubeVideo] 요약 결과 저장 완료: ${videoId}`);
+    
+    return { success: true, videoId, summary: markdown };
+  } catch (err) {
+    console.error(`[summarizeYoutubeVideo] 오류 발생:`, err);
+    return { success: false, error: String(err) };
   }
 }
 
-// Store summaries in memory (in a real app, use a database)
-const summaries = new Map<string, string>()
+import fs from 'fs';
+import path from 'path';
 
-// Process YouTube video and generate summary
-export async function summarizeYoutubeVideo(
-  youtubeUrl: string,
-): Promise<{ success: boolean; videoId?: string; error?: string }> {
-  // Extract video ID from URL
-  const videoId = extractVideoId(youtubeUrl)
+// 요약 결과를 파일로 저장하고 가져오기 위한 함수
 
-  if (!videoId) {
-    return { success: false, error: "Invalid YouTube URL" }
+// 요약 파일을 저장할 디렉토리 경로
+const SUMMARIES_DIR = path.join(process.cwd(), 'summaries');
+
+// 디렉토리가 없으면 생성
+try {
+  if (!fs.existsSync(SUMMARIES_DIR)) {
+    fs.mkdirSync(SUMMARIES_DIR, { recursive: true });
+    console.log(`[Summaries] 요약 저장용 디렉토리 생성됨: ${SUMMARIES_DIR}`);
   }
+} catch (err) {
+  console.error(`[Summaries] 디렉토리 생성 오류:`, err);
+}
 
+// 요약 저장 함수
+export async function saveSummary(videoId: string, summary: string): Promise<void> {
   try {
-    // Check if OpenAI API key is available
-    if (!process.env.OPENAI_API_KEY) {
-      return { success: false, error: "OPENAI_API_KEY is missing. Please add it to your environment variables." }
-    }
-
-    // Fetch transcript
-    const transcript = await fetchTranscript(videoId)
-
-    // Generate summary using AI
-    const summary = await generateSummary(transcript)
-
-    // Store the summary
-    summaries.set(videoId, summary)
-
-    // Revalidate the path
-    revalidatePath("/")
-
-    // Return success with videoId instead of redirecting
-    return { success: true, videoId }
-  } catch (error: unknown) {
-    console.error("Error processing video:", error)
-    const errorMessage = error instanceof Error ? error.message : "Failed to process video"
-    return { success: false, error: errorMessage }
+    const filePath = path.join(SUMMARIES_DIR, `${videoId}.md`);
+    // 비동기 파일 쓰기 사용
+    await fs.promises.writeFile(filePath, summary, 'utf8');
+    console.log(`[saveSummary] 요약 파일 저장 완료: ${filePath}`);
+  } catch (err) {
+    console.error(`[saveSummary] 파일 저장 오류:`, err);
+    throw err;
   }
 }
 
-// Get stored summary
+// YouTube 영상 정보 가져오기 서버 액션
+export async function fetchVideoDetailsServer(videoId: string) {
+  const apiKey = process.env.YOUTUBE_API_KEY;
+  if (!apiKey) throw new Error("YOUTUBE_API_KEY is missing");
+  return await getVideoDetails(videoId, apiKey);
+}
+
+// 요약 가져오기 함수
 export async function getSummary(videoId: string): Promise<string | null> {
-  return summaries.get(videoId) || null
-}
-
-// Generate summary using AI
-async function generateSummary(transcript: string): Promise<string> {
-  console.log('Starting generateSummary function');
+  console.log(`[getSummary] 요청 videoId: ${videoId}`);
   
   try {
-    // Check if OpenAI API key is available
-    if (!process.env.OPENAI_API_KEY) {
-      console.error('OPENAI_API_KEY is missing');
-      throw new Error("OPENAI_API_KEY is missing. Please add it to your environment variables.");
+    const filePath = path.join(SUMMARIES_DIR, `${videoId}.md`);
+    
+    // fs.existsSync는 비동기 함수가 아니지만 파일 존재 여부 확인에 사용
+    if (fs.existsSync(filePath)) {
+      // 비동기 파일 읽기 사용
+      const summary = await fs.promises.readFile(filePath, 'utf8');
+      console.log(`[getSummary] 요약 파일 찾음, 길이: ${summary.length} 문자`);
+      return summary;
+    } else {
+      console.log(`[getSummary] 요약 파일을 찾을 수 없음: ${videoId}`);
+      return null;
     }
-
-    console.log('API Key found, preparing prompt...');
-    
-    // Prepare the prompt for the AI
-    const prompt = `다음 YouTube 동영상 트랜스크립트를 분석하여 한국어로 요약해주세요. 
-
-요구사항:
-1. 주요 내용을 3-5개의 핵심 포인트로 요약
-2. 각 포인트는 간결하고 명확한 문장으로 작성
-3. 전문 용어는 쉽게 설명
-4. 마크다운 형식으로 작성
-5. 마지막에 해시태그 3-5개 추가
-
-트랜스크립트:
-${transcript.substring(0, 200)}...`; // Log only first 200 chars of transcript
-
-    console.log('Sending request to OpenAI API...');
-    
-    // Call OpenAI API
-    const apiUrl = 'https://api.openai.com/v1/chat/completions';
-    console.log(`API URL: ${apiUrl}`);
-    
-    const requestBody = {
-      model: 'gpt-4-turbo',
-      messages: [
-        {
-          role: 'system',
-          content: '당신은 유용한 AI 어시스턴트입니다. 한국어로 대답해주세요.'
-        },
-        {
-          role: 'user',
-          content: prompt
-        }
-      ],
-      temperature: 0.7,
-      max_tokens: 1000
-    };
-    
-    console.log('Request body prepared, sending request...');
-    
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify(requestBody)
-    });
-
-    console.log(`Received response with status: ${response.status}`);
-    
-    const responseData = await response.json().catch(async (parseError) => {
-      console.error('Error parsing JSON response:', parseError);
-      const textResponse = await response.text();
-      console.error('Raw response text:', textResponse);
-      throw new Error(`Failed to parse API response: ${parseError.message}`);
-    });
-
-    if (!response.ok) {
-      console.error('API Error Response:', responseData);
-      throw new Error(`OpenAI API error: ${JSON.stringify(responseData)}`);
-    }
-
-    console.log('Successfully received response from OpenAI API');
-    
-    if (!responseData.choices || !responseData.choices[0] || !responseData.choices[0].message) {
-      console.error('Unexpected API response format:', responseData);
-      throw new Error('Unexpected response format from OpenAI API');
-    }
-    
-    const summary = responseData.choices[0].message.content;
-    console.log('Generated summary length:', summary.length);
-    
-    return summary;
-  } catch (error) {
-    console.error("Error in generateSummary:", error);
-    
-    let errorMessage = "An unknown error occurred";
-    
-    if (error instanceof Error) {
-      errorMessage = error.message;
-      if ('response' in error) {
-        try {
-          const errorResponse = (error as any).response;
-          errorMessage += `\nResponse status: ${errorResponse.status}`;
-          const errorBody = await errorResponse.text().catch(() => 'Could not read error body');
-          errorMessage += `\nError body: ${errorBody}`;
-        } catch (nestedError) {
-          console.error('Error processing error response:', nestedError);
-        }
-      }
-    }
-    
-    console.error('Final error message:', errorMessage);
-    throw new Error(`Failed to generate summary: ${errorMessage}`);
+  } catch (err) {
+    console.error(`[getSummary] 파일 읽기 오류:`, err);
+    return null;
   }
-}
-
-// Format the summary as markdown
-function formatSummaryAsMarkdown(summary: string): string {
-  // In a real application, you might need to do more processing here
-  // For now, we'll return a simulated summary
-
-  return `# Video Summary
-
-#AI #Summarization #YouTube
-
-## 전체 요약
-이 영상은 YouTube 비디오 요약 서비스의 시뮬레이션 예시입니다. 실제 구현에서는 OpenAI API를 사용하여 비디오 자막을 분석하고 요약할 것입니다.
-
-## 핵심 용어
-- **자막 추출**: YouTube 비디오에서 텍스트 자막을 가져오는 과정
-- **AI 요약**: 인공지능을 활용하여 긴 텍스트를 핵심 내용으로 압축하는 기술
-
----
-📍 [1. 서비스 소개]
-🕒 [00:00]  
-📝 요약: 이 서비스는 YouTube 비디오 링크를 입력하면 자동으로 자막을 추출하고 요약해주는 도구입니다.  
-🔹 핵심 요점:  
-- YouTube 링크 입력만으로 간편하게 사용 가능
-- 3분 단위로 챕터를 나누어 요약
-- 마크다운 형식으로 결과 제공
----
-
-📍 [2. 기술적 구현]
-🕒 [03:00]  
-📝 요약: 이 서비스는 Next.js와 OpenAI API를 활용하여 구현되었으며, 서버 액션을 통해 처리됩니다.  
-🔹 핵심 요점:  
-- Next.js App Router 사용
-- OpenAI GPT-4o 모델 활용
-- 서버 사이드 처리로 보안 강화
----
-
-📍 [3. 활용 방안]
-🕒 [06:00]  
-📝 요약: 이 서비스는 학습, 연구, 콘텐츠 분석 등 다양한 분야에서 활용될 수 있습니다.  
-🔹 핵심 요점:  
-- 긴 강의나 세미나 내용을 빠르게 파악
-- 중요 정보만 추출하여 시간 절약
-- 여러 비디오의 내용을 효율적으로 비교 분석
----`
 }

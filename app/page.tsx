@@ -1,5 +1,5 @@
 import { YoutubeForm } from "@/components/youtube-form"
-import { SummaryDisplay } from "@/components/summary-display"
+import SummaryDisplay from "@/components/summary-display"
 import { Suspense } from "react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
@@ -10,13 +10,6 @@ export default function Home() {
       <p className="text-center mb-8 text-muted-foreground">
         Enter a YouTube link to get a summarized markdown version of the video content
       </p>
-
-      <Alert className="mb-6">
-        <AlertDescription>
-          This application requires an OpenAI API key to function. Please add your OpenAI API key to the environment
-          variables.
-        </AlertDescription>
-      </Alert>
 
       <YoutubeForm />
       <div className="mt-10">

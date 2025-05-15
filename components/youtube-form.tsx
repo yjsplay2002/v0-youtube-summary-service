@@ -7,16 +7,33 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Loader2, AlertCircle } from "lucide-react"
-import { summarizeYoutubeVideo } from "@/app/actions"
+import { summarizeYoutubeVideo, fetchVideoDetailsServer } from "@/app/actions"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useRouter } from "next/navigation"
+
+import { useEffect, useRef } from "react"
+import { extractYoutubeVideoId } from "./youtube-form-utils"
+import YouTube, { YouTubePlayer, YouTubeEvent } from "react-youtube"
+import { VideoPlayerProvider } from "@/components/VideoPlayerContext"
 
 export function YoutubeForm() {
   const [youtubeUrl, setYoutubeUrl] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const [showApiKeyError, setShowApiKeyError] = useState(false)
+  const [videoInfo, setVideoInfo] = useState<any | null>(null);
+  const [videoLoading, setVideoLoading] = useState(false);
+  const videoFetchTimeout = useRef<NodeJS.Timeout | null>(null);
+  const playerRef = useRef<YouTubePlayer | null>(null);
   const router = useRouter()
+
+  // 영상 시킹 함수 (props/context로 전달 가능)
+  const seekTo = (seconds: number) => {
+    if (playerRef.current) {
+      playerRef.current.seekTo(seconds, true);
+      playerRef.current.playVideo();
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -47,7 +64,7 @@ export function YoutubeForm() {
       }
     } catch (err) {
       console.error(err)
-      const errorMessage = err.message || "Failed to process the video"
+      const errorMessage = err instanceof Error ? err.message : "Failed to process the video"
 
       if (errorMessage.includes("OPENAI_API_KEY is missing")) {
         setShowApiKeyError(true)
@@ -60,8 +77,9 @@ export function YoutubeForm() {
   }
 
   return (
-    <Card>
-      <CardContent className="pt-6">
+    <VideoPlayerProvider value={{ seekTo }}>
+      <Card>
+        <CardContent className="pt-6">
         {showApiKeyError && (
           <Alert variant="destructive" className="mb-4">
             <AlertCircle className="h-4 w-4" />
@@ -83,28 +101,83 @@ export function YoutubeForm() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Input
-              type="text"
-              placeholder="Enter YouTube URL (e.g., https://www.youtube.com/watch?v=dQw4w9WgXcQ)"
-              value={youtubeUrl}
-              onChange={(e) => setYoutubeUrl(e.target.value)}
-              className="w-full"
-              disabled={isLoading}
-            />
-            {error && <p className="text-sm text-red-500">{error}</p>}
-          </div>
-          <Button type="submit" className="w-full" disabled={isLoading}>
-            {isLoading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Processing...
-              </>
-            ) : (
-              "Summarize Video"
+             <div className="flex gap-2 items-center">
+              <Input
+                type="text"
+                placeholder="Enter YouTube URL (e.g., https://www.youtube.com/watch?v=dQw4w9WgXcQ)"
+                value={youtubeUrl}
+                onChange={async (e) => {
+                  const value = e.target.value;
+                  setYoutubeUrl(value);
+                  setVideoInfo(null);
+                  setError("");
+                  // debounce
+                  if (videoFetchTimeout.current) clearTimeout(videoFetchTimeout.current);
+                  videoFetchTimeout.current = setTimeout(async () => {
+                    const videoId = extractYoutubeVideoId(value);
+                    if (videoId) {
+                      try {
+                        setVideoLoading(true);
+                        const info = await fetchVideoDetailsServer(videoId);
+                        setVideoInfo(info.items[0]);
+                      } catch (err) {
+                        setVideoInfo(null);
+                      } finally {
+                        setVideoLoading(false);
+                      }
+                    } else {
+                      setVideoInfo(null);
+                    }
+                  }, 500);
+                }}
+                className="w-full"
+                disabled={isLoading}
+              />
+              <Button type="submit" className="shrink-0" disabled={isLoading} style={{minWidth:120}}>
+                {isLoading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  "Summarize Video"
+                )}
+              </Button>
+            </div>
+            {error && <p className="text-sm text-red-500 mt-1">{error}</p>}
+            {/* 영상 미리보기 */}
+            {videoLoading && <div className="text-sm text-blue-500 mt-2">영상을 불러오는 중...</div>}
+            {videoInfo && (
+              <div className="mt-4 w-full border rounded p-3 bg-muted/40">
+                <div className="font-semibold mb-1">{videoInfo.snippet.title}</div>
+                <div className="mb-2 text-xs text-muted-foreground">{videoInfo.snippet.channelTitle}</div>
+                <div className="w-full aspect-video rounded overflow-hidden">
+                  {/* react-youtube로 교체 */}
+                  {videoInfo && (
+                    <YouTube
+                      videoId={videoInfo.id}
+                      className="w-full h-full rounded"
+                      iframeClassName="w-full h-full rounded"
+                      opts={{
+                        width: '100%',
+                        height: '100%',
+                        playerVars: {
+                          rel: 0,
+                          modestbranding: 1,
+                        },
+                      }}
+                      onReady={(e: YouTubeEvent<any>) => {
+                        playerRef.current = e.target;
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
             )}
-          </Button>
+          </div>
         </form>
       </CardContent>
     </Card>
+    </VideoPlayerProvider>
   )
 }
