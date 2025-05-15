@@ -14,6 +14,7 @@ export default function SummaryDisplay() {
       if (videoId) {
         const result = await getSummary(videoId);
         setSummary(result);
+        console.log("[SummaryDisplay] Fetched summary:", result);
       } else {
         setSummary(null);
       }
@@ -21,6 +22,9 @@ export default function SummaryDisplay() {
     fetchSummary();
   }, [videoId]);
 
-  if (!videoId || !summary) return null;
+  if (!videoId) return null;
+  if (summary === null) return <div>Loading...</div>;
+  if (summary.trim() === "") return <div className="text-center text-muted-foreground">요약이 없습니다.</div>;
   return <SummaryDisplayClient summary={summary} />;
 }
+
