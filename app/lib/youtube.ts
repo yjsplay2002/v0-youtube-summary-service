@@ -16,28 +16,60 @@ interface CaptionTrack {
 
 
 // Function to fetch transcript using youtube-transcript-plus
+// 자막 항목에 대한 타입 정의
 interface TranscriptEntry {
   text: string;
   duration: number;
   offset: number;
+  [key: string]: any; // 추가 필드가 있을 수 있음
 }
 
-export async function fetchTranscript(videoId: string): Promise<string | null> {
+/**
+ * 유튜브 자막을 가져오는 함수
+ * @param videoId 유튜브 비디오 ID
+ * @param languages 시도할 언어 배열 (우선순위대로 시도)
+ * @returns 자막 텍스트 또는 null
+ */
+export async function fetchTranscript(
+  videoId: string, 
+  languages: string[] = ['ko', 'en']
+): Promise<string | null> {
+  console.log(`[fetchTranscript] Fetching transcript for video: ${videoId}, languages: ${languages.join(', ')}`);
+  
   try {
-    console.log(`[fetchTranscript] Fetching transcript for video: ${videoId}`);
-    const transcript = await YoutubeTranscript.fetchTranscript(videoId, {
-      lang: 'ko'  // 한국어 자막 우선
-    }) as TranscriptEntry[];
-    
-    if (!transcript || transcript.length === 0) {
-      console.warn('[fetchTranscript] No transcript available');
-      return null;
+    // 1. 지정된 언어들을 순서대로 시도
+    for (const lang of languages) {
+      try {
+        console.log(`[fetchTranscript] Trying language: ${lang}`);
+        const transcript = await YoutubeTranscript.fetchTranscript(videoId, { lang });
+        
+        if (transcript && transcript.length > 0) {
+          const fullText = transcript.map((entry) => entry.text).join(' ');
+          console.log(`[fetchTranscript] Successfully fetched ${lang} transcript (${fullText.length} characters)`);
+          return fullText;
+        }
+      } catch (langError) {
+        console.log(`[fetchTranscript] ${lang} transcript not available, trying next language...`);
+      }
     }
     
-    // Combine all transcript entries into a single text
-    const fullText = transcript.map((entry: TranscriptEntry) => entry.text).join(' ');
-    console.log(`[fetchTranscript] Successfully fetched transcript (${fullText.length} characters)`);
-    return fullText;
+    // 2. 언어 지정 없이 자동 생성된 자막 시도
+    try {
+      console.log('[fetchTranscript] Trying auto-generated transcript');
+      const transcript = await YoutubeTranscript.fetchTranscript(videoId);
+      
+      if (transcript && transcript.length > 0) {
+        const fullText = transcript.map((entry) => entry.text).join(' ');
+        console.log(`[fetchTranscript] Successfully fetched auto transcript (${fullText.length} characters)`);
+        return fullText;
+      }
+    } catch (autoError) {
+      console.log('[fetchTranscript] Auto-generated transcript not available');
+    }
+    
+    // 3. 모든 시도 실패
+    console.warn('[fetchTranscript] No transcripts available for this video after multiple attempts');
+    return null;
   } catch (error) {
     console.error('[fetchTranscript] Error fetching transcript:', error);
     return null;
@@ -125,28 +157,7 @@ export async function getAvailableCaptionTracks(videoId: string, apiKey: string)
   }
 }
 
-// Function to download a specific caption track
-export async function downloadCaptionTrack(trackId: string, apiKey: string): Promise<string | null> {
-  console.log(`[downloadCaptionTrack] Downloading caption track: ${trackId}`);
-  
-  try {
-    const downloadUrl = `https://www.googleapis.com/youtube/v3/captions/${trackId}?tfmt=srt&key=${apiKey}`;
-    console.log(`[downloadCaptionTrack] Download URL: ${downloadUrl}`);
-    
-    const response = await fetch(downloadUrl);
-    if (!response.ok) {
-      console.error(`[downloadCaptionTrack] Failed to download caption: ${response.status} ${response.statusText}`);
-      return null;
-    }
-    
-    const captionText = await response.text();
-    console.log(`[downloadCaptionTrack] Successfully downloaded caption (${captionText.length} chars)`);
-    return captionText;
-  } catch (error) {
-    console.error('[downloadCaptionTrack] Error:', error);
-    return null;
-  }
-}
+// downloadCaptionTrack 함수는 youtube-transcript-plus 라이브러리를 사용하므로 제거되었습니다.
 
 // Function to fetch YouTube transcript using YouTube Data API v3
 export async function fetchTranscriptWithApi(videoId: string, apiKey: string): Promise<string | null> {
@@ -170,33 +181,36 @@ export async function fetchTranscriptWithApi(videoId: string, apiKey: string): P
       return null;
     }
     
-    const preferredLanguages = ['ko', 'en', 'en-US', 'en-GB'];
-    let selectedTrack = null;
+    // 사용 가능한 트랙에서 자막 정보 추출
+    console.log(`[fetchTranscriptWithApi] Available languages: ${captionTracks.map(t => t.languageCode).join(', ')}`);
     
-    for (const lang of preferredLanguages) {
-      const track = captionTracks.find(t => t.languageCode.startsWith(lang));
-      if (track) {
-        selectedTrack = track;
-        console.log(`[fetchTranscriptWithApi] Selected ${track.languageCode} captions`);
-        break;
-      }
+    // 한국어 자막 우선 찾기
+    const koTrack = captionTracks.find(t => t.languageCode.startsWith('ko'));
+    
+    // 영어 자막 찾기
+    const enTrack = captionTracks.find(t => 
+      t.languageCode.startsWith('en') || 
+      t.languageCode === 'a.en' || 
+      t.languageCode === 'a.en-US'
+    );
+    
+    // 한국어 > 영어 > 첫 번째 사용 가능한 자막 순서로 선택
+    const selectedTrack = koTrack || enTrack || captionTracks[0];
+    console.log(`[fetchTranscriptWithApi] Selected ${selectedTrack.languageCode} captions`);
+    
+    // 사용 가능한 언어로 자막 가져오기
+    const availableLanguages = captionTracks.map(track => track.languageCode);
+    console.log(`[fetchTranscriptWithApi] Trying with available languages: ${availableLanguages.join(', ')}`);
+    
+    // youtube-transcript-plus 라이브러리를 사용하여 자막 가져오기
+    const transcriptText = await fetchTranscript(videoId, availableLanguages);
+    if (transcriptText) {
+      console.log(`[fetchTranscriptWithApi] Successfully fetched transcript using youtube-transcript-plus`);
+      return transcriptText;
     }
     
-    if (!selectedTrack) {
-      selectedTrack = captionTracks[0];
-      console.log(`[fetchTranscriptWithApi] No preferred language found, using ${selectedTrack.languageCode}`);
-    }
-    
-    const captionText = await downloadCaptionTrack(selectedTrack.vssId, apiKey);
-    if (!captionText) {
-      console.error('[fetchTranscriptWithApi] Failed to download caption track');
-      return null;
-    }
-    
-    const plainText = convertSrtToText(captionText);
-    console.log(`[fetchTranscriptWithApi] Successfully converted to plain text (${plainText.length} chars)`);
-    
-    return plainText;
+    console.error('[fetchTranscriptWithApi] Failed to fetch transcript after all attempts');
+    return null;
   } catch (error) {
     console.error('[fetchTranscriptWithApi] Error:', error);
     return null;
