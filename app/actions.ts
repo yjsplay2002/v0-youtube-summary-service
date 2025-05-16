@@ -1,6 +1,6 @@
 "use server";
 
-import { extractVideoId, fetchTranscriptWithNpm, fetchTranscriptLegacy, getVideoDetails } from "./lib/youtube";
+import { extractVideoId, fetchTranscriptWithApi, fetchTranscriptLegacy, getVideoDetails } from "./lib/youtube";
 import { supabase } from "@/app/lib/supabase";
 import { generateSummary, formatSummaryAsMarkdown } from "./lib/summary";
 
@@ -51,13 +51,13 @@ export async function summarizeYoutubeVideo(youtubeUrl: string): Promise<{ succe
       return { success: true, videoId, summary: dbResult.summary };
     }
 
-    // 3. 자막 가져오기 (npm 패키지 우선, 실패시 legacy)
-    console.log(`[summarizeYoutubeVideo] fetchTranscriptWithNpm 시도 중...`);
-    let transcript = await fetchTranscriptWithNpm(videoId);
+    // 3. 자막 가져오기 (YouTube Data API v3 사용)
+    console.log(`[summarizeYoutubeVideo] fetchTranscriptWithApi 시도 중...`);
+    const apiKey = process.env.YOUTUBE_API_KEY || "";
+    let transcript = await fetchTranscriptWithApi(videoId, apiKey);
     
     if (!transcript) {
-      console.log(`[summarizeYoutubeVideo] npm 패키지로 자막 가져오기 실패, legacy 방식 시도 중...`);
-      const apiKey = process.env.YOUTUBE_API_KEY || "";
+      console.log(`[summarizeYoutubeVideo] YouTube Data API로 자막 가져오기 실패, legacy 방식 시도 중...`);
       transcript = await fetchTranscriptLegacy(videoId, apiKey);
     }
     
@@ -74,7 +74,6 @@ export async function summarizeYoutubeVideo(youtubeUrl: string): Promise<{ succe
     const markdown = formatSummaryAsMarkdown(summary, videoId);
     
     // 5. 비디오 메타데이터 가져오기
-    const apiKey = process.env.YOUTUBE_API_KEY || "";
     const videoDetails = await getVideoDetails(videoId, apiKey);
     const snippet = videoDetails?.items?.[0]?.snippet || {};
     const title = snippet.title || "";

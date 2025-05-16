@@ -61,11 +61,12 @@
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.6",
     "youtube-transcript": "^1.2.1",
+    "youtube-transcript-plus": "^1.0.4",
     "youtubei.js": "^13.4.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@types/node": "^22",
+    "@types/node": "^22.15.18",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "mini-css-extract-plugin": "^2.9.2",
