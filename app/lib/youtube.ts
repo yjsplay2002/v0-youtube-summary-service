@@ -5,6 +5,7 @@
  */
 
 import { YoutubeTranscript } from 'youtube-transcript-plus';
+import { fetchTranscriptWithPuppeteer, fetchFullTranscriptWithPuppeteer } from './puppeteer-transcript';
 
 interface CaptionTrack {
   baseUrl: string;
@@ -67,7 +68,27 @@ export async function fetchTranscript(
       console.log('[fetchTranscript] Auto-generated transcript not available');
     }
     
-    // 3. 모든 시도 실패
+    // 3. Puppeteer를 사용하여 자막 추출 시도
+    console.log('[fetchTranscript] Trying puppeteer method');
+    try {
+      // 먼저 전체 트랜스크립트 방식 시도
+      const fullTranscript = await fetchFullTranscriptWithPuppeteer(videoId);
+      if (fullTranscript) {
+        console.log(`[fetchTranscript] Successfully fetched transcript using puppeteer (full method) (${fullTranscript.length} characters)`);
+        return fullTranscript;
+      }
+      
+      // 실패하면 기본 방식 시도
+      const basicTranscript = await fetchTranscriptWithPuppeteer(videoId);
+      if (basicTranscript) {
+        console.log(`[fetchTranscript] Successfully fetched transcript using puppeteer (basic method) (${basicTranscript.length} characters)`);
+        return basicTranscript;
+      }
+    } catch (puppeteerError) {
+      console.error('[fetchTranscript] Puppeteer method failed:', puppeteerError);
+    }
+    
+    // 4. 모든 시도 실패
     console.warn('[fetchTranscript] No transcripts available for this video after multiple attempts');
     return null;
   } catch (error) {
