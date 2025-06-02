@@ -1,11 +1,8 @@
 /**
- * puppeteer-core를 활용한 YouTube 자막 추출 기능
- * @sparticuz/chromium을 외부 Chromium으로 사용
+ * puppeteer를 활용한 YouTube 자막 추출 기능 (로컬 테스트용)
  */
-
-import puppeteer, { Browser, Page, executablePath } from 'puppeteer-core';
-import chromium from '@sparticuz/chromium';
-import type { LaunchOptions } from 'puppeteer-core';
+import puppeteer, { Browser, Page, executablePath } from 'puppeteer';
+import type { LaunchOptions } from 'puppeteer';
 
 // HTML 요소 타입 선언
 declare global {
@@ -40,18 +37,14 @@ class TranscriptExtractionError extends TranscriptError {
   }
 }
 
-// 환경에 따른 설정 최적화
-const isDev = process.env.NODE_ENV === 'development';
-const isWin = process.platform === 'win32';
-
-// 크로미움 실행 경로 캐싱
-let executablePathCache: string | null = null;
-
-// 타임아웃 설정 (서버리스 환경에서 중요)
+// 타임아웃 설정
 const BROWSER_TIMEOUT = 30000; // 30초
 const PAGE_LOAD_TIMEOUT = 60000; // 60초
 const NAVIGATION_TIMEOUT = 60000; // 60초
 const CAPTION_CHECK_INTERVAL = 1000; // 1초마다 자막 확인
+
+// 로컬 환경에서 사용할 크로미움 경로
+const LOCAL_CHROME_PATH = process.env.LOCAL_CHROME_PATH || '';
 
 /**
  * 자막 버튼을 찾아 활성화하는 헬퍼 함수
@@ -178,85 +171,83 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessa
 }
 
 /**
- * 브라우저 인스턴스를 가져오는 헬퍼 함수
+ * 브라우저 인스턴스를 가져오는 헬퍼 함수 (로컬 테스트용)
  * @returns 브라우저 인스턴스
  */
 async function getBrowser() {
   try {
-    // 실행 경로 캐싱을 통한 성능 최적화
-    if (!executablePathCache) {
-      executablePathCache = await withTimeout(
-        chromium.executablePath(),
-        BROWSER_TIMEOUT,
-        '크로미움 실행 경로 가져오기 타임아웃'
-      );
-    }
-    
     const launchOptions: LaunchOptions = {
       headless: true,
       args: [
-        ...chromium.args,
-        '--disable-dev-shm-usage', // Docker 및 서버리스 환경에서 메모리 이슈 방지
+        '--disable-dev-shm-usage',
         '--disable-gpu',
         '--disable-setuid-sandbox',
         '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-web-security',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--disable-site-isolation-trials',
+        '--no-sandbox',
         '--no-zygote',
       ],
-      defaultViewport: chromium.defaultViewport,
-      executablePath: executablePathCache
+      defaultViewport: {
+        width: 1280,
+        height: 800,
+        deviceScaleFactor: 1,
+      },
+
+      executablePath: LOCAL_CHROME_PATH || undefined,
+      ignoreDefaultArgs: ['--enable-automation'],
+      timeout: BROWSER_TIMEOUT,
     };
-    
-    // 타임아웃이 있는 브라우저 시작
-    return await withTimeout(
+
+    console.log('로컬 브라우저 실행 중...');
+    const browser = await withTimeout(
       puppeteer.launch(launchOptions),
       BROWSER_TIMEOUT,
-      '브라우저 시작 타임아웃'
+      '브라우저 실행 타임아웃'
     );
+
+    return browser;
   } catch (error) {
-    console.error('[getBrowser] 브라우저 시작 오류:', error);
-    throw error;
+    console.error('로컬 브라우저 실행 중 오류 발생:', error);
+    throw new TranscriptError(
+      `로컬 브라우저를 시작하는 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`,
+      '',
+      error
+    );
   }
 }
 
 /**
- * Puppeteer를 사용하여 YouTube 영상의 자막을 추출하는 함수
+ * Puppeteer를 사용하여 YouTube 영상의 자막을 추출하는 함수 (로컬 테스트용)
  * @param videoId YouTube 비디오 ID
  * @returns 자막 텍스트 또는 null
  */
-/**
- * Puppeteer를 사용하여 YouTube 영상의 자막을 추출하는 함수
- * @param videoId YouTube 비디오 ID
- * @returns 자막 텍스트 또는 null (자막이 없는 경우)
- * @throws {TranscriptError} 자막 추출 중 오류가 발생한 경우
- */
 export async function fetchTranscriptWithPuppeteer(videoId: string): Promise<string | null> {
   console.log(`[fetchTranscriptWithPuppeteer] 시작: ${videoId}`);
-  
+
   let browser;
-  
+
   try {
     // 브라우저 실행 (getBrowser 헬퍼 함수 사용)
-    browser = await withTimeout(
-      getBrowser(),
-      BROWSER_TIMEOUT,
-      '브라우저 시작 시간 초과'
-    );
-    
+    browser = await getBrowser();
+
     const page = await browser.newPage();
-    
+
     // 타임아웃 설정
     page.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT);
-    
+
     // YouTube 자막 페이지로 이동
     const url = `https://www.youtube.com/watch?v=${videoId}`;
     console.log(`[fetchTranscriptWithPuppeteer] 페이지 로딩 중: ${url}`);
-    
+
     try {
       // 타임아웃이 있는 페이지 로딩
       await withTimeout(
-        page.goto(url, { 
+        page.goto(url, {
           waitUntil: 'domcontentloaded',
-          timeout: PAGE_LOAD_TIMEOUT 
+          timeout: PAGE_LOAD_TIMEOUT,
         }),
         PAGE_LOAD_TIMEOUT,
         `YouTube 페이지 로딩 타임아웃: ${videoId}`
@@ -264,43 +255,43 @@ export async function fetchTranscriptWithPuppeteer(videoId: string): Promise<str
     } catch (error) {
       throw new PageLoadError(videoId, error);
     }
-    
+
     // 자막 활성화 시도
     const subtitlesEnabled = await enableSubtitles(page, videoId);
     if (!subtitlesEnabled) {
       console.log('[fetchTranscriptWithPuppeteer] 이 영상에는 자막이 없습니다.');
       return null;
     }
-    
+
     // 영상 재생 시작
     await startVideoPlayback(page);
-    
+
     // 자막 수집 시작
     console.log('[fetchTranscriptWithPuppeteer] 자막 수집 시작...');
     const captionsText: string[] = [];
-    
+
     // 영상 길이 확인
     const videoDuration = await page.evaluate(() => {
       const durationElement = document.querySelector('.ytp-time-duration');
       return durationElement?.textContent || '0:00';
     });
-    
+
     console.log(`[fetchTranscriptWithPuppeteer] 영상 길이: ${videoDuration}`);
-    
+
     // 영상 길이에 따라 수집 시간 결정 (최대 5분)
     const durationInSeconds = parseVideoDuration(videoDuration);
     const collectionTimeInMs = Math.min(durationInSeconds, 300) * 1000;
-    
+
     if (collectionTimeInMs <= 0) {
       throw new TranscriptExtractionError(
         '유효하지 않은 영상 길이입니다.',
         videoId
       );
     }
-    
+
     // 일정 시간 동안 자막 수집
     const startTime = Date.now();
-    
+
     while (Date.now() - startTime < collectionTimeInMs) {
       try {
         // 현재 표시된 자막 가져오기
@@ -308,7 +299,7 @@ export async function fetchTranscriptWithPuppeteer(videoId: string): Promise<str
           const captionElement = document.querySelector('.ytp-caption-segment');
           return captionElement?.textContent?.trim() || '';
         });
-        
+
         if (currentCaption && !captionsText.includes(currentCaption)) {
           captionsText.push(currentCaption);
           console.log(`[fetchTranscriptWithPuppeteer] 수집된 자막 (${captionsText.length}): ${currentCaption.substring(0, 50)}...`);
@@ -316,11 +307,11 @@ export async function fetchTranscriptWithPuppeteer(videoId: string): Promise<str
       } catch (error) {
         console.error('[fetchTranscriptWithPuppeteer] 자막 수집 중 오류:', error);
       }
-      
+
       // 잠시 대기
       await new Promise(resolve => setTimeout(resolve, CAPTION_CHECK_INTERVAL));
     }
-    
+
     // 수집된 자막이 없는 경우
     if (captionsText.length === 0) {
       throw new TranscriptExtractionError(
@@ -328,17 +319,17 @@ export async function fetchTranscriptWithPuppeteer(videoId: string): Promise<str
         videoId
       );
     }
-    
+
     // 수집된 자막 결합
     const fullTranscript = captionsText.join(' ');
     console.log(`[fetchTranscriptWithPuppeteer] 자막 수집 완료: ${captionsText.length}개 문장, ${fullTranscript.length}자`);
-    
+
     return fullTranscript;
   } catch (error) {
     if (error instanceof TranscriptError) {
       throw error; // 이미 처리된 오류는 그대로 전파
     }
-    
+
     console.error('[fetchTranscriptWithPuppeteer] 오류:', error);
     throw new TranscriptError(
       '자막 추출 중 오류가 발생했습니다.',
@@ -359,13 +350,13 @@ export async function fetchTranscriptWithPuppeteer(videoId: string): Promise<str
 }
 
 /**
- * 더 많은 자막을 수집하기 위한 고급 방법
+ * 더 많은 자막을 수집하기 위한 고급 방법 (로컬 테스트용)
  * @param videoId YouTube 비디오 ID
  * @returns 자막 텍스트 또는 null
  */
 export async function fetchFullTranscriptWithPuppeteer(videoId: string): Promise<string | null> {
   console.log(`[fetchFullTranscriptWithPuppeteer] 시작: ${videoId}`);
-  
+
   let browser;
   
   try {

@@ -54,7 +54,7 @@ export async function summarizeYoutubeVideo(youtubeUrl: string): Promise<{ succe
     // 3. 자막 가져오기 (YouTube Data API v3 사용)
     console.log(`[summarizeYoutubeVideo] fetchTranscriptWithApi 시도 중...`);
     const apiKey = process.env.YOUTUBE_API_KEY || "";
-    let transcript = await fetchTranscriptWithApi(videoId, apiKey);
+    let transcript = await fetchTranscriptWithApi(videoId);
     
     if (!transcript) {
       console.log(`[summarizeYoutubeVideo] YouTube Data API로 자막 가져오기 실패, legacy 방식 시도 중...`);

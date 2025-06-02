@@ -180,63 +180,48 @@ export async function getAvailableCaptionTracks(videoId: string, apiKey: string)
 
 // downloadCaptionTrack 함수는 youtube-transcript-plus 라이브러리를 사용하므로 제거되었습니다.
 
-// Function to fetch YouTube transcript using YouTube Data API v3
-export async function fetchTranscriptWithApi(videoId: string, apiKey: string): Promise<string | null> {
+import { ApifyClient } from 'apify-client';
+
+// Function to fetch YouTube transcript using Apify Actor
+export async function fetchTranscriptWithApi(videoId: string): Promise<string | null> {
   try {
-    console.log(`[fetchTranscriptWithApi] Starting for video: ${videoId}`);
-    
-    // First try the new youtube-transcript-plus method
-    const transcript = await fetchTranscript(videoId);
-    if (transcript) {
-      return transcript;
-    }
-    
-    console.log('[fetchTranscriptWithApi] Falling back to API method');
-    
-    // Fallback to the original API method if the new method fails
-    const captionTracks = await getAvailableCaptionTracks(videoId, apiKey);
-    console.log(`[fetchTranscriptWithApi] Found ${captionTracks.length} caption tracks`);
-    
-    if (captionTracks.length === 0) {
-      console.warn('[fetchTranscriptWithApi] No caption tracks found');
+    const apifyApiToken = process.env.APIFY_API_TOKEN;
+    if (!apifyApiToken) {
+      console.error('[fetchTranscriptWithApi] APIFY_API_TOKEN is not set in environment');
       return null;
     }
-    
-    // 사용 가능한 트랙에서 자막 정보 추출
-    console.log(`[fetchTranscriptWithApi] Available languages: ${captionTracks.map(t => t.languageCode).join(', ')}`);
-    
-    // 한국어 자막 우선 찾기
-    const koTrack = captionTracks.find(t => t.languageCode.startsWith('ko'));
-    
-    // 영어 자막 찾기
-    const enTrack = captionTracks.find(t => 
-      t.languageCode.startsWith('en') || 
-      t.languageCode === 'a.en' || 
-      t.languageCode === 'a.en-US'
-    );
-    
-    // 한국어 > 영어 > 첫 번째 사용 가능한 자막 순서로 선택
-    const selectedTrack = koTrack || enTrack || captionTracks[0];
-    console.log(`[fetchTranscriptWithApi] Selected ${selectedTrack.languageCode} captions`);
-    
-    // 사용 가능한 언어로 자막 가져오기
-    const availableLanguages = captionTracks.map(track => track.languageCode);
-    console.log(`[fetchTranscriptWithApi] Trying with available languages: ${availableLanguages.join(', ')}`);
-    
-    // youtube-transcript-plus 라이브러리를 사용하여 자막 가져오기
-    const transcriptText = await fetchTranscript(videoId, availableLanguages);
-    if (transcriptText) {
-      console.log(`[fetchTranscriptWithApi] Successfully fetched transcript using youtube-transcript-plus`);
-      return transcriptText;
+    const client = new ApifyClient({ token: apifyApiToken });
+    const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const input = {
+      startUrls: [youtubeUrl],
+      language: 'Default',
+      includeTimestamps: 'No',
+    };
+    // Run the Apify actor and wait for it to finish
+    const run = await client.actor('dB9f4B02ocpTICIEY').call(input);
+    if (!run?.defaultDatasetId) {
+      console.error('[fetchTranscriptWithApi] No datasetId returned from Apify actor run');
+      return null;
     }
-    
-    console.error('[fetchTranscriptWithApi] Failed to fetch transcript after all attempts');
-    return null;
+    // Fetch results from the dataset
+    const { items } = await client.dataset(run.defaultDatasetId).listItems();
+    if (!items || items.length === 0) {
+      console.error('[fetchTranscriptWithApi] No transcript items returned from Apify dataset');
+      return null;
+    }
+    // Assume the transcript text is in a field called "transcript" or similar
+    const transcriptField = items[0].transcript || items[0].text || '';
+    if (!transcriptField || typeof transcriptField !== 'string') {
+      console.error('[fetchTranscriptWithApi] Transcript field missing or invalid');
+      return null;
+    }
+    return transcriptField;
   } catch (error) {
     console.error('[fetchTranscriptWithApi] Error:', error);
     return null;
   }
 }
+
 
 // Helper function to convert SRT format to plain text
 function convertSrtToText(srt: string): string {
@@ -261,7 +246,7 @@ export async function fetchTranscriptLegacy(videoId: string, apiKey: string): Pr
   try {
     // Try the new API first
     console.log('[fetchTranscriptLegacy] Trying YouTube Data API v3...');
-    const apiResult = await fetchTranscriptWithApi(videoId, apiKey);
+    const apiResult = await fetchTranscriptWithApi(videoId);
     if (apiResult) {
       console.log('[fetchTranscriptLegacy] Successfully fetched transcript using YouTube Data API');
       return apiResult;

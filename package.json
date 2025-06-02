@@ -39,6 +39,7 @@
     "@radix-ui/react-tooltip": "1.1.6",
     "@sparticuz/chromium": "^133.0.0",
     "@supabase/supabase-js": "^2.39.7",
+    "apify-client": "^2.12.5",
     "autoprefixer": "^10.4.20",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
