@@ -6,7 +6,6 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Loader2, AlertCircle } from "lucide-react"
 import { summarizeYoutubeVideo, fetchVideoDetailsServer } from "@/app/actions"
@@ -78,6 +77,12 @@ export function YoutubeForm() {
       // Handle successful processing by navigating to the results page
       router.push(`/?videoId=${result.videoId}`)
       refreshSummaries();
+      
+      // 요약 완료 후 폼 초기화
+      setYoutubeUrl("");
+      setVideoInfo(null);
+      setSummaryExists(false);
+      setError("");
     } else {
       setLoadingStage("none");
       // Handle error from server action
@@ -149,17 +154,17 @@ export function YoutubeForm() {
           <div className="space-y-2">
             <div className="space-y-2">
               <Label htmlFor="ai-model">AI 모델 선택</Label>
-              <Select value={selectedModel} onValueChange={(value: AIModel) => setSelectedModel(value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="AI 모델을 선택하세요" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="openai-gpt4">OpenAI GPT-4</SelectItem>
-                  <SelectItem value="claude-sonnet-4">Claude Sonnet 4</SelectItem>
-                  <SelectItem value="claude-3-5-sonnet">Claude 3.5 Sonnet</SelectItem>
-                  <SelectItem value="claude-3-5-haiku">Claude 3.5 Haiku</SelectItem>
-                </SelectContent>
-              </Select>
+              <select
+                id="ai-model"
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value as AIModel)}
+                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="openai-gpt4">OpenAI GPT-4</option>
+                <option value="claude-sonnet-4">Claude Sonnet 4</option>
+                <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
+                <option value="claude-3-5-haiku">Claude 3.5 Haiku</option>
+              </select>
             </div>
              <div className="flex gap-2 items-center">
               <Input
@@ -177,7 +182,6 @@ export function YoutubeForm() {
     // Reset states at the beginning of the debounced function
     setVideoInfo(null);
     setError("");
-    setSummaryExists(false);
     resetSummary();
     
     const videoId = extractYoutubeVideoId(value);
@@ -188,23 +192,32 @@ export function YoutubeForm() {
         setVideoInfo(info.items[0]);
         setVideoLoading(false);
         
-        // Check if summary exists, but DON'T navigate automatically
-        // This prevents the infinite update loop
-        const summary = await getSummary(videoId);
-        if (summary && summary.trim() !== "") {
-          setSummaryExists(true);
-          // Don't call router.push here - let user click the button instead
-        } else {
-          setSummaryExists(false);
+        // Check if summary exists, but don't update state immediately to prevent infinite loops
+        try {
+          const summary = await getSummary(videoId);
+          // Update summary existence state only after all other state updates are complete
+          // Use a slight delay to avoid synchronization issues
+          setTimeout(() => {
+            setSummaryExists(Boolean(summary && summary.trim() !== ""));
+          }, 100);
+        } catch (summaryErr) {
+          console.error("Error checking summary existence:", summaryErr);
+          setTimeout(() => {
+            setSummaryExists(false);
+          }, 100);
         }
       } catch (err) {
         setVideoInfo(null);
         setVideoLoading(false);
-        setSummaryExists(false);
+        setTimeout(() => {
+          setSummaryExists(false);
+        }, 100);
       }
     } else {
       setVideoInfo(null);
-      setSummaryExists(false);
+      setTimeout(() => {
+        setSummaryExists(false);
+      }, 100);
     }
   }, 500);
 }}

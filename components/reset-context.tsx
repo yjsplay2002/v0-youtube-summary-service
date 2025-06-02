@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useCallback } from 'react';
 
 interface ResetContextType {
   resetSummary: () => void;
@@ -12,15 +12,15 @@ const ResetContext = createContext<ResetContextType | undefined>(undefined);
 export const ResetProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [resetCallback, setResetCallback] = useState<(() => void) | null>(null);
 
-  const resetSummary = () => {
+  const resetSummary = useCallback(() => {
     if (resetCallback) {
       resetCallback();
     }
-  };
+  }, [resetCallback]);
 
-  const registerResetCallback = (callback: () => void) => {
+  const registerResetCallback = useCallback((callback: () => void) => {
     setResetCallback(() => callback);
-  };
+  }, []);
 
   return (
     <ResetContext.Provider value={{ resetSummary, registerResetCallback }}>

@@ -12,10 +12,23 @@ async function getYoutubeSummaryFromDB(videoId: string) {
     .select('*')
     .eq('video_id', videoId)
     .single();
-  if (error) console.error('[DB 조회 에러]', error);
-  if (!data) console.log('[DB 조회 결과 없음]');
-  else console.log('[DB 조회 결과] 존재함' );
-  return data || null;
+
+  if (error) {
+    // Check if the error is specifically "no rows found"
+    // PGRST116 with details containing "0 rows" indicates this for .single()
+    if (error.code === 'PGRST116' && error.details && error.details.includes('0 rows')) {
+      console.log('[DB 조회 결과 없음]'); 
+      return null; 
+    } else {
+      // For any other error (including PGRST116 for multiple rows, or other DB errors)
+      console.error('[DB 조회 에러]', error);
+      return null; 
+    }
+  }
+  
+  // If no error, .single() guarantees that 'data' is not null and contains the single row.
+  console.log('[DB 조회 결과] 존재함');
+  return data;
 }
 
 // Supabase에 요약/자막/메타데이터 저장

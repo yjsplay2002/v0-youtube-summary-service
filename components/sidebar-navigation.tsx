@@ -23,10 +23,26 @@ interface SidebarNavigationProps {
 
 export function SidebarNavigation({ currentVideoId }: SidebarNavigationProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const [summaries, setSummaries] = useState<Summary[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const { registerRefreshCallback } = useSummaryContext();
+
+  // 모바일 화면 감지
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+      // 모바일에서는 기본적으로 접힌 상태로 시작
+      if (window.innerWidth < 768) {
+        setIsCollapsed(true);
+      }
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const loadSummaries = useCallback(async () => {
     try {
@@ -68,8 +84,10 @@ export function SidebarNavigation({ currentVideoId }: SidebarNavigationProps) {
 
   return (
     <div
-      className={`h-screen bg-sidebar-background border-r border-sidebar-border transition-all duration-300 flex flex-col ${
+      className={`h-screen bg-sidebar-background transition-all duration-300 flex flex-col ${
         isCollapsed ? "w-16" : "w-80"
+      } ${isMobile && isCollapsed ? "fixed z-50" : ""} ${
+        !(isMobile && isCollapsed) ? "border-r border-sidebar-border" : ""
       }`}
     >
       {/* Header */}
@@ -108,105 +126,119 @@ export function SidebarNavigation({ currentVideoId }: SidebarNavigationProps) {
         </div>
       </div>
 
-      {/* Content */}
-      <ScrollArea className="flex-1">
-        <div className="p-2">
-          {/* New Summary Button */}
-          <Link
-            href="/"
-            className={`block w-full p-3 mb-4 rounded-lg hover:bg-sidebar-accent transition-colors border-2 border-dashed border-sidebar-border hover:border-sidebar-primary ${
-              !currentVideoId ? "bg-sidebar-accent border-sidebar-primary" : ""
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-9 bg-sidebar-primary/10 rounded flex items-center justify-center flex-shrink-0">
-                <FileText className="w-4 h-4 text-sidebar-primary" />
-              </div>
-              {!isCollapsed && (
-                <div className="flex-1">
-                  <h3 className="text-sm font-medium text-sidebar-foreground">
-                    새로운 요약
-                  </h3>
-                  <p className="text-xs text-sidebar-foreground/60">
-                    YouTube 링크 입력
-                  </p>
+      {/* Content - 모바일에서 접힌 상태일 때는 콘텐츠 숨기기 */}
+      {!(isMobile && isCollapsed) && (
+        <>
+          <ScrollArea className="flex-1">
+            <div className="p-2">
+              {/* New Summary Button */}
+              <Link
+                href="/"
+                className={`block w-full p-3 mb-4 rounded-lg hover:bg-sidebar-accent transition-colors border-2 border-dashed border-sidebar-border hover:border-sidebar-primary ${
+                  !currentVideoId ? "bg-sidebar-accent border-sidebar-primary" : ""
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-9 bg-sidebar-primary/10 rounded flex items-center justify-center flex-shrink-0">
+                    <FileText className="w-4 h-4 text-sidebar-primary" />
+                  </div>
+                  {!isCollapsed && (
+                    <div className="flex-1">
+                      <h3 className="text-sm font-medium text-sidebar-foreground">
+                        새로운 요약
+                      </h3>
+                      <p className="text-xs text-sidebar-foreground/60">
+                        YouTube 링크 입력
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </Link>
+
+              {/* Separator */}
+              {!isCollapsed && summaries.length > 0 && (
+                <div className="px-3 mb-4">
+                  <Separator className="bg-sidebar-border" />
+                </div>
+              )}
+
+              {loading ? (
+                <div className="p-4 text-center text-sidebar-foreground/60">
+                  {!isCollapsed ? "로딩 중..." : "..."}
+                </div>
+              ) : summaries.length === 0 ? (
+                <div className="p-4 text-center text-sidebar-foreground/60">
+                  {!isCollapsed ? "요약된 동영상이 없습니다" : ""}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {summaries.map((summary) => (
+                    <Link
+                      key={summary.video_id}
+                      href={`/?videoId=${summary.video_id}`}
+                      className={`block w-full p-3 rounded-lg hover:bg-sidebar-accent transition-colors ${
+                        currentVideoId === summary.video_id
+                          ? "bg-sidebar-accent border border-sidebar-primary"
+                          : ""
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        {/* 모바일에서 접힌 상태일 때는 썸네일 숨기기 */}
+                        {!(isMobile && isCollapsed) && (
+                          summary.thumbnail_url ? (
+                            <img
+                              src={summary.thumbnail_url}
+                              alt={summary.title}
+                              className="w-12 h-9 object-cover rounded flex-shrink-0"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <div className="w-12 h-9 bg-sidebar-accent rounded flex items-center justify-center flex-shrink-0">
+                              <FileText className="w-4 h-4 text-sidebar-foreground/60" />
+                            </div>
+                          )
+                        )}
+                        
+                        {/* 모바일에서 접힌 상태일 때는 아이콘만 표시 */}
+                        {isMobile && isCollapsed && (
+                          <div className="w-12 h-9 bg-sidebar-accent rounded flex items-center justify-center flex-shrink-0">
+                            <FileText className="w-4 h-4 text-sidebar-foreground/60" />
+                          </div>
+                        )}
+                        
+                        {!isCollapsed && (
+                          <div className="flex-1 min-w-0">
+                            <h3 className="text-sm font-medium text-sidebar-foreground line-clamp-2 leading-tight">
+                              {truncateTitle(summary.title)}
+                            </h3>
+                            <div className="flex items-center gap-2 mt-1 text-xs text-sidebar-foreground/70">
+                              <User className="w-3 h-3" />
+                              <span className="truncate">{summary.channel_title}</span>
+                            </div>
+                            <div className="flex items-center gap-2 mt-1 text-xs text-sidebar-foreground/60">
+                              <Calendar className="w-3 h-3" />
+                              <span>{formatDate(summary.created_at)}</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </Link>
+                  ))}
                 </div>
               )}
             </div>
-          </Link>
+          </ScrollArea>
 
-          {/* Separator */}
-          {!isCollapsed && summaries.length > 0 && (
-            <div className="px-3 mb-4">
-              <Separator className="bg-sidebar-border" />
-            </div>
-          )}
-
-          {loading ? (
-            <div className="p-4 text-center text-sidebar-foreground/60">
-              {!isCollapsed ? "로딩 중..." : "..."}
-            </div>
-          ) : summaries.length === 0 ? (
-            <div className="p-4 text-center text-sidebar-foreground/60">
-              {!isCollapsed ? "요약된 동영상이 없습니다" : ""}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {summaries.map((summary) => (
-                <Link
-                  key={summary.video_id}
-                  href={`/?videoId=${summary.video_id}`}
-                  className={`block w-full p-3 rounded-lg hover:bg-sidebar-accent transition-colors ${
-                    currentVideoId === summary.video_id
-                      ? "bg-sidebar-accent border border-sidebar-primary"
-                      : ""
-                  }`}
-                >
-                  <div className="flex items-start gap-3">
-                    {summary.thumbnail_url ? (
-                      <img
-                        src={summary.thumbnail_url}
-                        alt={summary.title}
-                        className="w-12 h-9 object-cover rounded flex-shrink-0"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="w-12 h-9 bg-sidebar-accent rounded flex items-center justify-center flex-shrink-0">
-                        <FileText className="w-4 h-4 text-sidebar-foreground/60" />
-                      </div>
-                    )}
-                    
-                    {!isCollapsed && (
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-sm font-medium text-sidebar-foreground line-clamp-2 leading-tight">
-                          {truncateTitle(summary.title)}
-                        </h3>
-                        <div className="flex items-center gap-2 mt-1 text-xs text-sidebar-foreground/70">
-                          <User className="w-3 h-3" />
-                          <span className="truncate">{summary.channel_title}</span>
-                        </div>
-                        <div className="flex items-center gap-2 mt-1 text-xs text-sidebar-foreground/60">
-                          <Calendar className="w-3 h-3" />
-                          <span>{formatDate(summary.created_at)}</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-      </ScrollArea>
-
-      {/* Footer */}
-      <div className="p-4 border-t border-sidebar-border">
-        {!isCollapsed && (
-          <p className="text-xs text-sidebar-foreground/60 text-center">
-            총 {summaries.length}개의 요약
-          </p>
-        )}
-      </div>
+          {/* Footer */}
+          <div className="p-4 border-t border-sidebar-border">
+            {!isCollapsed && (
+              <p className="text-xs text-sidebar-foreground/60 text-center">
+                총 {summaries.length}개의 요약
+              </p>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
