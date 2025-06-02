@@ -3,6 +3,10 @@ import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
+import { LayoutWrapper } from "@/components/layout-wrapper"
+import { Suspense } from "react"
+import { SummaryProvider } from "@/components/summary-context"
+import { ResetProvider } from "@/components/reset-context"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -20,8 +24,16 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          {children}
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+          <SummaryProvider>
+            <ResetProvider>
+              <Suspense fallback={<div>Loading...</div>}>
+                <LayoutWrapper>
+                  {children}
+                </LayoutWrapper>
+              </Suspense>
+            </ResetProvider>
+          </SummaryProvider>
         </ThemeProvider>
       </body>
     </html>

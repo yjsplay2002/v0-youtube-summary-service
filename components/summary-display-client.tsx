@@ -5,12 +5,10 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Copy, Check } from "lucide-react"
-import { useVideoPlayer } from "@/components/VideoPlayerContext"
 
-export function SummaryDisplayClient({ summary }: { summary: string }) {
+export function SummaryDisplayClient({ summary, seekTo }: { summary: string; seekTo: (seconds: number) => void }) {
   console.log("[SummaryDisplayClient] summary prop:", summary, "type:", typeof summary, "length:", summary?.length);
   const [copied, setCopied] = useState(false)
-  const { seekTo } = useVideoPlayer();
 
   // 타임스탬프 버튼 클릭 시 호출
   const handleTimestampClick = (seconds: number) => {

@@ -2,7 +2,7 @@
 
 import { extractVideoId, fetchTranscriptWithApi, fetchTranscriptLegacy, getVideoDetails } from "./lib/youtube";
 import { supabase } from "@/app/lib/supabase";
-import { generateSummary, formatSummaryAsMarkdown } from "./lib/summary";
+import { generateSummary, formatSummaryAsMarkdown, type AIModel } from "./lib/summary";
 
 // Supabase에서 요약/자막/메타데이터 조회
 async function getYoutubeSummaryFromDB(videoId: string) {
@@ -33,8 +33,11 @@ async function upsertYoutubeSummaryToDB({ video_id, transcript, summary, title, 
 }
 
 // 서버 액션: 유튜브 URL을 받아 자막을 가져오고 요약을 생성
-export async function summarizeYoutubeVideo(youtubeUrl: string): Promise<{ success: boolean; videoId?: string; error?: string; summary?: string }> {
-  console.log(`[summarizeYoutubeVideo] 요청 URL: ${youtubeUrl}`);
+export async function summarizeYoutubeVideo(
+  youtubeUrl: string, 
+  aiModel: AIModel = 'claude-3-5-sonnet'
+): Promise<{ success: boolean; videoId?: string; error?: string; summary?: string }> {
+  console.log(`[summarizeYoutubeVideo] 요청 URL: ${youtubeUrl}, AI 모델: ${aiModel}`);
   try {
     // 1. 비디오 ID 추출
     const videoId = extractVideoId(youtubeUrl);
@@ -69,8 +72,8 @@ export async function summarizeYoutubeVideo(youtubeUrl: string): Promise<{ succe
     console.log(`[summarizeYoutubeVideo] 자막 가져오기 성공, 길이: ${transcript.length} 문자`);
 
     // 4. 요약 생성
-    console.log(`[summarizeYoutubeVideo] 요약 생성 시작...`);
-    const summary = await generateSummary(transcript);
+    console.log(`[summarizeYoutubeVideo] 요약 생성 시작... (모델: ${aiModel})`);
+    const summary = await generateSummary(transcript, aiModel);
     const markdown = formatSummaryAsMarkdown(summary, videoId);
     
     // 5. 비디오 메타데이터 가져오기
@@ -120,4 +123,24 @@ export async function fetchVideoDetailsServer(videoId: string) {
   const apiKey = process.env.YOUTUBE_API_KEY;
   if (!apiKey) throw new Error("YOUTUBE_API_KEY is missing");
   return await getVideoDetails(videoId, apiKey);
+}
+
+// 모든 요약 목록 가져오기 서버 액션
+export async function getAllSummaries() {
+  try {
+    const { data, error } = await supabase
+      .from('youtube_summaries')
+      .select('video_id, title, channel_title, thumbnail_url, created_at')
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('[getAllSummaries] DB 조회 에러:', error);
+      return [];
+    }
+    
+    return data || [];
+  } catch (err) {
+    console.error('[getAllSummaries] 오류 발생:', err);
+    return [];
+  }
 }

@@ -6,11 +6,14 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Label } from "@/components/ui/label"
 import { Loader2, AlertCircle } from "lucide-react"
 import { summarizeYoutubeVideo, fetchVideoDetailsServer } from "@/app/actions"
 import { getSummary } from "@/app/actions"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useRouter } from "next/navigation"
+import type { AIModel } from "@/app/lib/summary"
 
 import { useEffect, useRef } from "react"
 import { extractYoutubeVideoId } from "./youtube-form-utils"
@@ -18,6 +21,8 @@ import YouTube, { YouTubePlayer, YouTubeEvent } from "react-youtube"
 import { VideoPlayerProvider } from "@/components/VideoPlayerContext"
 
 import { createContext } from "react";
+import { useSummaryContext } from "@/components/summary-context";
+import { useResetContext } from "@/components/reset-context";
 
 export const LoadingContext = createContext(false);
 
@@ -26,6 +31,7 @@ export function YoutubeForm() {
   const [summaryExists, setSummaryExists] = useState(false);
   const [loadingStage, setLoadingStage] = useState<"none"|"transcript"|"summary">("none");
   const [youtubeUrl, setYoutubeUrl] = useState("")
+  const [selectedModel, setSelectedModel] = useState<AIModel>("claude-3-5-sonnet")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const [showApiKeyError, setShowApiKeyError] = useState(false)
@@ -34,6 +40,8 @@ export function YoutubeForm() {
   const videoFetchTimeout = useRef<NodeJS.Timeout | null>(null);
   const playerRef = useRef<YouTubePlayer | null>(null);
   const router = useRouter()
+  const { refreshSummaries } = useSummaryContext();
+  const { resetSummary } = useResetContext();
 
   // 영상 시킹 함수 (props/context로 전달 가능)
   const seekTo = (seconds: number) => {
@@ -50,6 +58,9 @@ export function YoutubeForm() {
     setError("Please enter a YouTube URL")
     return
   }
+  
+  // Reset the current summary display
+  resetSummary();
 
   try {
     setIsLoading(true)
@@ -58,7 +69,7 @@ export function YoutubeForm() {
     setShowApiKeyError(false)
 
     // Call the server action to process the YouTube URL
-    const result = await summarizeYoutubeVideo(youtubeUrl)
+    const result = await summarizeYoutubeVideo(youtubeUrl, selectedModel)
 
     setLoadingStage("summary");
 
@@ -66,10 +77,11 @@ export function YoutubeForm() {
       setLoadingStage("none");
       // Handle successful processing by navigating to the results page
       router.push(`/?videoId=${result.videoId}`)
+      refreshSummaries();
     } else {
       setLoadingStage("none");
       // Handle error from server action
-      if (result.error?.includes("OPENAI_API_KEY is missing")) {
+      if (result.error?.includes("OPENAI_API_KEY is missing") || result.error?.includes("ANTHROPIC_API_KEY is missing")) {
         setShowApiKeyError(true)
       } else {
         setError(result.error || "Failed to process the video")
@@ -80,7 +92,7 @@ export function YoutubeForm() {
     console.error(err)
     const errorMessage = err instanceof Error ? err.message : "Failed to process the video"
 
-    if (errorMessage.includes("OPENAI_API_KEY is missing")) {
+    if (errorMessage.includes("OPENAI_API_KEY is missing") || errorMessage.includes("ANTHROPIC_API_KEY is missing")) {
       setShowApiKeyError(true)
     } else {
       setError(errorMessage)
@@ -102,22 +114,53 @@ export function YoutubeForm() {
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>API Key Missing</AlertTitle>
             <AlertDescription>
-              OpenAI API key is missing. Please add it to your environment variables.
-              <div className="mt-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => window.open("https://platform.openai.com/api-keys", "_blank")}
-                >
-                  Get OpenAI API Key
-                </Button>
-              </div>
+              {selectedModel.startsWith('claude') ? (
+                <>
+                  Anthropic API key is missing. Please add ANTHROPIC_API_KEY to your environment variables.
+                  <div className="mt-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.open("https://console.anthropic.com/", "_blank")}
+                    >
+                      Get Anthropic API Key
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  OpenAI API key is missing. Please add OPENAI_API_KEY to your environment variables.
+                  <div className="mt-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.open("https://platform.openai.com/api-keys", "_blank")}
+                    >
+                      Get OpenAI API Key
+                    </Button>
+                  </div>
+                </>
+              )}
             </AlertDescription>
           </Alert>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
+            <div className="space-y-2">
+              <Label htmlFor="ai-model">AI 모델 선택</Label>
+              <Select value={selectedModel} onValueChange={(value: AIModel) => setSelectedModel(value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="AI 모델을 선택하세요" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="openai-gpt4">OpenAI GPT-4</SelectItem>
+                  <SelectItem value="claude-sonnet-4">Claude Sonnet 4</SelectItem>
+                  <SelectItem value="claude-3-5-sonnet">Claude 3.5 Sonnet</SelectItem>
+                  <SelectItem value="claude-3-5-haiku">Claude 3.5 Haiku</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
              <div className="flex gap-2 items-center">
               <Input
                 type="text"
@@ -129,6 +172,10 @@ export function YoutubeForm() {
   setVideoInfo(null);
   setError("");
   setSummaryExists(false);
+  
+  // Reset the current summary display
+  resetSummary();
+  
   // debounce
   if (videoFetchTimeout.current) clearTimeout(videoFetchTimeout.current);
   videoFetchTimeout.current = setTimeout(async () => {

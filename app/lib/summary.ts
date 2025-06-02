@@ -4,6 +4,34 @@
  */
 import OpenAI from 'openai';
 
+// AI 모델 타입 정의
+export type AIModel = 
+  | 'openai-gpt4' 
+  | 'claude-sonnet-4'
+  | 'claude-3-5-sonnet' 
+  | 'claude-3-5-haiku';
+
+// Claude 모델별 설정
+const CLAUDE_MODEL_CONFIG = {
+  'claude-sonnet-4': {
+    model: 'claude-sonnet-4-20250514',
+    maxTokens: 32000,
+    temperature: 0.7
+  },
+  'claude-3-5-sonnet': {
+    model: 'claude-3-5-sonnet-20241022',
+    maxTokens: 8192,
+    temperature: 0.7
+  },
+  'claude-3-5-haiku': {
+    model: 'claude-3-5-haiku-20241022',
+    maxTokens: 8192,
+    temperature: 0.7
+  }
+} as const;
+
+type ClaudeModel = keyof typeof CLAUDE_MODEL_CONFIG;
+
 // OpenAI 클라이언트 초기화
 const getOpenAIClient = () => {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -11,6 +39,45 @@ const getOpenAIClient = () => {
     throw new Error('OPENAI_API_KEY is missing');
   }
   return new OpenAI({ apiKey });
+};
+
+// Claude API 클라이언트 함수
+const callClaudeAPI = async (systemPrompt: string, userMessage: string, model: ClaudeModel): Promise<string> => {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error('ANTHROPIC_API_KEY is missing');
+  }
+
+  const config = CLAUDE_MODEL_CONFIG[model];
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: config.model,
+      max_tokens: config.maxTokens,
+      temperature: config.temperature,
+      system: systemPrompt,
+      messages: [
+        {
+          role: 'user',
+          content: userMessage
+        }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Claude API error: ${response.status} - ${error}`);
+  }
+
+  const data = await response.json();
+  return data.content[0]?.text || "요약을 생성할 수 없습니다.";
 };
 
 // 시스템 프롬프트 정의
@@ -79,32 +146,42 @@ const SYSTEM_PROMPT = `
 
 `;
 
-// Generate summary using OpenAI API
-export async function generateSummary(transcript: string): Promise<string> {
-  console.log(`[generateSummary] 입력 트랜스크립트 길이: ${transcript.length} 문자`);
+// Generate summary using selected AI model
+export async function generateSummary(transcript: string, model: AIModel = 'openai-gpt4'): Promise<string> {
+  console.log(`[generateSummary] 사용 모델: ${model}, 입력 트랜스크립트 길이: ${transcript.length} 문자`);
   console.log(`[generateSummary] 트랜스크립트 일부: ${transcript.slice(0, 100)}...`);
   
+  const userMessage = `다음은 유튜브 영상의 자막입니다. 위 지침에 따라 요약해주세요:\n\n${transcript}`;
+  
   try {
-    const openai = getOpenAIClient();
+    let summary: string;
     
-    console.log(`[generateSummary] OpenAI API 요청 시작...`);
-    const response = await openai.chat.completions.create({
-      model: "gpt-4.1-nano", // 또는 "gpt-3.5-turbo" 등 필요에 따라 모델 선택
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: `다음은 유튜브 영상의 자막입니다. 위 지침에 따라 요약해주세요:\n\n${transcript}` }
-      ],
-      temperature: 0.7,
-      max_tokens: 30000,
-    });
+    if (model.startsWith('claude')) {
+      console.log(`[generateSummary] Claude API 요청 시작...`);
+      summary = await callClaudeAPI(SYSTEM_PROMPT, userMessage, model as ClaudeModel);
+      console.log(`[generateSummary] Claude API 응답 받음, 요약 길이: ${summary.length} 문자`);
+    } else {
+      console.log(`[generateSummary] OpenAI API 요청 시작...`);
+      const openai = getOpenAIClient();
+      
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini", // 또는 "gpt-3.5-turbo" 등 필요에 따라 모델 선택
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: userMessage }
+        ],
+        temperature: 0.7,
+        max_tokens: 30000,
+      });
+      
+      summary = response.choices[0]?.message?.content || "요약을 생성할 수 없습니다.";
+      console.log(`[generateSummary] OpenAI API 응답 받음, 요약 길이: ${summary.length} 문자`);
+    }
     
-    const summary = response.choices[0]?.message?.content || "요약을 생성할 수 없습니다.";
-    console.log(`[generateSummary] OpenAI API 응답 받음, 요약 길이: ${summary.length} 문자`);
     console.log(`[generateSummary] 요약 일부: ${summary.slice(0, 100)}...`);
-    
     return summary;
   } catch (error) {
-    console.error(`[generateSummary] OpenAI API 오류:`, error);
+    console.error(`[generateSummary] ${model} API 오류:`, error);
     throw error;
   }
 }
@@ -125,4 +202,3 @@ export function formatSummaryAsMarkdown(summary: string, videoId: string): strin
   console.log(`[formatSummaryAsMarkdown] 변환된 마크다운 길이: ${markdown.length} 문자`);
   return markdown;
 }
-
