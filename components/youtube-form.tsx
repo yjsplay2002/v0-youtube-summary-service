@@ -166,40 +166,40 @@ export function YoutubeForm() {
                 type="text"
                 placeholder="Enter YouTube URL (e.g., https://www.youtube.com/watch?v=dQw4w9WgXcQ)"
                 value={youtubeUrl}
-                onChange={async (e) => {
+                onChange={(e) => {
+  // Only update the URL input - other state updates will be handled in the debounced function
   const value = e.target.value;
   setYoutubeUrl(value);
-  setVideoInfo(null);
-  setError("");
-  setSummaryExists(false);
   
-  // Reset the current summary display
-  resetSummary();
-  
-  // debounce
+  // debounce other state changes and API calls
   if (videoFetchTimeout.current) clearTimeout(videoFetchTimeout.current);
   videoFetchTimeout.current = setTimeout(async () => {
+    // Reset states at the beginning of the debounced function
+    setVideoInfo(null);
+    setError("");
+    setSummaryExists(false);
+    resetSummary();
+    
     const videoId = extractYoutubeVideoId(value);
     if (videoId) {
       try {
         setVideoLoading(true);
         const info = await fetchVideoDetailsServer(videoId);
         setVideoInfo(info.items[0]);
-      } catch (err) {
-        setVideoInfo(null);
-      } finally {
         setVideoLoading(false);
-      }
-      // summary DB 조회 후 있으면 즉시 페이지 이동
-      try {
+        
+        // Check if summary exists, but DON'T navigate automatically
+        // This prevents the infinite update loop
         const summary = await getSummary(videoId);
         if (summary && summary.trim() !== "") {
           setSummaryExists(true);
-          router.push(`/?videoId=${videoId}`);
+          // Don't call router.push here - let user click the button instead
         } else {
           setSummaryExists(false);
         }
       } catch (err) {
+        setVideoInfo(null);
+        setVideoLoading(false);
         setSummaryExists(false);
       }
     } else {
