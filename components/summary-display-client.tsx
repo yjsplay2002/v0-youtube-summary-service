@@ -4,13 +4,43 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Copy, Check } from "lucide-react"
+import { Copy, Check, MessageSquare } from "lucide-react"
 
 export function SummaryDisplayClient({ summary, seekTo }: { summary: string; seekTo: (seconds: number) => void }) {
   console.log("[SummaryDisplayClient] summary prop:", summary, "type:", typeof summary, "length:", summary?.length);
   const [copied, setCopied] = useState(false)
 
-  // 타임스탬프 버튼 클릭 시 호출
+  // Convert summary to interview format
+  const convertToInterview = (content: string): string => {
+    // Split content into sections
+    const sections = content.split('\n\n').filter(section => section.trim() !== '');
+    
+    let interview = '';
+    let currentSpeaker = 'Q';
+    
+    for (const section of sections) {
+      // Skip timestamps and section headers
+      if (section.startsWith('🕒') || section.startsWith('📝') || section.startsWith('---')) {
+        continue;
+      }
+      
+      // Skip empty sections
+      if (section.trim() === '') continue;
+      
+      // Add speaker label
+      interview += `<div class="mb-4">
+        <div class="font-semibold text-blue-600">${currentSpeaker}.</div>
+        <div class="ml-4">${section}</div>
+      </div>`;
+      
+      // Toggle between Q and A
+      currentSpeaker = currentSpeaker === 'Q' ? 'A' : 'Q';
+    }
+    
+    return interview || '<div class="text-muted-foreground">대화 형식으로 변환할 내용이 없습니다.</div>';
+  };
+
+  // Handle timestamp button clicks
   const handleTimestampClick = (seconds: number) => {
     seekTo(seconds);
   };
@@ -60,6 +90,7 @@ export function SummaryDisplayClient({ summary, seekTo }: { summary: string; see
         <Tabs defaultValue="preview">
           <TabsList className="mb-4">
             <TabsTrigger value="preview">Preview</TabsTrigger>
+            <TabsTrigger value="interview">Interview</TabsTrigger>
             <TabsTrigger value="markdown">Markdown</TabsTrigger>
           </TabsList>
           <TabsContent value="preview" className="prose max-w-none dark:prose-invert">
@@ -74,6 +105,12 @@ export function SummaryDisplayClient({ summary, seekTo }: { summary: string; see
                   if (!isNaN(seconds)) handleTimestampClick(seconds);
                 }
               }}
+            />
+          </TabsContent>
+          <TabsContent value="interview" className="prose max-w-none dark:prose-invert">
+            <div
+              dangerouslySetInnerHTML={{ __html: convertToInterview(summary) }}
+              className="space-y-4"
             />
           </TabsContent>
           <TabsContent value="markdown">
