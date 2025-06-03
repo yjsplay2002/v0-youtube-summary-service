@@ -4,9 +4,49 @@ import { extractVideoId, fetchTranscriptWithApi, fetchTranscriptLegacy, getVideo
 import { supabase } from "@/app/lib/supabase";
 import { generateSummary, formatSummaryAsMarkdown, type AIModel } from "./lib/summary";
 
-// Supabase에서 요약/자막/메타데이터 조회
+// Get current user from session
+async function getCurrentUser() {
+  try {
+    const { data: { session }, error } = await supabase.auth.getSession();
+    
+    if (error || !session) {
+      return null;
+    }
+    
+    return session.user;
+  } catch (error) {
+    console.error('Error getting current user:', error);
+    return null;
+  }
+}
+
+// Supabase에서 사용자별 요약 조회
+async function getUserVideoSummaryFromDB(videoId: string, userId: string) {
+  console.log(`[DB 조회] video_id: ${videoId}, user_id: ${userId}`);
+  const { data, error } = await supabase
+    .from('video_summaries')
+    .select('*')
+    .eq('video_id', videoId)
+    .eq('user_id', userId)
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116' && error.details && error.details.includes('0 rows')) {
+      console.log('[DB 조회 결과 없음]'); 
+      return null; 
+    } else {
+      console.error('[DB 조회 에러]', error);
+      return null; 
+    }
+  }
+  
+  console.log('[DB 조회 결과] 존재함');
+  return data;
+}
+
+// 기존 시스템 호환성을 위한 함수 (로그인하지 않은 사용자용)
 async function getYoutubeSummaryFromDB(videoId: string) {
-  console.log(`[DB 조회] video_id: ${videoId}`);
+  console.log(`[DB 조회 (레거시)] video_id: ${videoId}`);
   const { data, error } = await supabase
     .from('youtube_summaries')
     .select('*')
@@ -14,24 +54,56 @@ async function getYoutubeSummaryFromDB(videoId: string) {
     .single();
 
   if (error) {
-    // Check if the error is specifically "no rows found"
-    // PGRST116 with details containing "0 rows" indicates this for .single()
     if (error.code === 'PGRST116' && error.details && error.details.includes('0 rows')) {
       console.log('[DB 조회 결과 없음]'); 
       return null; 
     } else {
-      // For any other error (including PGRST116 for multiple rows, or other DB errors)
       console.error('[DB 조회 에러]', error);
       return null; 
     }
   }
   
-  // If no error, .single() guarantees that 'data' is not null and contains the single row.
   console.log('[DB 조회 결과] 존재함');
   return data;
 }
 
-// Supabase에 요약/자막/메타데이터 저장
+// Supabase에 사용자별 요약 저장
+async function upsertUserVideoSummaryToDB({ 
+  user_id, 
+  video_id, 
+  video_title, 
+  video_thumbnail, 
+  video_duration, 
+  summary, 
+  summary_prompt 
+}: {
+  user_id: string,
+  video_id: string,
+  video_title: string,
+  video_thumbnail?: string,
+  video_duration?: string,
+  summary: string,
+  summary_prompt?: string
+}) {
+  const { error } = await supabase.from('video_summaries').upsert([
+    { 
+      user_id, 
+      video_id, 
+      video_title, 
+      video_thumbnail, 
+      video_duration, 
+      summary, 
+      summary_prompt 
+    }
+  ]);
+  
+  if (error) {
+    console.error('[사용자별 요약 저장 에러]', error);
+    throw error;
+  }
+}
+
+// 기존 시스템 호환성을 위한 함수 (레거시)
 async function upsertYoutubeSummaryToDB({ video_id, transcript, summary, title, channel_title, thumbnail_url }: {
   video_id: string,
   transcript: string,
@@ -48,7 +120,8 @@ async function upsertYoutubeSummaryToDB({ video_id, transcript, summary, title, 
 // 서버 액션: 유튜브 URL을 받아 자막을 가져오고 요약을 생성
 export async function summarizeYoutubeVideo(
   youtubeUrl: string, 
-  aiModel: AIModel = 'claude-3-5-sonnet'
+  aiModel: AIModel = 'claude-3-5-sonnet',
+  summaryPrompt?: string
 ): Promise<{ success: boolean; videoId?: string; error?: string; summary?: string }> {
   console.log(`[summarizeYoutubeVideo] 요청 URL: ${youtubeUrl}, AI 모델: ${aiModel}`);
   try {
@@ -60,14 +133,27 @@ export async function summarizeYoutubeVideo(
     }
     console.log(`[summarizeYoutubeVideo] 추출된 videoId: ${videoId}`);
 
-    // 2. DB에서 기존 요약/자막/메타데이터 조회
-    const dbResult = await getYoutubeSummaryFromDB(videoId);
-    if (dbResult && dbResult.summary) {
-      console.log(`[summarizeYoutubeVideo] DB에서 기존 요약 반환 (videoId: ${videoId})`);
-      return { success: true, videoId, summary: dbResult.summary };
+    // 2. 현재 사용자 확인
+    const currentUser = await getCurrentUser();
+    
+    // 3. DB에서 기존 요약 조회 (사용자별 또는 전체)
+    let dbResult = null;
+    if (currentUser) {
+      dbResult = await getUserVideoSummaryFromDB(videoId, currentUser.id);
+      if (dbResult && dbResult.summary) {
+        console.log(`[summarizeYoutubeVideo] 사용자별 DB에서 기존 요약 반환 (videoId: ${videoId})`);
+        return { success: true, videoId, summary: dbResult.summary };
+      }
+    } else {
+      // 로그인하지 않은 사용자는 레거시 테이블에서 조회
+      dbResult = await getYoutubeSummaryFromDB(videoId);
+      if (dbResult && dbResult.summary) {
+        console.log(`[summarizeYoutubeVideo] 레거시 DB에서 기존 요약 반환 (videoId: ${videoId})`);
+        return { success: true, videoId, summary: dbResult.summary };
+      }
     }
 
-    // 3. 자막 가져오기 (YouTube Data API v3 사용)
+    // 4. 자막 가져오기 (YouTube Data API v3 사용)
     console.log(`[summarizeYoutubeVideo] fetchTranscriptWithApi 시도 중...`);
     const apiKey = process.env.YOUTUBE_API_KEY || "";
     let transcript = await fetchTranscriptWithApi(videoId);
@@ -84,28 +170,44 @@ export async function summarizeYoutubeVideo(
     
     console.log(`[summarizeYoutubeVideo] 자막 가져오기 성공, 길이: ${transcript.length} 문자`);
 
-    // 4. 요약 생성
+    // 5. 요약 생성
     console.log(`[summarizeYoutubeVideo] 요약 생성 시작... (모델: ${aiModel})`);
-    const summary = await generateSummary(transcript, aiModel);
+    const summary = await generateSummary(transcript, aiModel, summaryPrompt);
     const markdown = formatSummaryAsMarkdown(summary, videoId);
     
-    // 5. 비디오 메타데이터 가져오기
+    // 6. 비디오 메타데이터 가져오기
     const videoDetails = await getVideoDetails(videoId, apiKey);
     const snippet = videoDetails?.items?.[0]?.snippet || {};
     const title = snippet.title || "";
     const channel_title = snippet.channelTitle || "";
     const thumbnail_url = snippet.thumbnails?.medium?.url || "";
+    const duration = videoDetails?.items?.[0]?.contentDetails?.duration || "";
 
-    // 6. Supabase에 저장
-    await upsertYoutubeSummaryToDB({
-      video_id: videoId,
-      transcript,
-      summary: markdown,
-      title,
-      channel_title,
-      thumbnail_url
-    });
-    console.log(`[summarizeYoutubeVideo] Supabase에 요약 결과 저장 완료: ${videoId}`);
+    // 7. Supabase에 저장
+    if (currentUser) {
+      // 로그인한 사용자는 개인 테이블에 저장
+      await upsertUserVideoSummaryToDB({
+        user_id: currentUser.id,
+        video_id: videoId,
+        video_title: title,
+        video_thumbnail: thumbnail_url,
+        video_duration: duration,
+        summary: markdown,
+        summary_prompt: summaryPrompt
+      });
+      console.log(`[summarizeYoutubeVideo] 사용자별 Supabase에 요약 결과 저장 완료: ${videoId}`);
+    } else {
+      // 로그인하지 않은 사용자는 레거시 테이블에 저장
+      await upsertYoutubeSummaryToDB({
+        video_id: videoId,
+        transcript,
+        summary: markdown,
+        title,
+        channel_title,
+        thumbnail_url
+      });
+      console.log(`[summarizeYoutubeVideo] 레거시 Supabase에 요약 결과 저장 완료: ${videoId}`);
+    }
     
     return { success: true, videoId, summary: markdown };
   } catch (err) {
@@ -114,15 +216,29 @@ export async function summarizeYoutubeVideo(
   }
 }
 
-// 요약 가져오기 함수 (Supabase)
+// 요약 가져오기 함수 (사용자별 또는 레거시)
 export async function getSummary(videoId: string): Promise<string | null> {
   console.log(`[getSummary] 요청 videoId: ${videoId}`);
   try {
-    const dbResult = await getYoutubeSummaryFromDB(videoId);
-    if (dbResult && dbResult.summary) {
-      console.log(`[getSummary] DB에서 요약 반환: ${videoId}`);
-      return dbResult.summary;
+    const currentUser = await getCurrentUser();
+    
+    let dbResult = null;
+    if (currentUser) {
+      // 로그인한 사용자는 개인 요약에서 조회
+      dbResult = await getUserVideoSummaryFromDB(videoId, currentUser.id);
+      if (dbResult && dbResult.summary) {
+        console.log(`[getSummary] 사용자별 DB에서 요약 반환: ${videoId}`);
+        return dbResult.summary;
+      }
+    } else {
+      // 로그인하지 않은 사용자는 레거시 테이블에서 조회
+      dbResult = await getYoutubeSummaryFromDB(videoId);
+      if (dbResult && dbResult.summary) {
+        console.log(`[getSummary] 레거시 DB에서 요약 반환: ${videoId}`);
+        return dbResult.summary;
+      }
     }
+    
     console.log(`[getSummary] DB에 요약 없음: ${videoId}`);
     return null;
   } catch (err) {
@@ -138,20 +254,45 @@ export async function fetchVideoDetailsServer(videoId: string) {
   return await getVideoDetails(videoId, apiKey);
 }
 
-// 모든 요약 목록 가져오기 서버 액션
+// 사용자별 요약 목록 가져오기 서버 액션
 export async function getAllSummaries() {
   try {
-    const { data, error } = await supabase
-      .from('youtube_summaries')
-      .select('video_id, title, channel_title, thumbnail_url, created_at')
-      .order('created_at', { ascending: false });
+    const currentUser = await getCurrentUser();
     
-    if (error) {
-      console.error('[getAllSummaries] DB 조회 에러:', error);
-      return [];
+    if (currentUser) {
+      // 로그인한 사용자는 개인 요약 목록 조회
+      const { data, error } = await supabase
+        .from('video_summaries')
+        .select('video_id, video_title, video_thumbnail, created_at')
+        .eq('user_id', currentUser.id)
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('[getAllSummaries] 사용자별 DB 조회 에러:', error);
+        return [];
+      }
+      
+      return data?.map(item => ({
+        video_id: item.video_id,
+        title: item.video_title,
+        channel_title: '', // 새 테이블에는 channel_title이 없으므로 빈 문자열
+        thumbnail_url: item.video_thumbnail || '',
+        created_at: item.created_at
+      })) || [];
+    } else {
+      // 로그인하지 않은 사용자는 레거시 테이블에서 조회
+      const { data, error } = await supabase
+        .from('youtube_summaries')
+        .select('video_id, title, channel_title, thumbnail_url, created_at')
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('[getAllSummaries] 레거시 DB 조회 에러:', error);
+        return [];
+      }
+      
+      return data || [];
     }
-    
-    return data || [];
   } catch (err) {
     console.error('[getAllSummaries] 오류 발생:', err);
     return [];

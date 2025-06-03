@@ -8,6 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { PanelLeftClose, PanelLeftOpen, FileText, Calendar, User, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useSummaryContext } from "@/components/summary-context";
+import { AuthButton } from "@/components/auth-button";
 
 type Summary = {
   video_id: string;
@@ -230,7 +231,10 @@ export function SidebarNavigation({ currentVideoId }: SidebarNavigationProps) {
           </ScrollArea>
 
           {/* Footer */}
-          <div className="p-4 border-t border-sidebar-border">
+          <div className="p-4 border-t border-sidebar-border space-y-3">
+            <div className="flex justify-center">
+              <AuthButton />
+            </div>
             {!isCollapsed && (
               <p className="text-xs text-sidebar-foreground/60 text-center">
                 총 {summaries.length}개의 요약
