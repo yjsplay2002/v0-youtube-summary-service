@@ -115,12 +115,19 @@ const getSystemPrompt = async (): Promise<string> => {
 };
 
 // Generate summary using selected AI model
-export async function generateSummary(transcript: string, model: AIModel = 'openai-gpt4'): Promise<string> {
+export async function generateSummary(transcript: string, model: AIModel = 'openai-gpt4', summaryPrompt?: string): Promise<string> {
   console.log(`[generateSummary] 사용 모델: ${model}, 입력 트랜스크립트 길이: ${transcript.length} 문자`);
   console.log(`[generateSummary] 트랜스크립트 일부: ${transcript.slice(0, 100)}...`);
   
   const systemPrompt = await getSystemPrompt();
-  const userMessage = `다음은 유튜브 영상의 자막입니다. 위 지침에 따라 요약해주세요:\n\n${transcript}`;
+  let userMessage = '';
+  
+  if (summaryPrompt) {
+    console.log(`[generateSummary] 커스텀 요약 프롬프트 사용: ${summaryPrompt.slice(0, 50)}...`);
+    userMessage = `다음은 유튜브 영상의 자막입니다. 위 지침에 따라 요약해주세요.\n\n요약 지침: ${summaryPrompt}\n\n자막 내용:\n${transcript}`;
+  } else {
+    userMessage = `다음은 유튜브 영상의 자막입니다. 위 지침에 따라 요약해주세요:\n\n${transcript}`;
+  }
   
   try {
     let summary: string;
