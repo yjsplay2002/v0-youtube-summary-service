@@ -84,13 +84,29 @@ export function SidebarNavigation({ currentVideoId }: SidebarNavigationProps) {
   };
 
   return (
-    <div
-      className={`h-screen bg-sidebar-background transition-all duration-300 flex flex-col ${
-        isCollapsed ? "w-16" : "w-80"
-      } ${isMobile && isCollapsed ? "fixed z-50" : ""} ${
-        !(isMobile && isCollapsed) ? "border-r border-sidebar-border" : ""
-      }`}
-    >
+    <>
+      {/* Floating toggle button for mobile */}
+      {isMobile && (
+        <button
+          onClick={toggleSidebar}
+          className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center"
+          aria-label={isCollapsed ? "Open sidebar" : "Close sidebar"}
+        >
+          {isCollapsed ? (
+            <PanelLeftOpen className="h-5 w-5" />
+          ) : (
+            <PanelLeftClose className="h-5 w-5" />
+          )}
+        </button>
+      )}
+      
+      <div
+        className={`h-screen bg-sidebar-background transition-all duration-300 flex flex-col ${
+          isCollapsed ? "w-16" : "w-80"
+        } ${isMobile ? "fixed right-0 z-40" : ""} ${
+          !(isMobile && isCollapsed) ? (isMobile ? "border-l border-sidebar-border" : "border-r border-sidebar-border") : ""
+        } ${isMobile && isCollapsed ? "translate-x-full" : ""}`}
+      >
       {/* Header */}
       <div className="p-4 border-b border-sidebar-border">
         <div className="flex items-center justify-between">
@@ -111,18 +127,20 @@ export function SidebarNavigation({ currentVideoId }: SidebarNavigationProps) {
                 <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
               </Button>
             )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={toggleSidebar}
-              className="p-2 hover:bg-sidebar-accent text-sidebar-foreground"
-            >
-              {isCollapsed ? (
-                <PanelLeftOpen className="h-5 w-5" />
-              ) : (
-                <PanelLeftClose className="h-5 w-5" />
-              )}
-            </Button>
+            {!isMobile && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={toggleSidebar}
+                className="p-2 hover:bg-sidebar-accent text-sidebar-foreground"
+              >
+                {isCollapsed ? (
+                  <PanelLeftOpen className="h-5 w-5" />
+                ) : (
+                  <PanelLeftClose className="h-5 w-5" />
+                )}
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -243,6 +261,7 @@ export function SidebarNavigation({ currentVideoId }: SidebarNavigationProps) {
           </div>
         </>
       )}
-    </div>
+      </div>
+    </>
   );
 }
