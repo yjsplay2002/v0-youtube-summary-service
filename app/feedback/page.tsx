@@ -16,13 +16,13 @@ export default function FeedbackPage() {
   } : null
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="absolute top-4 left-4 z-10">
+    <div className="min-h-screen bg-slate-950">
+      <div className="absolute top-6 left-6 z-10">
         <Link href="/">
           <Button 
             variant="outline" 
-            size="sm"
-            className="gap-2 bg-white/80 backdrop-blur-sm hover:bg-white"
+            size="default"
+            className="gap-2 bg-slate-900/90 border-slate-700 text-slate-200 backdrop-blur-sm hover:bg-slate-800 hover:border-slate-600 hover:text-white transition-all duration-200"
           >
             <Home className="h-4 w-4" />
             Home
