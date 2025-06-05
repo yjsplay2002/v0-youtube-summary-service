@@ -29,9 +29,22 @@ export interface Database {
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
+// 일반 클라이언트 (RLS 적용됨)
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
   },
 });
+
+// 관리자 클라이언트 (RLS 우회) - 서버 액션에서만 사용해야 함
+export const supabaseAdmin = createClient<Database>(
+  supabaseUrl,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseAnonKey,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  }
+);

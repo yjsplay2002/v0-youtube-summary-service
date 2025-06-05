@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Loader2, AlertCircle } from "lucide-react"
-import { summarizeYoutubeVideo, fetchVideoDetailsServer } from "@/app/actions"
+import { summarizeYoutubeVideo, fetchVideoDetailsServer, resummarizeYoutubeVideo } from "@/app/actions"
 import { getSummary } from "@/app/actions"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useRouter } from "next/navigation"
@@ -22,6 +22,7 @@ import { VideoPlayerProvider } from "@/components/VideoPlayerContext"
 import { createContext } from "react";
 import { useSummaryContext } from "@/components/summary-context";
 import { useResetContext } from "@/components/reset-context";
+import { useAuth } from "@/components/auth-context";
 
 export const LoadingContext = createContext(false);
 
@@ -41,6 +42,8 @@ export function YoutubeForm() {
   const router = useRouter()
   const { refreshSummaries } = useSummaryContext();
   const { resetSummary } = useResetContext();
+  const { user } = useAuth();
+  const isSpecialUser = user?.email === "yjs@lnrgame.com";
 
   // 영상 시킹 함수 (props/context로 전달 가능)
   const seekTo = (seconds: number) => {
@@ -68,7 +71,7 @@ export function YoutubeForm() {
     setShowApiKeyError(false)
 
     // Call the server action to process the YouTube URL
-    const result = await summarizeYoutubeVideo(youtubeUrl, selectedModel)
+    const result = await summarizeYoutubeVideo(youtubeUrl, selectedModel, undefined, user?.id)
 
     setLoadingStage("summary");
 
@@ -194,7 +197,7 @@ export function YoutubeForm() {
         
         // Check if summary exists, but don't update state immediately to prevent infinite loops
         try {
-          const summary = await getSummary(videoId);
+          const summary = await getSummary(videoId, user?.id);
           // Update summary existence state only after all other state updates are complete
           // Use a slight delay to avoid synchronization issues
           setTimeout(() => {
@@ -224,32 +227,92 @@ export function YoutubeForm() {
                 className="w-full"
                 disabled={isLoading}
               />
-              <Button type="submit" className="shrink-0" disabled={isLoading || summaryExists} style={{minWidth:120}}>
-  {summaryExists ? (
-    "Already summarized"
-  ) : isLoading ? (
-    loadingStage === "transcript" ? (
-      <>
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        Fetching transcript...
-      </>
-    ) : loadingStage === "summary" ? (
-      <>
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        Summarizing...
-      </>
-    ) : (
-      <>
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-        Processing...
-      </>
-    )
-  ) : (
-    "Summarize Video"
-  )}
-</Button>
+              <div className="flex flex-col gap-2">
+                <Button type="submit" className="shrink-0" disabled={isLoading || summaryExists} style={{minWidth:120}}>
+                  Summarize
+                </Button>
+                {summaryExists && isSpecialUser && (
+                  <Button 
+                    type="button" 
+                    className="shrink-0" 
+                    variant="outline" 
+                    disabled={isLoading}
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      try {
+                        const videoId = extractYoutubeVideoId(youtubeUrl);
+                        if (!videoId) {
+                          setError("Please enter a valid YouTube URL");
+                          return;
+                        }
+                        
+                        setError("");
+                        setShowApiKeyError(false);
+                        
+                        // Check if user is logged in
+                        if (!user) {
+                          setError("로그인이 필요합니다.");
+                          setLoadingStage("none");
+                          return;
+                        }
+                        
+                        setIsLoading(true);
+                        setLoadingStage("summary");
+                        
+                        // Call the resummarizeYoutubeVideo server action
+                        const result = await resummarizeYoutubeVideo(videoId, user.id, selectedModel);
+                        
+                        if (result.success && result.videoId) {
+                          setLoadingStage("none");
+                          // Handle successful processing by navigating to the results page
+                          router.push(`/?videoId=${result.videoId}`);
+                          refreshSummaries();
+                        } else {
+                          setLoadingStage("none");
+                          // Handle error from server action
+                          if (result.error?.includes("OPENAI_API_KEY is missing") || result.error?.includes("ANTHROPIC_API_KEY is missing")) {
+                            setShowApiKeyError(true);
+                          } else {
+                            setError(result.error || "Failed to re-summarize the video");
+                          }
+                        }
+                      } catch (err) {
+                        setLoadingStage("none");
+                        console.error(err);
+                        const errorMessage = err instanceof Error ? err.message : "Failed to re-summarize the video";
+                        
+                        if (errorMessage.includes("OPENAI_API_KEY is missing") || errorMessage.includes("ANTHROPIC_API_KEY is missing")) {
+                          setShowApiKeyError(true);
+                        } else {
+                          setError(errorMessage);
+                        }
+                      } finally {
+                        setIsLoading(false);
+                        setLoadingStage("none");
+                      }
+                    }}
+                    style={{minWidth:120}}
+                  >
+                    Re-summarize
+                  </Button>
+                )}
+              </div>
             </div>
-            {error && <p className="text-sm text-red-500 mt-1">{error}</p>}
+            {/* Status text box */}
+            {summaryExists && (
+              <div className="text-sm text-amber-500 mt-2 p-2 border border-amber-200 rounded bg-amber-50 dark:bg-amber-950 dark:border-amber-800">
+                <AlertCircle className="inline-block mr-2 h-4 w-4" />
+                This video has already been summarized
+              </div>
+            )}
+            {isLoading && (
+              <div className="text-sm text-blue-500 mt-2 p-2 border border-blue-200 rounded bg-blue-50 dark:bg-blue-950 dark:border-blue-800">
+                <Loader2 className="inline-block mr-2 h-4 w-4 animate-spin" />
+                {loadingStage === "transcript" ? "Fetching transcript..." : 
+                 loadingStage === "summary" ? "Summarizing..." : "Processing..."}
+              </div>
+            )}
+            {error && <p className="text-sm text-red-500 mt-1 p-2 border border-red-200 rounded bg-red-50 dark:bg-red-950 dark:border-red-800">{error}</p>}
             {/* 영상 미리보기 */}
             {videoLoading && <div className="text-sm text-blue-500 mt-2">영상을 불러오는 중...</div>}
             {videoInfo && (

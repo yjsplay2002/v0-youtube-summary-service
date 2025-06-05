@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useRef, ReactNode } from 'react';
 
 interface SummaryContextType {
   refreshSummaries: () => void;
@@ -10,16 +10,16 @@ interface SummaryContextType {
 const SummaryContext = createContext<SummaryContextType | undefined>(undefined);
 
 export const SummaryProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [refreshCallback, setRefreshCallback] = useState<(() => void) | null>(null);
+  const refreshCallbackRef = useRef<(() => void) | null>(null);
 
   const refreshSummaries = () => {
-    if (refreshCallback) {
-      refreshCallback();
+    if (refreshCallbackRef.current) {
+      refreshCallbackRef.current();
     }
   };
 
   const registerRefreshCallback = (callback: () => void) => {
-    setRefreshCallback(() => callback);
+    refreshCallbackRef.current = callback;
   };
 
   return (

@@ -27,8 +27,8 @@ ALTER TABLE video_summaries ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can insert their own summaries" ON video_summaries
   FOR INSERT WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Users can view their own summaries" ON video_summaries
-  FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Users can view all summaries" ON video_summaries
+  FOR SELECT USING (true);
 
 CREATE POLICY "Users can update their own summaries" ON video_summaries
   FOR UPDATE USING (auth.uid() = user_id);

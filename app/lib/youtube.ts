@@ -111,29 +111,62 @@ export function extractVideoId(url: string): string | null {
   return videoId;
 }
 
-// Function to fetch video details from YouTube API
+// 비디오 상세 정보를 저장할 간단한 메모리 캐시
+const videoDetailsCache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5분 캐시 유지
+
+// Function to fetch video details from YouTube API with caching
 export async function getVideoDetails(videoId: string, apiKey: string) {
   console.log(`[getVideoDetails] 요청 videoId: ${videoId}`);
+  
+  // 캐시에서 확인
+  const cached = videoDetailsCache.get(videoId);
+  const now = Date.now();
+  
+  // 캐시가 있고 TTL 내에 있는 경우 캐시된 데이터 반환
+  if (cached && now - cached.timestamp < CACHE_TTL) {
+    console.log(`[getVideoDetails] 캐시된 비디오 정보 사용: ${videoId}`);
+    return { ...cached.data }; // 깊은 복사 반환
+  }
+  
+  // 캐시가 없거나 만료된 경우 API 호출
   const videoUrl = `https://www.googleapis.com/youtube/v3/videos?id=${videoId}&part=snippet&key=${apiKey}`;
-  console.log(`[getVideoDetails] API URL: ${videoUrl}`);
+  console.log(`[getVideoDetails] API 요청: ${videoUrl}`);
   
-  const response = await fetch(videoUrl);
-  console.log(`[getVideoDetails] 응답 상태: ${response.status} ${response.statusText}`);
-  
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`[getVideoDetails] API 오류: ${errorText}`);
-    throw new Error(`YouTube API error (${response.status}): ${errorText}`);
+  try {
+    const response = await fetch(videoUrl);
+    console.log(`[getVideoDetails] 응답 상태: ${response.status} ${response.statusText}`);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[getVideoDetails] API 오류: ${errorText}`);
+      throw new Error(`YouTube API error (${response.status}): ${errorText}`);
+    }
+    
+    const data = await response.json();
+    if (!data.items || data.items.length === 0) {
+      console.error(`[getVideoDetails] 비디오를 찾을 수 없음: ${videoId}`);
+      throw new Error('No video found with the specified ID');
+    }
+    
+    console.log(`[getVideoDetails] 성공적으로 비디오 정보 가져옴: ${data.items[0].snippet.title}`);
+    
+    // 캐시에 저장 (5분 TTL)
+    videoDetailsCache.set(videoId, {
+      data: { ...data }, // 깊은 복사 저장
+      timestamp: now
+    });
+    
+    return data;
+  } catch (error) {
+    console.error(`[getVideoDetails] 오류 발생:`, error);
+    // 캐시가 있고 에러가 발생한 경우 캐시된 데이터 반환 (사용 가능한 경우)
+    if (cached) {
+      console.log(`[getVideoDetails] 오류 발생으로 캐시된 데이터 반환: ${videoId}`);
+      return { ...cached.data }; // 깊은 복사 반환
+    }
+    throw error; // 캐시도 없는 경우 에러 전파
   }
-  
-  const data = await response.json();
-  if (!data.items || data.items.length === 0) {
-    console.error(`[getVideoDetails] 비디오를 찾을 수 없음: ${videoId}`);
-    throw new Error('No video found with the specified ID');
-  }
-  
-  console.log(`[getVideoDetails] 성공적으로 비디오 정보 가져옴: ${data.items[0].snippet.title}`);
-  return data;
 }
 
 // Function to fetch available caption tracks for a video
