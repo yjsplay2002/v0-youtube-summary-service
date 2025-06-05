@@ -22,6 +22,9 @@ export async function GET(request: NextRequest) {
   const code = requestUrl.searchParams.get('code');
   const next = requestUrl.searchParams.get('next') || '/';
 
+  console.log('Auth callback - URL:', requestUrl.toString());
+  console.log('Auth callback - next parameter:', next);
+
   if (code) {
     try {
       const { error } = await supabase.auth.exchangeCodeForSession(code);
@@ -36,5 +39,7 @@ export async function GET(request: NextRequest) {
   }
 
   // URL to redirect to after sign in process completes
-  return NextResponse.redirect(new URL(next, requestUrl.origin).toString());
+  const redirectUrl = new URL(next, requestUrl.origin).toString();
+  console.log('Auth callback - redirecting to:', redirectUrl);
+  return NextResponse.redirect(redirectUrl);
 }

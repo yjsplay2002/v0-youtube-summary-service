@@ -58,6 +58,7 @@ async function upsertUserVideoSummaryToDB({
   video_title, 
   video_thumbnail, 
   video_duration, 
+  channel_title,
   summary, 
   summary_prompt 
 }: {
@@ -66,6 +67,7 @@ async function upsertUserVideoSummaryToDB({
   video_title: string,
   video_thumbnail?: string,
   video_duration?: string,
+  channel_title?: string,
   summary: string,
   summary_prompt?: string
 }) {
@@ -78,6 +80,7 @@ async function upsertUserVideoSummaryToDB({
     video_title: video_title.substring(0, 30) + (video_title.length > 30 ? '...' : ''),
     video_thumbnail: video_thumbnail || '',
     video_duration: video_duration || '',
+    channel_title: channel_title || '',
     summary_length: summary ? summary.length : 0,
     summary_prompt: summary_prompt || ''
   });
@@ -93,6 +96,7 @@ async function upsertUserVideoSummaryToDB({
         video_title, 
         video_thumbnail, 
         video_duration, 
+        channel_title,
         summary, 
         summary_prompt 
       }
@@ -198,6 +202,7 @@ export async function summarizeYoutubeVideo(
         video_title: title,
         video_thumbnail: thumbnail_url,
         video_duration: duration,
+        channel_title: channel_title,
         summary: markdown,
         summary_prompt: summaryPrompt
       });
@@ -384,6 +389,7 @@ export async function resummarizeYoutubeVideo(
       video_title: title,
       video_thumbnail: thumbnail_url,
       video_duration: duration,
+      channel_title: channel_title,
       summary: markdown,
       summary_prompt: summaryPrompt
     });
@@ -405,7 +411,7 @@ export async function getAllSummaries(userId?: string) {
       // supabaseAdmin 클라이언트로 RLS 우회하여 조회
 const { data, error } = await supabaseAdmin
 .from('video_summaries')
-.select('video_id, video_title, video_thumbnail, created_at')
+.select('video_id, video_title, video_thumbnail, channel_title, created_at')
 .eq('user_id', userId)
 .order('created_at', { ascending: false });
       
@@ -419,7 +425,7 @@ const { data, error } = await supabaseAdmin
       return data?.map(item => ({
         video_id: item.video_id,
         title: item.video_title,
-        channel_title: '', // 새 테이블에는 channel_title이 없으므로 빈 문자열
+        channel_title: item.channel_title || '',
         thumbnail_url: item.video_thumbnail || '',
         created_at: item.created_at
       })) || [];
