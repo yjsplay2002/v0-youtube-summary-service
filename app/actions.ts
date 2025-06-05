@@ -2,7 +2,7 @@
 
 import { extractVideoId, fetchTranscriptWithApi, fetchTranscriptLegacy, getVideoDetails } from "./lib/youtube";
 import { supabase, supabaseAdmin } from "@/app/lib/supabase";
-import { generateSummary, formatSummaryAsMarkdown, type AIModel } from "./lib/summary";
+import { generateSummary, formatSummaryAsMarkdown, type AIModel, type PromptType } from "./lib/summary";
 
 // Supabase에서 사용자별 요약 조회
 async function getUserVideoSummaryFromDB(videoId: string, userId: string) {
@@ -134,7 +134,8 @@ export async function summarizeYoutubeVideo(
   youtubeUrl: string, 
   aiModel: AIModel = 'claude-3-5-sonnet',
   summaryPrompt?: string,
-  userId?: string
+  userId?: string,
+  promptType: PromptType = 'general_summary'
 ): Promise<{ success: boolean; videoId?: string; error?: string; summary?: string }> {
   console.log(`[summarizeYoutubeVideo] 요청 URL: ${youtubeUrl}, AI 모델: ${aiModel}, userId: ${userId || 'anonymous'}`);
   try {
@@ -181,8 +182,8 @@ export async function summarizeYoutubeVideo(
     console.log(`[summarizeYoutubeVideo] 자막 가져오기 성공, 길이: ${transcript.length} 문자`);
 
     // 5. 요약 생성
-    console.log(`[summarizeYoutubeVideo] 요약 생성 시작... (모델: ${aiModel})`);
-    const summary = await generateSummary(transcript, aiModel, summaryPrompt);
+    console.log(`[summarizeYoutubeVideo] 요약 생성 시작... (모델: ${aiModel}, 프롬프트 타입: ${promptType})`);
+    const summary = await generateSummary(transcript, aiModel, summaryPrompt, promptType);
     const markdown = formatSummaryAsMarkdown(summary, videoId);
     
     // 6. 비디오 메타데이터 가져오기
@@ -320,7 +321,8 @@ export async function resummarizeYoutubeVideo(
   videoId: string,
   userId: string,
   aiModel: AIModel = 'claude-3-5-sonnet',
-  summaryPrompt?: string
+  summaryPrompt?: string,
+  promptType: PromptType = 'general_summary'
 ): Promise<{ success: boolean; videoId?: string; error?: string; summary?: string }> {
   console.log(`[resummarizeYoutubeVideo] 요청 videoId: ${videoId}, userId: ${userId}, AI 모델: ${aiModel}`);
   try {
@@ -378,8 +380,8 @@ export async function resummarizeYoutubeVideo(
     }
     
     // 4. 요약 생성
-    console.log(`[resummarizeYoutubeVideo] 요약 생성 시작: ${videoId}`);
-    const summary = await generateSummary(transcript, aiModel, summaryPrompt);
+    console.log(`[resummarizeYoutubeVideo] 요약 생성 시작: ${videoId}, 프롬프트 타입: ${promptType}`);
+    const summary = await generateSummary(transcript, aiModel, summaryPrompt, promptType);
     const markdown = formatSummaryAsMarkdown(summary, videoId);
     
     // 5. Supabase에 저장
@@ -449,6 +451,34 @@ const { data, error } = await supabaseAdmin
     }
   } catch (err) {
     console.error('[getAllSummaries] 오류 발생:', err);
+    return [];
+  }
+}
+
+// 사용 가능한 프롬프트 타입 목록 가져오기
+export async function getAvailablePromptTypes(): Promise<Array<{type: string, title: string, description: string}>> {
+  try {
+    console.log('[getAvailablePromptTypes] 프롬프트 타입 목록 조회');
+    const { data, error } = await supabase
+      .from('system_prompts')
+      .select('prompt_type, title, description')
+      .eq('is_active', true)
+      .order('prompt_type', { ascending: true });
+    
+    if (error) {
+      console.error('[getAvailablePromptTypes] DB 조회 에러:', error);
+      return [];
+    }
+    
+    console.log(`[getAvailablePromptTypes] 조회 결과: ${data?.length || 0}개 프롬프트 타입`);
+    
+    return data?.map(item => ({
+      type: item.prompt_type,
+      title: item.title,
+      description: item.description || ''
+    })) || [];
+  } catch (err) {
+    console.error('[getAvailablePromptTypes] 오류 발생:', err);
     return [];
   }
 }
