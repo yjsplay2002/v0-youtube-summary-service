@@ -5,7 +5,7 @@ import { getAllSummaries } from "@/app/actions";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { PanelLeftClose, PanelLeftOpen, FileText, Calendar, User, RefreshCw } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, FileText, Calendar, User, RefreshCw, MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { useSummaryContext } from "@/components/summary-context";
 import { AuthButton } from "@/components/auth-button";
@@ -284,9 +284,20 @@ export function SidebarNavigation({ currentVideoId }: SidebarNavigationProps) {
         {!isCollapsed && (
           <>
             <Separator className="bg-sidebar-border mt-auto" />
-            <div className="p-4 text-xs text-sidebar-muted-foreground">
-              <p>&copy; {new Date().getFullYear()} YouTube Summarizer</p>
-              <p>AI Model: Claude 3.5 Sonnet</p> 
+            <div className="p-4 space-y-2">
+              <Link href="/feedback">
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start gap-2 text-sidebar-foreground border-sidebar-border hover:bg-sidebar-hover-background"
+                >
+                  <MessageSquare className="h-4 w-4" />
+                  Community Feedback
+                </Button>
+              </Link>
+              <div className="text-xs text-sidebar-muted-foreground">
+                <p>&copy; {new Date().getFullYear()} YouTube Summarizer</p>
+                <p>AI Model: Claude 3.5 Sonnet</p> 
+              </div>
             </div>
           </>
         )}
