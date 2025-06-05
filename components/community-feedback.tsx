@@ -132,18 +132,25 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
         .eq('post_id', postId)
         .single()
 
+      let voteAction: 'add' | 'remove' | 'change' = 'add'
+      let oldVoteType: string | null = null
+
       if (existingVote) {
-        // Update existing vote or remove if same type
+        oldVoteType = existingVote.vote_type
         if (existingVote.vote_type === voteType) {
+          // Remove existing vote (user clicked same button)
           await feedbackSupabase
             .from('feedback_votes')
             .delete()
             .eq('id', existingVote.id)
+          voteAction = 'remove'
         } else {
+          // Change vote type (user clicked opposite button)
           await feedbackSupabase
             .from('feedback_votes')
             .update({ vote_type: voteType })
             .eq('id', existingVote.id)
+          voteAction = 'change'
         }
       } else {
         // Insert new vote
@@ -154,19 +161,30 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
             post_id: postId,
             vote_type: voteType
           }])
+        voteAction = 'add'
       }
 
-      // Update post vote counts
-      const post = posts.find(p => p.id === postId)
-      if (post) {
-        const increment = voteType === 'upvote' ? 1 : -1
-        const field = voteType === 'upvote' ? 'upvotes' : 'downvotes'
-        
-        await feedbackSupabase
-          .from('feedback_posts')
-          .update({ [field]: post[field] + increment })
-          .eq('id', postId)
-      }
+      // Recalculate vote counts from database
+      const { data: upvoteCount } = await feedbackSupabase
+        .from('feedback_votes')
+        .select('*', { count: 'exact' })
+        .eq('post_id', postId)
+        .eq('vote_type', 'upvote')
+
+      const { data: downvoteCount } = await feedbackSupabase
+        .from('feedback_votes')
+        .select('*', { count: 'exact' })
+        .eq('post_id', postId)
+        .eq('vote_type', 'downvote')
+
+      // Update post with accurate counts
+      await feedbackSupabase
+        .from('feedback_posts')
+        .update({
+          upvotes: upvoteCount?.length || 0,
+          downvotes: downvoteCount?.length || 0
+        })
+        .eq('id', postId)
 
       fetchPosts()
     } catch (error) {
