@@ -164,16 +164,16 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
         voteAction = 'add'
       }
 
-      // Recalculate vote counts from database
-      const { data: upvoteCount } = await feedbackSupabase
+      // Recalculate vote counts from database using count queries
+      const { count: upvoteCount } = await feedbackSupabase
         .from('feedback_votes')
-        .select('*', { count: 'exact' })
+        .select('*', { count: 'exact', head: true })
         .eq('post_id', postId)
         .eq('vote_type', 'upvote')
 
-      const { data: downvoteCount } = await feedbackSupabase
+      const { count: downvoteCount } = await feedbackSupabase
         .from('feedback_votes')
-        .select('*', { count: 'exact' })
+        .select('*', { count: 'exact', head: true })
         .eq('post_id', postId)
         .eq('vote_type', 'downvote')
 
@@ -181,8 +181,8 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
       await feedbackSupabase
         .from('feedback_posts')
         .update({
-          upvotes: upvoteCount?.length || 0,
-          downvotes: downvoteCount?.length || 0
+          upvotes: upvoteCount || 0,
+          downvotes: downvoteCount || 0
         })
         .eq('id', postId)
 
