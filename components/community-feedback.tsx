@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { ArrowUp, ArrowDown, MessageCircle, Plus, User } from 'lucide-react'
+import { ArrowUp, ArrowDown, MessageCircle, Plus, User, Edit, Trash2, X, Check } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 
 interface CommunityFeedbackProps {
@@ -30,6 +30,9 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
   const [comments, setComments] = useState<Record<string, FeedbackComment[]>>({})
   const [newComment, setNewComment] = useState<Record<string, string>>({})
   const [userVotes, setUserVotes] = useState<Record<string, 'upvote' | 'downvote' | null>>({})
+  const [editingPost, setEditingPost] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editContent, setEditContent] = useState('')
 
   useEffect(() => {
     fetchPosts()
@@ -175,6 +178,8 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
         return
       }
 
+      let voteDelta = { upvotes: 0, downvotes: 0 }
+
       if (existingVote) {
         if (existingVote.vote_type === voteType) {
           // User clicked same vote type - remove the vote
@@ -185,6 +190,16 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
             .eq('post_id', postId)
 
           if (deleteError) throw deleteError
+
+          // Calculate vote delta for removal
+          if (voteType === 'upvote') {
+            voteDelta = { upvotes: -1, downvotes: 0 }
+          } else {
+            voteDelta = { upvotes: 0, downvotes: -1 }
+          }
+
+          // Update local user vote state
+          setUserVotes(prev => ({ ...prev, [postId]: null }))
         } else {
           // User clicked opposite vote type - update the vote
           const { error: updateError } = await feedbackSupabase
@@ -194,6 +209,16 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
             .eq('post_id', postId)
 
           if (updateError) throw updateError
+
+          // Calculate vote delta for change
+          if (voteType === 'upvote') {
+            voteDelta = { upvotes: 1, downvotes: -1 }
+          } else {
+            voteDelta = { upvotes: -1, downvotes: 1 }
+          }
+
+          // Update local user vote state
+          setUserVotes(prev => ({ ...prev, [postId]: voteType }))
         }
       } else {
         // No existing vote - create new vote
@@ -206,29 +231,130 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
           })
 
         if (insertError) throw insertError
-      }
 
-      // Update local user vote state immediately
-      if (existingVote) {
-        if (existingVote.vote_type === voteType) {
-          // Vote was removed
-          setUserVotes(prev => ({ ...prev, [postId]: null }))
+        // Calculate vote delta for new vote
+        if (voteType === 'upvote') {
+          voteDelta = { upvotes: 1, downvotes: 0 }
         } else {
-          // Vote was changed
-          setUserVotes(prev => ({ ...prev, [postId]: voteType }))
+          voteDelta = { upvotes: 0, downvotes: 1 }
         }
-      } else {
-        // New vote was added
+
+        // Update local user vote state
         setUserVotes(prev => ({ ...prev, [postId]: voteType }))
       }
 
-      // Recalculate and update vote counts
+      // Update posts state immediately with calculated delta
+      setPosts(prevPosts => 
+        prevPosts.map(post => 
+          post.id === postId 
+            ? { 
+                ...post, 
+                upvotes: Math.max(0, post.upvotes + voteDelta.upvotes),
+                downvotes: Math.max(0, post.downvotes + voteDelta.downvotes)
+              }
+            : post
+        )
+      )
+
+      // Update database vote counts
       await updateVoteCounts(postId)
-      
-      // Refresh posts to show updated counts
-      fetchPosts()
     } catch (error) {
       console.error('Error handling vote:', error)
+      // Revert local state on error by refetching
+      fetchPosts()
+    }
+  }
+
+  const startEditPost = (post: FeedbackPost) => {
+    setEditingPost(post.id)
+    setEditTitle(post.title)
+    setEditContent(post.content)
+  }
+
+  const cancelEditPost = () => {
+    setEditingPost(null)
+    setEditTitle('')
+    setEditContent('')
+  }
+
+  const saveEditPost = async () => {
+    if (!currentUser || !editingPost || !editTitle.trim() || !editContent.trim()) return
+
+    try {
+      const { error } = await feedbackSupabase
+        .from('feedback_posts')
+        .update({
+          title: editTitle.trim(),
+          content: editContent.trim()
+        })
+        .eq('id', editingPost)
+        .eq('user_id', currentUser.id)
+
+      if (error) throw error
+
+      // Update local state
+      setPosts(prevPosts => 
+        prevPosts.map(post => 
+          post.id === editingPost 
+            ? { ...post, title: editTitle.trim(), content: editContent.trim() }
+            : post
+        )
+      )
+
+      cancelEditPost()
+    } catch (error) {
+      console.error('Error updating post:', error)
+    }
+  }
+
+  const deletePost = async (postId: string) => {
+    if (!currentUser || !confirm('Are you sure you want to delete this post?')) return
+
+    try {
+      // Delete votes first
+      const { error: votesError } = await feedbackSupabase
+        .from('feedback_votes')
+        .delete()
+        .eq('post_id', postId)
+
+      if (votesError) throw votesError
+
+      // Delete comments
+      const { error: commentsError } = await feedbackSupabase
+        .from('feedback_comments')
+        .delete()
+        .eq('post_id', postId)
+
+      if (commentsError) throw commentsError
+
+      // Delete post
+      const { error: postError } = await feedbackSupabase
+        .from('feedback_posts')
+        .delete()
+        .eq('id', postId)
+        .eq('user_id', currentUser.id)
+
+      if (postError) throw postError
+
+      // Remove from local state
+      setPosts(prevPosts => prevPosts.filter(post => post.id !== postId))
+      
+      // Clean up related state
+      setComments(prev => {
+        const newComments = { ...prev }
+        delete newComments[postId]
+        return newComments
+      })
+      setUserVotes(prev => {
+        const newVotes = { ...prev }
+        delete newVotes[postId]
+        return newVotes
+      })
+      if (expandedPost === postId) {
+        setExpandedPost(null)
+      }
+    } catch (error) {
+      console.error('Error deleting post:', error)
     }
   }
 
@@ -382,25 +508,87 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
                 </div>
 
                 <div className="flex-1">
-                  <h3 className="font-semibold text-xl mb-3 text-slate-100">{post.title}</h3>
-                  <p className="text-slate-300 mb-4 whitespace-pre-wrap leading-relaxed">{post.content}</p>
-                  
-                  <div className="flex items-center gap-6 text-sm text-slate-400">
-                    <div className="flex items-center gap-2">
-                      <User className="h-4 w-4" />
-                      <span className="text-slate-300">{post.user_name || post.user_email || 'Anonymous'}</span>
+                  {editingPost === post.id ? (
+                    <div className="space-y-4">
+                      <Input
+                        value={editTitle}
+                        onChange={(e) => setEditTitle(e.target.value)}
+                        className="bg-slate-800 border-slate-700 text-slate-100 placeholder:text-slate-400 focus:border-blue-500 focus:ring-blue-500/20"
+                      />
+                      <Textarea
+                        value={editContent}
+                        onChange={(e) => setEditContent(e.target.value)}
+                        rows={5}
+                        className="bg-slate-800 border-slate-700 text-slate-100 placeholder:text-slate-400 focus:border-blue-500 focus:ring-blue-500/20 resize-none"
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={saveEditPost}
+                          disabled={!editTitle.trim() || !editContent.trim()}
+                          size="sm"
+                          className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 disabled:bg-slate-700 disabled:text-slate-400"
+                        >
+                          <Check className="h-4 w-4 mr-1" />
+                          Save
+                        </Button>
+                        <Button
+                          onClick={cancelEditPost}
+                          variant="outline"
+                          size="sm"
+                          className="border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-slate-100 px-3 py-1"
+                        >
+                          <X className="h-4 w-4 mr-1" />
+                          Cancel
+                        </Button>
+                      </div>
                     </div>
-                    <span>{formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}</span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => toggleComments(post.id)}
-                      className="gap-2 h-auto p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800"
-                    >
-                      <MessageCircle className="h-4 w-4" />
-                      {comments[post.id]?.length || 0} comments
-                    </Button>
-                  </div>
+                  ) : (
+                    <>
+                      <div className="flex items-start justify-between mb-3">
+                        <h3 className="font-semibold text-xl text-slate-100">{post.title}</h3>
+                        {currentUser && currentUser.id === post.user_id && (
+                          <div className="flex gap-1 ml-4">
+                            <Button
+                              onClick={() => startEditPost(post)}
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              onClick={() => deletePost(post.id)}
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 p-0 text-slate-400 hover:text-red-400 hover:bg-red-500/10"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-slate-300 mb-4 whitespace-pre-wrap leading-relaxed">{post.content}</p>
+                    </>
+                  )}
+                  
+                  {editingPost !== post.id && (
+                    <div className="flex items-center gap-6 text-sm text-slate-400">
+                      <div className="flex items-center gap-2">
+                        <User className="h-4 w-4" />
+                        <span className="text-slate-300">{post.user_name || post.user_email || 'Anonymous'}</span>
+                      </div>
+                      <span>{formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => toggleComments(post.id)}
+                        className="gap-2 h-auto p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                      >
+                        <MessageCircle className="h-4 w-4" />
+                        {comments[post.id]?.length || 0} comments
+                      </Button>
+                    </div>
+                  )}
 
                   {expandedPost === post.id && (
                     <div className="mt-6 space-y-4 border-t border-slate-800 pt-6">
