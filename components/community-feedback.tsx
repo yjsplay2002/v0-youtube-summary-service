@@ -39,12 +39,22 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
     try {
       const { data, error } = await feedbackSupabase
         .from('feedback_posts')
-        .select('*')
+        .select(`
+          *,
+          comment_count:feedback_comments(count)
+        `)
         .eq('service_name', serviceName)
         .order('created_at', { ascending: false })
 
       if (error) throw error
-      setPosts(data || [])
+      
+      // Transform the data to include comment_count as a number
+      const transformedData = data?.map(post => ({
+        ...post,
+        comment_count: post.comment_count?.[0]?.count || 0
+      })) || []
+      
+      setPosts(transformedData)
     } catch (error) {
       console.error('Error fetching posts:', error)
     } finally {
@@ -326,7 +336,7 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
                       className="gap-2 h-auto p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800"
                     >
                       <MessageCircle className="h-4 w-4" />
-                      {comments[post.id]?.length || 0} comments
+                      {post.comment_count || 0} comments
                     </Button>
                   </div>
 
