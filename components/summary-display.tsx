@@ -8,6 +8,7 @@ import YouTube, { YouTubePlayer, YouTubeEvent } from "react-youtube";
 import { useResetContext } from "@/components/reset-context";
 import { useAuth } from "@/components/auth-context";
 import { Skeleton } from "@/components/ui/skeleton";
+import { generateVideoSummaryStructuredData, injectStructuredData } from "@/app/lib/structured-data";
 
 export default function SummaryDisplay() {
   const searchParams = useSearchParams();
@@ -29,7 +30,14 @@ export default function SummaryDisplay() {
     try {
       console.log(`[SummaryDisplay] Fetching video details for: ${id}`);
       const videoDetails = await fetchVideoDetailsServer(id);
-      setVideoInfo(videoDetails.items[0]);
+      const videoInfo = videoDetails.items[0];
+      setVideoInfo(videoInfo);
+      
+      // Inject structured data for SEO
+      if (videoInfo) {
+        const structuredData = generateVideoSummaryStructuredData(videoInfo);
+        injectStructuredData(structuredData);
+      }
     } catch (error) {
       console.error("[SummaryDisplay] Failed to fetch video details:", error);
     }
