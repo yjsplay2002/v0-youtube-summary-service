@@ -7,8 +7,9 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { ArrowUp, ArrowDown, MessageCircle, Plus, User } from 'lucide-react'
+import { ArrowUp, ArrowDown, MessageCircle, Plus, User, Home } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
+import Link from 'next/link'
 
 interface CommunityFeedbackProps {
   serviceName: string
@@ -214,9 +215,19 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
   return (
     <div className="max-w-5xl mx-auto p-6 pt-20 space-y-6">
       <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-100">Community Feedback</h1>
-          <Badge variant="secondary" className="mt-2 bg-slate-800 text-slate-300 border-slate-700">{serviceName}</Badge>
+        <div className="flex items-center gap-4">
+          <Link href="/">
+            <Button 
+              variant="outline" 
+              className="h-12 px-4 bg-slate-900/90 border-slate-700 text-slate-200 backdrop-blur-sm hover:bg-slate-800 hover:border-slate-600 hover:text-white transition-all duration-200"
+            >
+              <Home className="h-6 w-6" />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-3xl font-bold text-slate-100">Community Feedback</h1>
+            <Badge variant="secondary" className="mt-2 bg-slate-800 text-slate-300 border-slate-700">{serviceName}</Badge>
+          </div>
         </div>
         {currentUser && (
           <Button 
