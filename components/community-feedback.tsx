@@ -29,10 +29,17 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
   const [expandedPost, setExpandedPost] = useState<string | null>(null)
   const [comments, setComments] = useState<Record<string, FeedbackComment[]>>({})
   const [newComment, setNewComment] = useState<Record<string, string>>({})
+  const [userVotes, setUserVotes] = useState<Record<string, 'upvote' | 'downvote' | null>>({})
 
   useEffect(() => {
     fetchPosts()
   }, [serviceName])
+
+  useEffect(() => {
+    if (currentUser && posts.length > 0) {
+      fetchUserVotes()
+    }
+  }, [currentUser, posts])
 
   const fetchPosts = async () => {
     try {
@@ -66,12 +73,45 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
     }
   }
 
+  const fetchUserVotes = async () => {
+    if (!currentUser) return
+
+    try {
+      const postIds = posts.map(post => post.id)
+      if (postIds.length === 0) return
+
+      const { data, error } = await feedbackSupabase
+        .from('feedback_votes')
+        .select('post_id, vote_type')
+        .eq('user_id', currentUser.id)
+        .in('post_id', postIds)
+
+      if (error) throw error
+
+      const votesMap: Record<string, 'upvote' | 'downvote' | null> = {}
+      
+      // Initialize all posts with null (no vote)
+      postIds.forEach(postId => {
+        votesMap[postId] = null
+      })
+      
+      // Set user's actual votes
+      data?.forEach(vote => {
+        votesMap[vote.post_id] = vote.vote_type as 'upvote' | 'downvote'
+      })
+
+      setUserVotes(votesMap)
+    } catch (error) {
+      console.error('Error fetching user votes:', error)
+    }
+  }
+
   const submitPost = async () => {
     if (!currentUser || !newPostTitle.trim() || !newPostContent.trim()) return
 
     setSubmitting(true)
     try {
-      const { data, error } = await feedbackSupabase
+      const { error } = await feedbackSupabase
         .from('feedback_posts')
         .insert([{
           user_id: currentUser.id,
@@ -81,7 +121,6 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
           user_email: currentUser.email,
           user_name: currentUser.name
         }])
-        .select()
 
       if (error) throw error
 
@@ -100,7 +139,7 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
     if (!currentUser || !newComment[postId]?.trim()) return
 
     try {
-      const { data, error } = await feedbackSupabase
+      const { error } = await feedbackSupabase
         .from('feedback_comments')
         .insert([{
           post_id: postId,
@@ -109,7 +148,6 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
           user_email: currentUser.email,
           user_name: currentUser.name
         }])
-        .select()
 
       if (error) throw error
 
@@ -124,61 +162,98 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
     if (!currentUser) return
 
     try {
-      // Check if user already voted
-      const { data: existingVote } = await feedbackSupabase
+      // Check if user already voted on this post
+      const { data: existingVote, error: voteError } = await feedbackSupabase
         .from('feedback_votes')
-        .select('*')
+        .select('vote_type')
         .eq('user_id', currentUser.id)
         .eq('post_id', postId)
-        .single()
+        .maybeSingle()
 
-      let voteAction: 'add' | 'remove' | 'change' = 'add'
-      let oldVoteType: string | null = null
+      if (voteError) {
+        console.error('Error checking existing vote:', voteError)
+        return
+      }
 
       if (existingVote) {
-        oldVoteType = existingVote.vote_type
         if (existingVote.vote_type === voteType) {
-          // Remove existing vote (user clicked same button)
-          await feedbackSupabase
+          // User clicked same vote type - remove the vote
+          const { error: deleteError } = await feedbackSupabase
             .from('feedback_votes')
             .delete()
-            .eq('id', existingVote.id)
-          voteAction = 'remove'
+            .eq('user_id', currentUser.id)
+            .eq('post_id', postId)
+
+          if (deleteError) throw deleteError
         } else {
-          // Change vote type (user clicked opposite button)
-          await feedbackSupabase
+          // User clicked opposite vote type - update the vote
+          const { error: updateError } = await feedbackSupabase
             .from('feedback_votes')
             .update({ vote_type: voteType })
-            .eq('id', existingVote.id)
-          voteAction = 'change'
+            .eq('user_id', currentUser.id)
+            .eq('post_id', postId)
+
+          if (updateError) throw updateError
         }
       } else {
-        // Insert new vote
-        await feedbackSupabase
+        // No existing vote - create new vote
+        const { error: insertError } = await feedbackSupabase
           .from('feedback_votes')
-          .insert([{
+          .insert({
             user_id: currentUser.id,
             post_id: postId,
             vote_type: voteType
-          }])
-        voteAction = 'add'
+          })
+
+        if (insertError) throw insertError
       }
 
-      // Recalculate vote counts from database using count queries
-      const { count: upvoteCount } = await feedbackSupabase
+      // Update local user vote state immediately
+      if (existingVote) {
+        if (existingVote.vote_type === voteType) {
+          // Vote was removed
+          setUserVotes(prev => ({ ...prev, [postId]: null }))
+        } else {
+          // Vote was changed
+          setUserVotes(prev => ({ ...prev, [postId]: voteType }))
+        }
+      } else {
+        // New vote was added
+        setUserVotes(prev => ({ ...prev, [postId]: voteType }))
+      }
+
+      // Recalculate and update vote counts
+      await updateVoteCounts(postId)
+      
+      // Refresh posts to show updated counts
+      fetchPosts()
+    } catch (error) {
+      console.error('Error handling vote:', error)
+    }
+  }
+
+  const updateVoteCounts = async (postId: string) => {
+    try {
+      // Count upvotes
+      const { count: upvoteCount, error: upvoteError } = await feedbackSupabase
         .from('feedback_votes')
         .select('*', { count: 'exact', head: true })
         .eq('post_id', postId)
         .eq('vote_type', 'upvote')
 
-      const { count: downvoteCount } = await feedbackSupabase
+      if (upvoteError) throw upvoteError
+
+      // Count downvotes
+      const { count: downvoteCount, error: downvoteError } = await feedbackSupabase
         .from('feedback_votes')
         .select('*', { count: 'exact', head: true })
         .eq('post_id', postId)
         .eq('vote_type', 'downvote')
 
-      // Update post with accurate counts
-      await feedbackSupabase
+      if (downvoteError) throw downvoteError
+
+      // Update post with new counts
+      const { error: updateError } = await feedbackSupabase
         .from('feedback_posts')
         .update({
           upvotes: upvoteCount || 0,
@@ -186,9 +261,9 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
         })
         .eq('id', postId)
 
-      fetchPosts()
+      if (updateError) throw updateError
     } catch (error) {
-      console.error('Error voting:', error)
+      console.error('Error updating vote counts:', error)
     }
   }
 
@@ -280,7 +355,11 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
                     size="sm"
                     onClick={() => handleVote(post.id, 'upvote')}
                     disabled={!currentUser}
-                    className="h-10 w-10 p-0 hover:bg-orange-500/10 text-slate-400 hover:text-orange-400 transition-colors"
+                    className={`h-10 w-10 p-0 transition-colors ${
+                      userVotes[post.id] === 'upvote'
+                        ? 'bg-orange-500/20 text-orange-400 hover:bg-orange-500/30'
+                        : 'hover:bg-orange-500/10 text-slate-400 hover:text-orange-400'
+                    }`}
                   >
                     <ArrowUp className="h-5 w-5" />
                   </Button>
@@ -292,7 +371,11 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
                     size="sm"
                     onClick={() => handleVote(post.id, 'downvote')}
                     disabled={!currentUser}
-                    className="h-10 w-10 p-0 hover:bg-blue-500/10 text-slate-400 hover:text-blue-400 transition-colors"
+                    className={`h-10 w-10 p-0 transition-colors ${
+                      userVotes[post.id] === 'downvote'
+                        ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30'
+                        : 'hover:bg-blue-500/10 text-slate-400 hover:text-blue-400'
+                    }`}
                   >
                     <ArrowDown className="h-5 w-5" />
                   </Button>
