@@ -5,6 +5,7 @@
 import OpenAI from 'openai';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { supabase } from './supabase';
 
 // 시스템 프롬프트 캐시
 let systemPromptCache: string | null = null;
@@ -16,6 +17,19 @@ export type AIModel =
   | 'claude-sonnet-4'
   | 'claude-3-5-sonnet' 
   | 'claude-3-5-haiku';
+
+// 프롬프트 타입 정의
+export type PromptType = 'general_summary' | 'discussion_format';
+
+// 시스템 프롬프트 인터페이스
+interface SystemPrompt {
+  id: string;
+  prompt_type: string;
+  title: string;
+  description: string;
+  prompt_content: string;
+  is_active: boolean;
+}
 
 // Claude 모델별 설정
 const CLAUDE_MODEL_CONFIG = {
@@ -86,8 +100,80 @@ const callClaudeAPI = async (systemPrompt: string, userMessage: string, model: C
   return data.content[0]?.text || "요약을 생성할 수 없습니다.";
 };
 
-// 시스템 프롬프트를 파일에서 읽어오는 함수 (캐싱 적용)
-const getSystemPrompt = async (): Promise<string> => {
+// 기본 시스템 프롬프트 (fallback)
+const DEFAULT_SYSTEM_PROMPT = `역할
+당신은 유튜브 영상 내용을 구조화된 형식으로 요약하는 전문가입니다.
+
+요약 형식 구조
+1. 📌 핵심 질문과 답변 (상단)
+- 영상의 메인 주제를 질문 형태로 제시
+- 핵심 답변을 간결하게 제공
+
+2. 💡 세부 내용 질문과 답변
+- 핵심 내용의 구체적인 방법이나 세부사항을 질문 형태로 제시
+- 각 항목을 * 기호로 나열하여 상세 설명
+
+3. 목차
+- 영상의 주요 섹션을 5-7개 항목으로 구성
+- 각 항목에 적절한 이모지 추가 (💡, 💰, 🛠️, 📊 등)
+
+4. 전체 요약 (200-300자)
+- 영상의 전반적인 내용과 목적을 한 문단으로 요약
+- 중요 키워드는 굵은 글씨로 강조
+- 영상이 다루는 핵심 문제와 해결책을 명확히 제시
+
+5. 핵심 용어
+- 영상에서 언급되는 주요 전문용어 2-3개 선정
+- 각 용어에 대한 쉬운 설명 제공 (일반인도 이해할 수 있도록)
+
+6. 상세 내용 분석
+각 목차 항목에 대해 다음과 같이 구성:
+- 섹션 번호. 이모지 섹션 제목
+- 해당 섹션의 핵심 내용을 3-5개 불릿 포인트로 정리
+- 구체적인 수치나 예시가 있다면 반드시 포함
+- 중요한 개념은 굵은 글씨로 강조
+
+작성 가이드라인
+- 이모지 활용: 각 섹션과 핵심 내용에 적절한 이모지 사용
+- 키워드 강조: 중요한 용어와 개념은 굵은 글씨로 표시
+- 구체적 정보: 수치, 예시, 구체적인 방법론 포함
+- 구조화: 명확한 계층 구조와 일관된 형식 유지
+- 완전성: 영상의 모든 주요 내용을 빠짐없이 포함
+
+위 형식을 정확히 따라 유튜브 영상을 요약해주세요.`;
+
+// 데이터베이스에서 시스템 프롬프트를 가져오는 함수
+const getSystemPromptFromDB = async (promptType: PromptType = 'general_summary'): Promise<string> => {
+  try {
+    console.log(`[getSystemPromptFromDB] 프롬프트 타입: ${promptType}`);
+    
+    const { data, error } = await supabase
+      .from('system_prompts')
+      .select('prompt_content')
+      .eq('prompt_type', promptType)
+      .eq('is_active', true)
+      .single();
+    
+    if (error) {
+      console.error('[getSystemPromptFromDB] DB 조회 오류:', error);
+      throw error;
+    }
+    
+    if (!data || !data.prompt_content) {
+      console.warn(`[getSystemPromptFromDB] 프롬프트 타입 '${promptType}'에 대한 데이터가 없음`);
+      throw new Error(`프롬프트 타입 '${promptType}'을 찾을 수 없습니다.`);
+    }
+    
+    console.log(`[getSystemPromptFromDB] 성공, 프롬프트 길이: ${data.prompt_content.length} 문자`);
+    return data.prompt_content;
+  } catch (error) {
+    console.error('[getSystemPromptFromDB] 오류:', error);
+    throw error;
+  }
+};
+
+// 시스템 프롬프트를 파일에서 읽어오는 함수 (캐싱 적용) - 레거시 지원
+const getSystemPromptFromFile = async (): Promise<string> => {
   const promptPath = path.join(process.cwd(), 'prompt.md');
   
   try {
@@ -96,30 +182,69 @@ const getSystemPrompt = async (): Promise<string> => {
     
     // 파일이 수정되었거나 캐시가 없는 경우에만 파일 읽기
     if (!systemPromptCache || stats.mtimeMs > lastModifiedTime) {
-      systemPromptCache = await fs.readFile(promptPath, 'utf-8');
-      lastModifiedTime = stats.mtimeMs;
-      console.log(`[getSystemPrompt] 프롬프트 파일 갱신, 길이: ${systemPromptCache.length} 문자`);
+      const fileContent = await fs.readFile(promptPath, 'utf-8');
+      
+      // 파일 내용이 비어있지 않은지 확인
+      if (fileContent && fileContent.trim().length > 0) {
+        systemPromptCache = fileContent;
+        lastModifiedTime = stats.mtimeMs;
+        console.log(`[getSystemPrompt] 프롬프트 파일 갱신, 길이: ${systemPromptCache.length} 문자`);
+      } else {
+        console.warn('[getSystemPrompt] 프롬프트 파일이 비어있음, 기본 프롬프트 사용');
+        systemPromptCache = DEFAULT_SYSTEM_PROMPT;
+      }
     } else {
       console.log(`[getSystemPrompt] 캐시된 프롬프트 사용, 길이: ${systemPromptCache.length} 문자`);
-    }
-    
-    if (!systemPromptCache) {
-      throw new Error('프롬프트 내용이 비어 있습니다.');
     }
     
     return systemPromptCache;
   } catch (error) {
     console.error('[getSystemPrompt] 프롬프트 파일 읽기 오류:', error);
-    throw new Error('시스템 프롬프트 파일을 읽을 수 없습니다.');
+    console.log('[getSystemPrompt] 기본 프롬프트를 사용합니다');
+    
+    // 파일 읽기 실패 시 기본 프롬프트 사용
+    if (!systemPromptCache) {
+      systemPromptCache = DEFAULT_SYSTEM_PROMPT;
+    }
+    
+    return systemPromptCache;
+  }
+};
+
+// 통합 시스템 프롬프트 가져오기 함수 (DB 우선, 파일 fallback)
+const getSystemPrompt = async (promptType: PromptType = 'general_summary'): Promise<string> => {
+  try {
+    // 1. 데이터베이스에서 프롬프트 가져오기 시도
+    console.log(`[getSystemPrompt] DB에서 프롬프트 가져오기 시도: ${promptType}`);
+    return await getSystemPromptFromDB(promptType);
+  } catch (dbError) {
+    console.warn('[getSystemPrompt] DB에서 프롬프트 가져오기 실패, 파일 시스템 시도:', dbError);
+    
+    try {
+      // 2. 파일에서 프롬프트 가져오기 시도 (레거시 지원)
+      console.log('[getSystemPrompt] 파일에서 프롬프트 가져오기 시도');
+      return await getSystemPromptFromFile();
+    } catch (fileError) {
+      console.warn('[getSystemPrompt] 파일에서 프롬프트 가져오기 실패, 기본 프롬프트 사용:', fileError);
+      
+      // 3. 기본 프롬프트 사용 (최종 fallback)
+      console.log('[getSystemPrompt] 기본 프롬프트 사용');
+      return DEFAULT_SYSTEM_PROMPT;
+    }
   }
 };
 
 // Generate summary using selected AI model
-export async function generateSummary(transcript: string, model: AIModel = 'openai-gpt4', summaryPrompt?: string): Promise<string> {
-  console.log(`[generateSummary] 사용 모델: ${model}, 입력 트랜스크립트 길이: ${transcript.length} 문자`);
+export async function generateSummary(
+  transcript: string, 
+  model: AIModel = 'openai-gpt4', 
+  summaryPrompt?: string,
+  promptType: PromptType = 'general_summary'
+): Promise<string> {
+  console.log(`[generateSummary] 사용 모델: ${model}, 프롬프트 타입: ${promptType}, 입력 트랜스크립트 길이: ${transcript.length} 문자`);
   console.log(`[generateSummary] 트랜스크립트 일부: ${transcript.slice(0, 100)}...`);
   
-  const systemPrompt = await getSystemPrompt();
+  const systemPrompt = await getSystemPrompt(promptType);
   let userMessage = '';
   
   if (summaryPrompt) {
@@ -169,7 +294,7 @@ export function formatSummaryAsMarkdown(summary: string, videoId: string): strin
   // [hh:mm:ss] 형태의 타임스탬프를 유튜브 링크(markdown 링크)로 변환
   const timestampRegex = /\[(\d{2}):(\d{2}):(\d{2})\]/g;
   const markdown = `# YouTube 영상 요약\n\n` +
-    summary.replace(timestampRegex, (match, hh, mm, ss) => {
+    summary.replace(timestampRegex, (_, hh, mm, ss) => {
       const seconds = parseInt(hh, 10) * 3600 + parseInt(mm, 10) * 60 + parseInt(ss, 10);
       const url = `https://www.youtube.com/watch?v=${videoId}&t=${seconds}s`;
       return `[${hh}:${mm}:${ss}](${url})`;

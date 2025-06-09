@@ -62,7 +62,7 @@ CREATE POLICY "Users can update their own comments" ON feedback_comments FOR UPD
 CREATE POLICY "Users can delete their own comments" ON feedback_comments FOR DELETE USING (auth.uid() = user_id);
 
 -- Policies for feedback_votes
-CREATE POLICY "Users can read their own votes" ON feedback_votes FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Anyone can read vote counts" ON feedback_votes FOR SELECT USING (true);
 CREATE POLICY "Authenticated users can insert votes" ON feedback_votes FOR INSERT WITH CHECK (auth.role() = 'authenticated' AND auth.uid() = user_id);
 CREATE POLICY "Users can update their own votes" ON feedback_votes FOR UPDATE USING (auth.uid() = user_id);
 CREATE POLICY "Users can delete their own votes" ON feedback_votes FOR DELETE USING (auth.uid() = user_id);

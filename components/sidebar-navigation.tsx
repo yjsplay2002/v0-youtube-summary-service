@@ -289,6 +289,11 @@ export function SidebarNavigation({ currentVideoId }: SidebarNavigationProps) {
                 <Button 
                   variant="outline" 
                   className="w-full justify-start gap-2 text-sidebar-foreground border-sidebar-border hover:bg-sidebar-hover-background"
+                  onClick={() => {
+                    if (isMobile) {
+                      setIsCollapsed(true);
+                    }
+                  }}
                 >
                   <MessageSquare className="h-4 w-4" />
                   Community Feedback

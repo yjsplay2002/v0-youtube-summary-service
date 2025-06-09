@@ -132,18 +132,25 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
         .eq('post_id', postId)
         .single()
 
+      let voteAction: 'add' | 'remove' | 'change' = 'add'
+      let oldVoteType: string | null = null
+
       if (existingVote) {
-        // Update existing vote or remove if same type
+        oldVoteType = existingVote.vote_type
         if (existingVote.vote_type === voteType) {
+          // Remove existing vote (user clicked same button)
           await feedbackSupabase
             .from('feedback_votes')
             .delete()
             .eq('id', existingVote.id)
+          voteAction = 'remove'
         } else {
+          // Change vote type (user clicked opposite button)
           await feedbackSupabase
             .from('feedback_votes')
             .update({ vote_type: voteType })
             .eq('id', existingVote.id)
+          voteAction = 'change'
         }
       } else {
         // Insert new vote
@@ -154,19 +161,30 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
             post_id: postId,
             vote_type: voteType
           }])
+        voteAction = 'add'
       }
 
-      // Update post vote counts
-      const post = posts.find(p => p.id === postId)
-      if (post) {
-        const increment = voteType === 'upvote' ? 1 : -1
-        const field = voteType === 'upvote' ? 'upvotes' : 'downvotes'
-        
-        await feedbackSupabase
-          .from('feedback_posts')
-          .update({ [field]: post[field] + increment })
-          .eq('id', postId)
-      }
+      // Recalculate vote counts from database using count queries
+      const { count: upvoteCount } = await feedbackSupabase
+        .from('feedback_votes')
+        .select('*', { count: 'exact', head: true })
+        .eq('post_id', postId)
+        .eq('vote_type', 'upvote')
+
+      const { count: downvoteCount } = await feedbackSupabase
+        .from('feedback_votes')
+        .select('*', { count: 'exact', head: true })
+        .eq('post_id', postId)
+        .eq('vote_type', 'downvote')
+
+      // Update post with accurate counts
+      await feedbackSupabase
+        .from('feedback_posts')
+        .update({
+          upvotes: upvoteCount || 0,
+          downvotes: downvoteCount || 0
+        })
+        .eq('id', postId)
 
       fetchPosts()
     } catch (error) {
@@ -186,18 +204,26 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
   }
 
   if (loading) {
-    return <div className="flex justify-center p-8">Loading...</div>
+    return (
+      <div className="flex justify-center items-center min-h-screen bg-slate-950">
+        <div className="text-slate-400 text-lg">Loading...</div>
+      </div>
+    )
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-4 space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="max-w-5xl mx-auto p-6 pt-20 space-y-6">
+      <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-2xl font-bold">Community Feedback</h1>
-          <Badge variant="secondary" className="mt-1">{serviceName}</Badge>
+          <h1 className="text-3xl font-bold text-slate-100">Community Feedback</h1>
+          <Badge variant="secondary" className="mt-2 bg-slate-800 text-slate-300 border-slate-700">{serviceName}</Badge>
         </div>
         {currentUser && (
-          <Button onClick={() => setShowNewPost(!showNewPost)} className="gap-2">
+          <Button 
+            onClick={() => setShowNewPost(!showNewPost)} 
+            className="gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 text-sm font-medium"
+            size="default"
+          >
             <Plus className="h-4 w-4" />
             New Post
           </Button>
@@ -205,30 +231,37 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
       </div>
 
       {showNewPost && currentUser && (
-        <Card>
-          <CardHeader>
-            <h3 className="text-lg font-semibold">Create New Post</h3>
+        <Card className="bg-slate-900 border-slate-800">
+          <CardHeader className="pb-4">
+            <h3 className="text-xl font-semibold text-slate-100">Create New Post</h3>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-5">
             <Input
               placeholder="Post title..."
               value={newPostTitle}
               onChange={(e) => setNewPostTitle(e.target.value)}
+              className="bg-slate-800 border-slate-700 text-slate-100 placeholder:text-slate-400 focus:border-blue-500 focus:ring-blue-500/20"
             />
             <Textarea
               placeholder="What's on your mind?"
               value={newPostContent}
               onChange={(e) => setNewPostContent(e.target.value)}
-              rows={4}
+              rows={5}
+              className="bg-slate-800 border-slate-700 text-slate-100 placeholder:text-slate-400 focus:border-blue-500 focus:ring-blue-500/20 resize-none"
             />
-            <div className="flex gap-2">
+            <div className="flex gap-3 pt-2">
               <Button 
                 onClick={submitPost} 
                 disabled={submitting || !newPostTitle.trim() || !newPostContent.trim()}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 disabled:bg-slate-700 disabled:text-slate-400"
               >
                 {submitting ? 'Posting...' : 'Post'}
               </Button>
-              <Button variant="outline" onClick={() => setShowNewPost(false)}>
+              <Button 
+                variant="outline" 
+                onClick={() => setShowNewPost(false)}
+                className="border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-slate-100 px-6 py-2.5"
+              >
                 Cancel
               </Button>
             </div>
@@ -236,22 +269,22 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
         </Card>
       )}
 
-      <div className="space-y-4">
+      <div className="space-y-5">
         {posts.map((post) => (
-          <Card key={post.id} className="hover:shadow-md transition-shadow">
-            <CardContent className="p-4">
-              <div className="flex gap-3">
-                <div className="flex flex-col items-center gap-1 min-w-[40px]">
+          <Card key={post.id} className="bg-slate-900 border-slate-800 hover:bg-slate-900/80 transition-all duration-200">
+            <CardContent className="p-6">
+              <div className="flex gap-4">
+                <div className="flex flex-col items-center gap-2 min-w-[50px]">
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => handleVote(post.id, 'upvote')}
                     disabled={!currentUser}
-                    className="h-8 w-8 p-0 hover:bg-orange-100"
+                    className="h-10 w-10 p-0 hover:bg-orange-500/10 text-slate-400 hover:text-orange-400 transition-colors"
                   >
-                    <ArrowUp className="h-4 w-4" />
+                    <ArrowUp className="h-5 w-5" />
                   </Button>
-                  <span className="text-sm font-medium">
+                  <span className="text-sm font-bold text-slate-300 min-w-[24px] text-center">
                     {post.upvotes - post.downvotes}
                   </span>
                   <Button
@@ -259,48 +292,48 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
                     size="sm"
                     onClick={() => handleVote(post.id, 'downvote')}
                     disabled={!currentUser}
-                    className="h-8 w-8 p-0 hover:bg-blue-100"
+                    className="h-10 w-10 p-0 hover:bg-blue-500/10 text-slate-400 hover:text-blue-400 transition-colors"
                   >
-                    <ArrowDown className="h-4 w-4" />
+                    <ArrowDown className="h-5 w-5" />
                   </Button>
                 </div>
 
                 <div className="flex-1">
-                  <h3 className="font-semibold text-lg mb-2">{post.title}</h3>
-                  <p className="text-gray-700 mb-3 whitespace-pre-wrap">{post.content}</p>
+                  <h3 className="font-semibold text-xl mb-3 text-slate-100">{post.title}</h3>
+                  <p className="text-slate-300 mb-4 whitespace-pre-wrap leading-relaxed">{post.content}</p>
                   
-                  <div className="flex items-center gap-4 text-sm text-gray-500">
-                    <div className="flex items-center gap-1">
-                      <User className="h-3 w-3" />
-                      {post.user_name || post.user_email || 'Anonymous'}
+                  <div className="flex items-center gap-6 text-sm text-slate-400">
+                    <div className="flex items-center gap-2">
+                      <User className="h-4 w-4" />
+                      <span className="text-slate-300">{post.user_name || post.user_email || 'Anonymous'}</span>
                     </div>
                     <span>{formatDistanceToNow(new Date(post.created_at), { addSuffix: true })}</span>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => toggleComments(post.id)}
-                      className="gap-1 h-auto p-1"
+                      className="gap-2 h-auto p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800"
                     >
-                      <MessageCircle className="h-3 w-3" />
+                      <MessageCircle className="h-4 w-4" />
                       {comments[post.id]?.length || 0} comments
                     </Button>
                   </div>
 
                   {expandedPost === post.id && (
-                    <div className="mt-4 space-y-3 border-t pt-4">
+                    <div className="mt-6 space-y-4 border-t border-slate-800 pt-6">
                       {currentUser && (
-                        <div className="flex gap-2">
+                        <div className="flex gap-3">
                           <Textarea
                             placeholder="Add a comment..."
                             value={newComment[post.id] || ''}
                             onChange={(e) => setNewComment(prev => ({ ...prev, [post.id]: e.target.value }))}
-                            rows={2}
-                            className="flex-1"
+                            rows={3}
+                            className="flex-1 bg-slate-800 border-slate-700 text-slate-100 placeholder:text-slate-400 focus:border-blue-500 focus:ring-blue-500/20 resize-none"
                           />
                           <Button
                             onClick={() => submitComment(post.id)}
                             disabled={!newComment[post.id]?.trim()}
-                            size="sm"
+                            className="self-end bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 disabled:bg-slate-700 disabled:text-slate-400"
                           >
                             Comment
                           </Button>
@@ -308,11 +341,11 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
                       )}
 
                       {comments[post.id]?.map((comment) => (
-                        <div key={comment.id} className="bg-gray-50 p-3 rounded-lg">
-                          <p className="mb-2 whitespace-pre-wrap">{comment.content}</p>
-                          <div className="flex items-center gap-2 text-xs text-gray-500">
-                            <User className="h-3 w-3" />
-                            {comment.user_name || comment.user_email || 'Anonymous'}
+                        <div key={comment.id} className="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                          <p className="mb-3 whitespace-pre-wrap text-slate-200 leading-relaxed">{comment.content}</p>
+                          <div className="flex items-center gap-3 text-sm text-slate-400">
+                            <User className="h-4 w-4" />
+                            <span className="text-slate-300">{comment.user_name || comment.user_email || 'Anonymous'}</span>
                             <span>•</span>
                             <span>{formatDistanceToNow(new Date(comment.created_at), { addSuffix: true })}</span>
                           </div>
@@ -327,14 +360,17 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
         ))}
 
         {posts.length === 0 && (
-          <Card>
-            <CardContent className="text-center py-12">
-              <MessageCircle className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-              <h3 className="text-lg font-semibold mb-2">No feedback yet</h3>
-              <p className="text-gray-600 mb-4">Be the first to share your thoughts about {serviceName}!</p>
+          <Card className="bg-slate-900 border-slate-800">
+            <CardContent className="text-center py-16">
+              <MessageCircle className="h-16 w-16 mx-auto mb-6 text-slate-600" />
+              <h3 className="text-xl font-semibold mb-3 text-slate-200">No feedback yet</h3>
+              <p className="text-slate-400 mb-6 text-lg">Be the first to share your thoughts about {serviceName}!</p>
               {currentUser && (
-                <Button onClick={() => setShowNewPost(true)} className="gap-2">
-                  <Plus className="h-4 w-4" />
+                <Button 
+                  onClick={() => setShowNewPost(true)} 
+                  className="gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 text-base"
+                >
+                  <Plus className="h-5 w-5" />
                   Create First Post
                 </Button>
               )}

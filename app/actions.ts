@@ -2,7 +2,7 @@
 
 import { extractVideoId, fetchTranscriptWithApi, fetchTranscriptLegacy, getVideoDetails } from "./lib/youtube";
 import { supabase, supabaseAdmin } from "@/app/lib/supabase";
-import { generateSummary, formatSummaryAsMarkdown, type AIModel } from "./lib/summary";
+import { generateSummary, formatSummaryAsMarkdown, type AIModel, type PromptType } from "./lib/summary";
 
 // Supabase에서 사용자별 요약 조회
 async function getUserVideoSummaryFromDB(videoId: string, userId: string) {
@@ -58,6 +58,7 @@ async function upsertUserVideoSummaryToDB({
   video_title, 
   video_thumbnail, 
   video_duration, 
+  channel_title,
   summary, 
   summary_prompt 
 }: {
@@ -66,6 +67,7 @@ async function upsertUserVideoSummaryToDB({
   video_title: string,
   video_thumbnail?: string,
   video_duration?: string,
+  channel_title?: string,
   summary: string,
   summary_prompt?: string
 }) {
@@ -78,6 +80,7 @@ async function upsertUserVideoSummaryToDB({
     video_title: video_title.substring(0, 30) + (video_title.length > 30 ? '...' : ''),
     video_thumbnail: video_thumbnail || '',
     video_duration: video_duration || '',
+    channel_title: channel_title || '',
     summary_length: summary ? summary.length : 0,
     summary_prompt: summary_prompt || ''
   });
@@ -93,6 +96,7 @@ async function upsertUserVideoSummaryToDB({
         video_title, 
         video_thumbnail, 
         video_duration, 
+        channel_title,
         summary, 
         summary_prompt 
       }
@@ -130,7 +134,8 @@ export async function summarizeYoutubeVideo(
   youtubeUrl: string, 
   aiModel: AIModel = 'claude-3-5-sonnet',
   summaryPrompt?: string,
-  userId?: string
+  userId?: string,
+  promptType: PromptType = 'general_summary'
 ): Promise<{ success: boolean; videoId?: string; error?: string; summary?: string }> {
   console.log(`[summarizeYoutubeVideo] 요청 URL: ${youtubeUrl}, AI 모델: ${aiModel}, userId: ${userId || 'anonymous'}`);
   try {
@@ -177,8 +182,8 @@ export async function summarizeYoutubeVideo(
     console.log(`[summarizeYoutubeVideo] 자막 가져오기 성공, 길이: ${transcript.length} 문자`);
 
     // 5. 요약 생성
-    console.log(`[summarizeYoutubeVideo] 요약 생성 시작... (모델: ${aiModel})`);
-    const summary = await generateSummary(transcript, aiModel, summaryPrompt);
+    console.log(`[summarizeYoutubeVideo] 요약 생성 시작... (모델: ${aiModel}, 프롬프트 타입: ${promptType})`);
+    const summary = await generateSummary(transcript, aiModel, summaryPrompt, promptType);
     const markdown = formatSummaryAsMarkdown(summary, videoId);
     
     // 6. 비디오 메타데이터 가져오기
@@ -198,6 +203,7 @@ export async function summarizeYoutubeVideo(
         video_title: title,
         video_thumbnail: thumbnail_url,
         video_duration: duration,
+        channel_title: channel_title,
         summary: markdown,
         summary_prompt: summaryPrompt
       });
@@ -315,7 +321,8 @@ export async function resummarizeYoutubeVideo(
   videoId: string,
   userId: string,
   aiModel: AIModel = 'claude-3-5-sonnet',
-  summaryPrompt?: string
+  summaryPrompt?: string,
+  promptType: PromptType = 'general_summary'
 ): Promise<{ success: boolean; videoId?: string; error?: string; summary?: string }> {
   console.log(`[resummarizeYoutubeVideo] 요청 videoId: ${videoId}, userId: ${userId}, AI 모델: ${aiModel}`);
   try {
@@ -373,8 +380,8 @@ export async function resummarizeYoutubeVideo(
     }
     
     // 4. 요약 생성
-    console.log(`[resummarizeYoutubeVideo] 요약 생성 시작: ${videoId}`);
-    const summary = await generateSummary(transcript, aiModel, summaryPrompt);
+    console.log(`[resummarizeYoutubeVideo] 요약 생성 시작: ${videoId}, 프롬프트 타입: ${promptType}`);
+    const summary = await generateSummary(transcript, aiModel, summaryPrompt, promptType);
     const markdown = formatSummaryAsMarkdown(summary, videoId);
     
     // 5. Supabase에 저장
@@ -384,6 +391,7 @@ export async function resummarizeYoutubeVideo(
       video_title: title,
       video_thumbnail: thumbnail_url,
       video_duration: duration,
+      channel_title: channel_title,
       summary: markdown,
       summary_prompt: summaryPrompt
     });
@@ -405,7 +413,7 @@ export async function getAllSummaries(userId?: string) {
       // supabaseAdmin 클라이언트로 RLS 우회하여 조회
 const { data, error } = await supabaseAdmin
 .from('video_summaries')
-.select('video_id, video_title, video_thumbnail, created_at')
+.select('video_id, video_title, video_thumbnail, channel_title, created_at')
 .eq('user_id', userId)
 .order('created_at', { ascending: false });
       
@@ -419,7 +427,7 @@ const { data, error } = await supabaseAdmin
       return data?.map(item => ({
         video_id: item.video_id,
         title: item.video_title,
-        channel_title: '', // 새 테이블에는 channel_title이 없으므로 빈 문자열
+        channel_title: item.channel_title || '',
         thumbnail_url: item.video_thumbnail || '',
         created_at: item.created_at
       })) || [];
@@ -443,6 +451,34 @@ const { data, error } = await supabaseAdmin
     }
   } catch (err) {
     console.error('[getAllSummaries] 오류 발생:', err);
+    return [];
+  }
+}
+
+// 사용 가능한 프롬프트 타입 목록 가져오기
+export async function getAvailablePromptTypes(): Promise<Array<{type: string, title: string, description: string}>> {
+  try {
+    console.log('[getAvailablePromptTypes] 프롬프트 타입 목록 조회');
+    const { data, error } = await supabase
+      .from('system_prompts')
+      .select('prompt_type, title, description')
+      .eq('is_active', true)
+      .order('prompt_type', { ascending: true });
+    
+    if (error) {
+      console.error('[getAvailablePromptTypes] DB 조회 에러:', error);
+      return [];
+    }
+    
+    console.log(`[getAvailablePromptTypes] 조회 결과: ${data?.length || 0}개 프롬프트 타입`);
+    
+    return data?.map(item => ({
+      type: item.prompt_type,
+      title: item.title,
+      description: item.description || ''
+    })) || [];
+  } catch (err) {
+    console.error('[getAvailablePromptTypes] 오류 발생:', err);
     return [];
   }
 }
