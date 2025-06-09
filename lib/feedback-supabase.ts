@@ -17,6 +17,7 @@ export type FeedbackPost = {
   updated_at: string
   user_email?: string
   user_name?: string
+  comment_count?: number
 }
 
 export type FeedbackComment = {
