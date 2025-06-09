@@ -120,3 +120,11 @@
 - [x] prompt.md 파일 생성 및 SYSTEM_PROMPT 내용 이동
 - [x] summary.ts에서 파일 시스템을 통해 prompt.md 읽어오도록 수정
 - [x] 기능 테스트 및 검증
+
+---
+
+## [2025-06-09]
+
+### Vercel Build Error Resolution
+- [x] Resolve `Error: Cannot find module 'critters'`
+  - [x] Install `critters` as a dev dependency
