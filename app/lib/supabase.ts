@@ -26,8 +26,15 @@ export interface Database {
 }
 
 // 환경변수에 아래 값이 반드시 있어야 합니다.
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('Missing required Supabase environment variables:');
+  console.log('NEXT_PUBLIC_SUPABASE_URL:', !!supabaseUrl);
+  console.log('NEXT_PUBLIC_SUPABASE_ANON_KEY:', !!supabaseAnonKey);
+  throw new Error('Missing required Supabase environment variables. Please check your .env.local file.');
+}
 
 // 일반 클라이언트 (RLS 적용됨)
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
