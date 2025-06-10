@@ -11,6 +11,7 @@ import { useSummaryContext } from "@/components/summary-context";
 import { AuthButton } from "@/components/auth-button";
 import { useAuth } from "@/components/auth-context";
 import { getUserSubscriptionTier } from "@/app/lib/auth-utils";
+import { UsageTracker } from "@/components/usage-tracker";
 
 // 디바운스 함수 구현
 function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
@@ -209,6 +210,8 @@ export function SidebarNavigation({ currentVideoId }: SidebarNavigationProps) {
             {!isCollapsed && <span className="ml-2">새로고침</span>}
           </Button>
         </div>
+
+        {!isCollapsed && <UsageTracker />}
 
         {!isCollapsed && (
           <p className="px-4 text-xs text-sidebar-muted-foreground mb-2">

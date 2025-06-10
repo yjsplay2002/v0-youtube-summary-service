@@ -3,6 +3,7 @@ import SummaryDisplay from "@/components/summary-display"
 import { HeroSection } from "@/components/hero-section"
 import { FeaturesSection } from "@/components/features-section"
 import { PricingSection } from "@/components/pricing-section"
+import { FAQSection } from "@/components/faq-section"
 import { Suspense } from "react"
 
 interface HomeProps {
@@ -20,6 +21,7 @@ export default async function Home({ searchParams }: HomeProps) {
         <HeroSection />
         <FeaturesSection />
         <PricingSection />
+        <FAQSection />
         
         {/* Main app section */}
         <section id="youtube-form" className="py-20">
