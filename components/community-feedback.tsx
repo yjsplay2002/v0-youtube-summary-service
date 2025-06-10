@@ -23,6 +23,8 @@ interface CommunityFeedbackProps {
 export default function CommunityFeedback({ serviceName, currentUser }: CommunityFeedbackProps) {
   const [posts, setPosts] = useState<FeedbackPost[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
   const [showNewPost, setShowNewPost] = useState(false)
   const [newPostTitle, setNewPostTitle] = useState('')
   const [newPostContent, setNewPostContent] = useState('')
@@ -30,13 +32,44 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
   const [expandedPost, setExpandedPost] = useState<string | null>(null)
   const [comments, setComments] = useState<Record<string, FeedbackComment[]>>({})
   const [newComment, setNewComment] = useState<Record<string, string>>({})
+  
+  const POSTS_PER_PAGE = 10
 
   useEffect(() => {
-    fetchPosts()
+    fetchPosts(true)
   }, [serviceName])
 
-  const fetchPosts = async () => {
+  // Infinite scroll effect
+  useEffect(() => {
+    const handleScroll = () => {
+      if (
+        window.innerHeight + document.documentElement.scrollTop >=
+        document.documentElement.offsetHeight - 1000 && // Load when 1000px from bottom
+        !loading &&
+        !loadingMore &&
+        hasMore
+      ) {
+        fetchPosts(false)
+      }
+    }
+
+    window.addEventListener('scroll', handleScroll)
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [loading, loadingMore, hasMore, posts.length])
+
+  const fetchPosts = async (reset = true) => {
     try {
+      if (reset) {
+        setLoading(true)
+        setPosts([])
+        setHasMore(true)
+      } else {
+        setLoadingMore(true)
+      }
+
+      const startIndex = reset ? 0 : posts.length
+      const endIndex = startIndex + POSTS_PER_PAGE - 1
+
       const { data, error } = await feedbackSupabase
         .from('feedback_posts')
         .select(`
@@ -45,6 +78,7 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
         `)
         .eq('service_name', serviceName)
         .order('created_at', { ascending: false })
+        .range(startIndex, endIndex)
 
       if (error) throw error
       
@@ -54,11 +88,20 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
         comment_count: post.comment_count?.[0]?.count || 0
       })) || []
       
-      setPosts(transformedData)
+      if (reset) {
+        setPosts(transformedData)
+      } else {
+        setPosts(prev => [...prev, ...transformedData])
+      }
+
+      // Check if we have more data
+      setHasMore(transformedData.length === POSTS_PER_PAGE)
+      
     } catch (error) {
       console.error('Error fetching posts:', error)
     } finally {
       setLoading(false)
+      setLoadingMore(false)
     }
   }
 
@@ -99,7 +142,7 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
       setNewPostTitle('')
       setNewPostContent('')
       setShowNewPost(false)
-      fetchPosts()
+      fetchPosts(true)
     } catch (error) {
       console.error('Error submitting post:', error)
     } finally {
@@ -197,7 +240,7 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
         })
         .eq('id', postId)
 
-      fetchPosts()
+      fetchPosts(true)
     } catch (error) {
       console.error('Error voting:', error)
     }
@@ -397,6 +440,23 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
               )}
             </CardContent>
           </Card>
+        )}
+
+        {/* Loading more indicator */}
+        {loadingMore && (
+          <div className="flex justify-center py-8">
+            <div className="flex items-center gap-2 text-slate-400">
+              <div className="w-4 h-4 border-2 border-slate-600 border-t-slate-400 rounded-full animate-spin"></div>
+              <span>Loading more posts...</span>
+            </div>
+          </div>
+        )}
+
+        {/* No more posts indicator */}
+        {!hasMore && posts.length > 0 && (
+          <div className="text-center py-8 text-slate-500">
+            <span>No more posts to load</span>
+          </div>
         )}
       </div>
     </div>
