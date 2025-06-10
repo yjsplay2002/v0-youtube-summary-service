@@ -1,6 +1,6 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, usePathname } from "next/navigation";
 import { SidebarNavigation } from "@/components/sidebar-navigation";
 import { SummaryProvider } from "@/components/summary-context";
 import { useState, useEffect } from "react";
@@ -11,8 +11,12 @@ interface LayoutWrapperProps {
 
 export function LayoutWrapper({ children }: LayoutWrapperProps) {
   const searchParams = useSearchParams();
+  const pathname = usePathname();
   const currentVideoId = searchParams.get("videoId") || undefined;
   const [isMobile, setIsMobile] = useState(false);
+
+  // Only show sidebar on app pages
+  const showSidebar = pathname.startsWith('/app') || pathname.includes('videoId');
 
   useEffect(() => {
     const checkMobile = () => {
@@ -24,6 +28,18 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  if (!showSidebar) {
+    // Landing page and other pages without sidebar
+    return (
+      <SummaryProvider>
+        <main className="min-h-screen bg-background">
+          {children}
+        </main>
+      </SummaryProvider>
+    );
+  }
+
+  // App pages with sidebar
   return (
     <SummaryProvider>
       <div className="flex min-h-screen bg-background">
