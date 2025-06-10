@@ -3,6 +3,7 @@
 import { extractVideoId, fetchTranscriptWithApi, fetchTranscriptLegacy, getVideoDetails } from "./lib/youtube";
 import { supabase, supabaseAdmin } from "@/app/lib/supabase";
 import { generateSummary, formatSummaryAsMarkdown, type AIModel, type PromptType } from "./lib/summary";
+import { isUserAdmin } from "./lib/auth-utils";
 
 // Supabase에서 사용자별 요약 조회
 async function getUserVideoSummaryFromDB(videoId: string, userId: string) {
@@ -132,7 +133,7 @@ async function upsertYoutubeSummaryToDB({ video_id, transcript, summary, title, 
 // 서버 액션: 유튜브 URL을 받아 자막을 가져오고 요약을 생성
 export async function summarizeYoutubeVideo(
   youtubeUrl: string, 
-  aiModel: AIModel = 'claude-3-5-sonnet',
+  aiModel: AIModel = 'claude-3-5-haiku',
   summaryPrompt?: string,
   userId?: string,
   promptType: PromptType = 'general_summary'
@@ -147,7 +148,25 @@ export async function summarizeYoutubeVideo(
     }
     console.log(`[summarizeYoutubeVideo] 추출된 videoId: ${videoId}`);
 
-    // 2. DB에서 기존 요약 조회 (사용자별 또는 전체)
+    // 2. 사용자 권한 확인 및 모델 제한
+    if (userId) {
+      const { data: { user } } = await supabaseAdmin.auth.admin.getUserById(userId);
+      const userIsAdmin = isUserAdmin(user);
+      
+      // 비관리자는 Haiku 모델만 사용 가능
+      if (!userIsAdmin && aiModel !== 'claude-3-5-haiku') {
+        console.log(`[summarizeYoutubeVideo] 비관리자가 제한된 모델 사용 시도: ${aiModel}, Haiku로 변경`);
+        aiModel = 'claude-3-5-haiku';
+      }
+    } else {
+      // 게스트 사용자는 Haiku 모델만 사용 가능
+      if (aiModel !== 'claude-3-5-haiku') {
+        console.log(`[summarizeYoutubeVideo] 게스트가 제한된 모델 사용 시도: ${aiModel}, Haiku로 변경`);
+        aiModel = 'claude-3-5-haiku';
+      }
+    }
+
+    // 3. DB에서 기존 요약 조회 (사용자별 또는 전체)
     let dbResult = null;
     if (userId) {
       dbResult = await getUserVideoSummaryFromDB(videoId, userId);
@@ -320,7 +339,7 @@ export async function fetchVideoDetailsServer(videoId: string): Promise<VideoDet
 export async function resummarizeYoutubeVideo(
   videoId: string,
   userId: string,
-  aiModel: AIModel = 'claude-3-5-sonnet',
+  aiModel: AIModel = 'claude-3-5-haiku',
   summaryPrompt?: string,
   promptType: PromptType = 'general_summary'
 ): Promise<{ success: boolean; videoId?: string; error?: string; summary?: string }> {
@@ -331,15 +350,25 @@ export async function resummarizeYoutubeVideo(
       console.error(`[resummarizeYoutubeVideo] 로그인이 필요합니다.`);
       return { success: false, error: "로그인이 필요합니다." };
     }
+
+    // 2. 사용자 권한 확인 및 모델 제한
+    const { data: { user } } = await supabaseAdmin.auth.admin.getUserById(userId);
+    const userIsAdmin = isUserAdmin(user);
     
-    // 2. 비디오 정보 및 기존 트랜스크립트 가져오기
+    // 비관리자는 Haiku 모델만 사용 가능
+    if (!userIsAdmin && aiModel !== 'claude-3-5-haiku') {
+      console.log(`[resummarizeYoutubeVideo] 비관리자가 제한된 모델 사용 시도: ${aiModel}, Haiku로 변경`);
+      aiModel = 'claude-3-5-haiku';
+    }
+    
+    // 3. 비디오 정보 및 기존 트랜스크립트 가져오기
     let transcript = "";
     let title = "";
     let thumbnail_url = "";
     let duration = "";
     let channel_title = "";
     
-    // 2-1. 사용자별 DB에서 먼저 확인
+    // 3-1. 사용자별 DB에서 먼저 확인
     const userSummary = await getUserVideoSummaryFromDB(videoId, userId);
     if (userSummary) {
       title = userSummary.video_title;
@@ -347,7 +376,7 @@ export async function resummarizeYoutubeVideo(
       duration = userSummary.video_duration || "";
     }
     
-    // 2-2. 레거시 DB에서 트랜스크립트 확인
+    // 3-2. 레거시 DB에서 트랜스크립트 확인
     const legacySummary = await getYoutubeSummaryFromDB(videoId);
     if (legacySummary && legacySummary.transcript) {
       transcript = legacySummary.transcript;
@@ -356,7 +385,7 @@ export async function resummarizeYoutubeVideo(
       channel_title = legacySummary.channel_title;
     }
     
-    // 2-3. 트랜스크립트가 없으면 오류 반환
+    // 3-3. 트랜스크립트가 없으면 오류 반환
     if (!transcript) {
       console.error(`[resummarizeYoutubeVideo] 트랜스크립트를 찾을 수 없습니다: ${videoId}`);
       return { success: false, error: "트랜스크립트를 찾을 수 없습니다." };
