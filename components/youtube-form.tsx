@@ -23,6 +23,7 @@ import { createContext } from "react";
 import { useSummaryContext } from "@/components/summary-context";
 import { useResetContext } from "@/components/reset-context";
 import { useAuth } from "@/components/auth-context";
+import { getAvailableModels, getDefaultModel, isUserAdmin } from "@/app/lib/auth-utils";
 
 export const LoadingContext = createContext(false);
 
@@ -31,9 +32,10 @@ export function YoutubeForm() {
   const [summaryExists, setSummaryExists] = useState(false);
   const [loadingStage, setLoadingStage] = useState<"none"|"transcript"|"summary">("none");
   const [youtubeUrl, setYoutubeUrl] = useState("")
-  const [selectedModel, setSelectedModel] = useState<AIModel>("claude-3-5-sonnet")
+  const [selectedModel, setSelectedModel] = useState<AIModel>("claude-3-5-haiku")
   const [selectedPromptType, setSelectedPromptType] = useState<PromptType>("general_summary")
   const [availablePromptTypes, setAvailablePromptTypes] = useState<Array<{type: string, title: string, description: string}>>([])
+  const [availableModels, setAvailableModels] = useState<Array<{value: string, label: string}>>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const [showApiKeyError, setShowApiKeyError] = useState(false)
@@ -46,24 +48,44 @@ export function YoutubeForm() {
   const { resetSummary } = useResetContext();
   const { user } = useAuth();
   const isSpecialUser = user?.email === "yjs@lnrgame.com";
+  const userIsAdmin = isUserAdmin(user);
 
-  // 프롬프트 타입 로드
+  // 사용자별 권한에 따른 모델 및 프롬프트 타입 로드
   useEffect(() => {
-    const loadPromptTypes = async () => {
-      try {
-        const promptTypes = await getAvailablePromptTypes();
-        setAvailablePromptTypes(promptTypes);
-      } catch (error) {
-        console.error('Failed to load prompt types:', error);
-        // 기본값 설정
+    const loadOptions = async () => {
+      // 사용자 권한에 따른 사용 가능한 모델 설정
+      const models = getAvailableModels(user);
+      setAvailableModels(models);
+      
+      // 사용자가 현재 선택한 모델이 사용 불가능하면 기본 모델로 변경
+      const defaultModel = getDefaultModel(user);
+      if (!models.some(m => m.value === selectedModel)) {
+        setSelectedModel(defaultModel as AIModel);
+      }
+
+      // 관리자만 프롬프트 타입 로드
+      if (userIsAdmin) {
+        try {
+          const promptTypes = await getAvailablePromptTypes();
+          setAvailablePromptTypes(promptTypes);
+        } catch (error) {
+          console.error('Failed to load prompt types:', error);
+          // 기본값 설정
+          setAvailablePromptTypes([
+            { type: 'general_summary', title: '일반 요약', description: '구조화된 형식으로 요약' },
+            { type: 'discussion_format', title: '토론식 요약', description: '두 화자의 토론 형식으로 요약' }
+          ]);
+        }
+      } else {
+        // 일반 사용자는 기본 프롬프트 타입만
         setAvailablePromptTypes([
-          { type: 'general_summary', title: '일반 요약', description: '구조화된 형식으로 요약' },
-          { type: 'discussion_format', title: '토론식 요약', description: '두 화자의 토론 형식으로 요약' }
+          { type: 'general_summary', title: '일반 요약', description: '구조화된 형식으로 요약' }
         ]);
+        setSelectedPromptType('general_summary');
       }
     };
-    loadPromptTypes();
-  }, []);
+    loadOptions();
+  }, [user, selectedModel, userIsAdmin]);
 
   // 영상 시킹 함수 (props/context로 전달 가능)
   const seekTo = (seconds: number) => {
@@ -175,40 +197,45 @@ export function YoutubeForm() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <div className="space-y-2">
-              <Label htmlFor="ai-model">AI 모델 선택</Label>
-              <select
-                id="ai-model"
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value as AIModel)}
-                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <option value="openai-gpt4">OpenAI GPT-4</option>
-                <option value="claude-sonnet-4">Claude Sonnet 4</option>
-                <option value="claude-3-5-sonnet">Claude 3.5 Sonnet</option>
-                <option value="claude-3-5-haiku">Claude 3.5 Haiku</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="prompt-type">요약 형식 선택</Label>
-              <select
-                id="prompt-type"
-                value={selectedPromptType}
-                onChange={(e) => setSelectedPromptType(e.target.value as PromptType)}
-                className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {availablePromptTypes.map((promptType) => (
-                  <option key={promptType.type} value={promptType.type}>
-                    {promptType.title}
-                  </option>
-                ))}
-              </select>
-              {availablePromptTypes.find(p => p.type === selectedPromptType)?.description && (
-                <p className="text-xs text-muted-foreground">
-                  {availablePromptTypes.find(p => p.type === selectedPromptType)?.description}
-                </p>
-              )}
-            </div>
+            {userIsAdmin && (
+              <div className="space-y-2">
+                <Label htmlFor="ai-model">AI 모델 선택</Label>
+                <select
+                  id="ai-model"
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value as AIModel)}
+                  className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {availableModels.map((model) => (
+                    <option key={model.value} value={model.value}>
+                      {model.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {userIsAdmin && (
+              <div className="space-y-2">
+                <Label htmlFor="prompt-type">요약 형식 선택</Label>
+                <select
+                  id="prompt-type"
+                  value={selectedPromptType}
+                  onChange={(e) => setSelectedPromptType(e.target.value as PromptType)}
+                  className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {availablePromptTypes.map((promptType) => (
+                    <option key={promptType.type} value={promptType.type}>
+                      {promptType.title}
+                    </option>
+                  ))}
+                </select>
+                {availablePromptTypes.find(p => p.type === selectedPromptType)?.description && (
+                  <p className="text-xs text-muted-foreground">
+                    {availablePromptTypes.find(p => p.type === selectedPromptType)?.description}
+                  </p>
+                )}
+              </div>
+            )}
              <div className="flex gap-2 items-center">
               <Input
                 type="text"

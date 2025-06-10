@@ -237,7 +237,7 @@ const getSystemPrompt = async (promptType: PromptType = 'general_summary'): Prom
 // Generate summary using selected AI model
 export async function generateSummary(
   transcript: string, 
-  model: AIModel = 'openai-gpt4', 
+  model: AIModel = 'claude-3-5-haiku', 
   summaryPrompt?: string,
   promptType: PromptType = 'general_summary'
 ): Promise<string> {
