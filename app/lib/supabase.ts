@@ -26,13 +26,14 @@ export interface Database {
 }
 
 // 환경변수에 아래 값이 반드시 있어야 합니다.
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://dummy.supabase.co';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key_for_development';
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Missing required Supabase environment variables:');
-  console.log('NEXT_PUBLIC_SUPABASE_URL:', !!supabaseUrl);
-  console.log('NEXT_PUBLIC_SUPABASE_ANON_KEY:', !!supabaseAnonKey);
+// Only validate in production or if not using dummy values
+if (process.env.NODE_ENV === 'production' && (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)) {
+  console.error('Missing required Supabase environment variables in production:');
+  console.log('NEXT_PUBLIC_SUPABASE_URL:', !!process.env.NEXT_PUBLIC_SUPABASE_URL);
+  console.log('NEXT_PUBLIC_SUPABASE_ANON_KEY:', !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
   throw new Error('Missing required Supabase environment variables. Please check your .env.local file.');
 }
 

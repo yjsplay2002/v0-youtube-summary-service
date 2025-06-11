@@ -8,9 +8,11 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/components/auth-context';
-import { LogIn, LogOut, User } from 'lucide-react';
+import { SubscriptionManager } from '@/components/subscription-manager';
+import { LogIn, LogOut, User, Settings } from 'lucide-react';
 
 export function AuthButton() {
   const { user, loading, signInWithGoogle, signOut } = useAuth();
@@ -77,6 +79,10 @@ export function AuthButton() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
+        <DropdownMenuItem asChild>
+          <SubscriptionManager />
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={handleSignOut}
           disabled={isLoading}
