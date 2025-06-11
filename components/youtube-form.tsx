@@ -23,7 +23,7 @@ import { createContext } from "react";
 import { useSummaryContext } from "@/components/summary-context";
 import { useResetContext } from "@/components/reset-context";
 import { useAuth } from "@/components/auth-context";
-import { getAvailableModels, getDefaultModel, isUserAdmin } from "@/app/lib/auth-utils";
+import { getAvailableModels, getDefaultModel, isUserAdmin, getUserSubscriptionTier, getSubscriptionLimits } from "@/app/lib/auth-utils";
 
 export const LoadingContext = createContext(false);
 
@@ -49,6 +49,8 @@ export function YoutubeForm() {
   const { user } = useAuth();
   const isSpecialUser = user?.email === "yjs@lnrgame.com";
   const userIsAdmin = isUserAdmin(user);
+  const userTier = getUserSubscriptionTier(user);
+  const userLimits = getSubscriptionLimits(userTier);
 
   // 사용자별 권한에 따른 모델 및 프롬프트 타입 로드
   useEffect(() => {
@@ -63,8 +65,10 @@ export function YoutubeForm() {
         setSelectedModel(defaultModel as AIModel);
       }
 
-      // 관리자만 프롬프트 타입 로드
-      if (userIsAdmin) {
+      // 구독 계층에 따른 프롬프트 타입 설정
+      const availablePromptTypes = userLimits.promptTypes;
+      
+      if (availablePromptTypes.includes('detailed_analysis')) {
         try {
           const promptTypes = await getAvailablePromptTypes();
           setAvailablePromptTypes(promptTypes);
@@ -73,11 +77,17 @@ export function YoutubeForm() {
           // 기본값 설정
           setAvailablePromptTypes([
             { type: 'general_summary', title: '일반 요약', description: '구조화된 형식으로 요약' },
-            { type: 'discussion_format', title: '토론식 요약', description: '두 화자의 토론 형식으로 요약' }
+            { type: 'discussion_format', title: '토론식 요약', description: '두 화자의 토론 형식으로 요약' },
+            { type: 'detailed_analysis', title: '상세 분석', description: '깊이 있는 분석과 인사이트 제공' }
           ]);
         }
+      } else if (availablePromptTypes.includes('discussion_format')) {
+        setAvailablePromptTypes([
+          { type: 'general_summary', title: '일반 요약', description: '구조화된 형식으로 요약' },
+          { type: 'discussion_format', title: '토론식 요약', description: '두 화자의 토론 형식으로 요약' }
+        ]);
       } else {
-        // 일반 사용자는 기본 프롬프트 타입만
+        // Free tier
         setAvailablePromptTypes([
           { type: 'general_summary', title: '일반 요약', description: '구조화된 형식으로 요약' }
         ]);
@@ -85,7 +95,7 @@ export function YoutubeForm() {
       }
     };
     loadOptions();
-  }, [user, selectedModel, userIsAdmin]);
+  }, [user, selectedModel, userTier]);
 
   // 영상 시킹 함수 (props/context로 전달 가능)
   const seekTo = (seconds: number) => {

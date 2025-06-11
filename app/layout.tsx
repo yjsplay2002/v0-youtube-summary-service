@@ -1,6 +1,5 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { Inter } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { LayoutWrapper } from "@/components/layout-wrapper"
@@ -9,8 +8,6 @@ import { SummaryProvider } from "@/components/summary-context"
 import { ResetProvider } from "@/components/reset-context"
 import { AuthProvider } from "@/components/auth-context"
 import { generateWebApplicationStructuredData } from "@/app/lib/structured-data"
-
-const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
   title: "YouTube Video Summarizer - AI-Powered Video Summary Tool",
@@ -63,7 +60,7 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className={inter.className}>
+      <body className="font-sans antialiased">
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
           <AuthProvider>
             <SummaryProvider>

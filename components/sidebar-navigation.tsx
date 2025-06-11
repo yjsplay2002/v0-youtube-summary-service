@@ -10,6 +10,8 @@ import Link from "next/link";
 import { useSummaryContext } from "@/components/summary-context";
 import { AuthButton } from "@/components/auth-button";
 import { useAuth } from "@/components/auth-context";
+import { getUserSubscriptionTier } from "@/app/lib/auth-utils";
+import { UsageTracker } from "@/components/usage-tracker";
 
 // 디바운스 함수 구현
 function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
@@ -41,6 +43,7 @@ export function SidebarNavigation({ currentVideoId }: SidebarNavigationProps) {
   const [refreshing, setRefreshing] = useState(false);
   const { registerRefreshCallback } = useSummaryContext();
   const { user } = useAuth();
+  const userTier = getUserSubscriptionTier(user);
 
   const isLoadingRef = useRef(false); // 실제 fetch 동작 여부
   const initialLoadCompletedForCurrentUserRef = useRef(false); // 현재 사용자에 대한 초기 로드 완료 여부
@@ -208,6 +211,8 @@ export function SidebarNavigation({ currentVideoId }: SidebarNavigationProps) {
           </Button>
         </div>
 
+        {!isCollapsed && <UsageTracker />}
+
         {!isCollapsed && (
           <p className="px-4 text-xs text-sidebar-muted-foreground mb-2">
             {user?.id ? "개인 요약 기록이 표시됩니다." : "최신 20개 요약만 표시됩니다."}
@@ -285,6 +290,11 @@ export function SidebarNavigation({ currentVideoId }: SidebarNavigationProps) {
           <>
             <Separator className="bg-sidebar-border mt-auto" />
             <div className="p-4 space-y-2">
+              {user && (
+                <div className="text-xs text-sidebar-muted-foreground mb-2">
+                  <p>Plan: <span className="font-semibold capitalize text-primary">{userTier.replace('_', ' ')}</span></p>
+                </div>
+              )}
               <Link href="/feedback">
                 <Button 
                   variant="outline" 
