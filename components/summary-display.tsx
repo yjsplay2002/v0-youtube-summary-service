@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef, useContext } from "react";
 import { SummaryDisplayClient } from "@/components/summary-display-client";
 import { getSummary, fetchVideoDetailsServer } from "@/app/actions";
 import { LoadingContext } from "@/components/youtube-form";
-import YouTube, { YouTubePlayer, YouTubeEvent } from "react-youtube";
+import YouTube, { YouTubePlayer } from "react-youtube";
 import { useResetContext } from "@/components/reset-context";
 import { useAuth } from "@/components/auth-context";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -16,6 +16,7 @@ export default function SummaryDisplay() {
   const [summary, setSummary] = useState<string | null>(null);
   const [videoInfo, setVideoInfo] = useState<any | null>(null);
   const [playerRef, setPlayerRef] = useState<YouTubePlayer | null>(null);
+  const [isRetrying, setIsRetrying] = useState(false);
   const { user } = useAuth();
   
   // Refs to track state without triggering re-renders
@@ -57,13 +58,17 @@ export default function SummaryDisplay() {
       
       // Only fetch video details if we have a valid summary
       if (result && result.trim() !== "") {
+        setIsRetrying(false);
         await fetchVideoDetails(videoId);
-      } else if (retryCountRef.current < 2) {
-        // Retry logic
+      } else if (retryCountRef.current < 5) { // 게스트 사용자를 위해 재시도 횟수 증가
+        // Retry logic - 게스트 사용자의 경우 DB 저장 시간이 더 걸릴 수 있음
         retryCountRef.current++;
-        timeoutRef.current = setTimeout(fetchSummaryWithRetry, 500);
+        setIsRetrying(true);
+        const retryDelay = Math.min(1000 * retryCountRef.current, 3000); // 점진적 지연 (최대 3초)
+        timeoutRef.current = setTimeout(fetchSummaryWithRetry, retryDelay);
       } else {
-        // Even if summary fetch failed, try to get video details
+        // 최종적으로 실패한 경우에도 비디오 정보는 가져오기
+        setIsRetrying(false);
         await fetchVideoDetails(videoId);
       }
     } catch (error) {
@@ -80,6 +85,7 @@ export default function SummaryDisplay() {
     const resetHandler = () => {
       setSummary(null);
       setVideoInfo(null);
+      setIsRetrying(false);
       retryCountRef.current = 0;
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
@@ -99,10 +105,12 @@ export default function SummaryDisplay() {
   useEffect(() => {
     if (videoId) {
       retryCountRef.current = 0;
+      setIsRetrying(false);
       fetchSummaryWithRetry();
     } else {
       setSummary(null);
       setVideoInfo(null);
+      setIsRetrying(false);
     }
     
     return () => {
@@ -115,9 +123,27 @@ export default function SummaryDisplay() {
   
   // Function to handle seeking in the video directly in this component
   const handleSeek = (seconds: number) => {
+    console.log(`[SummaryDisplay] 비디오 플레이어 시크: ${seconds}초`);
     if (playerRef) {
-      playerRef.seekTo(seconds, true);
-      playerRef.playVideo();
+      try {
+        playerRef.seekTo(seconds, true);
+        playerRef.playVideo();
+        console.log(`[SummaryDisplay] 비디오 플레이어 시크 성공: ${seconds}초`);
+        
+        // 타임스탬프를 분:초 형식으로 표시
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        const timeStr = `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+        
+        // 간단한 토스트 메시지 (선택사항)
+        if (typeof window !== 'undefined') {
+          console.log(`[SummaryDisplay] ${timeStr}로 이동했습니다`);
+        }
+      } catch (error) {
+        console.error(`[SummaryDisplay] 비디오 플레이어 시크 실패:`, error);
+      }
+    } else {
+      console.warn(`[SummaryDisplay] 비디오 플레이어가 준비되지 않았습니다`);
     }
   };
 
@@ -135,7 +161,22 @@ export default function SummaryDisplay() {
   }
   
   if (!videoId) return null;
-  if (summary === null) return null;
+  
+  // 재시도 중이거나 summary가 null인 경우 로딩 표시
+  if (summary === null || isRetrying) {
+    return (
+      <div className="space-y-4">
+        <div className="text-center py-8">
+          <div className="flex flex-col items-center space-y-4">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            <p className="text-muted-foreground">
+              {isRetrying ? `요약을 불러오는 중... (${retryCountRef.current}/5)` : "요약을 준비하고 있습니다..."}
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (typeof summary === "string" && summary.trim() === "") {
     return (
       <div className="space-y-4">

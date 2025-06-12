@@ -256,18 +256,48 @@ export async function generateSummary(
   }
 }
 
-// Format the summary as markdown (타임스탬프를 유튜브 링크로 변환)
+// Format the summary as markdown (다양한 타임스탬프 형식을 유튜브 링크로 변환)
 export function formatSummaryAsMarkdown(summary: string, videoId: string): string {
   console.log(`[formatSummaryAsMarkdown] 입력 요약 길이: ${summary.length} 문자`);
 
-  // [hh:mm:ss] 형태의 타임스탬프를 유튜브 링크(markdown 링크)로 변환
-  const timestampRegex = /\[(\d{2}):(\d{2}):(\d{2})\]/g;
-  const markdown = `# YouTube 영상 요약\n\n` +
-    summary.replace(timestampRegex, (_, hh, mm, ss) => {
-      const seconds = parseInt(hh, 10) * 3600 + parseInt(mm, 10) * 60 + parseInt(ss, 10);
-      const url = `https://www.youtube.com/watch?v=${videoId}&t=${seconds}s`;
-      return `[${hh}:${mm}:${ss}](${url})`;
-    });
+  let markdown = `# YouTube 영상 요약\n\n` + summary;
+  
+  // 1. [hh:mm:ss] 형태의 타임스탬프를 유튜브 링크로 변환
+  markdown = markdown.replace(/\[(\d{1,2}):(\d{2}):(\d{2})\]/g, (_, hh, mm, ss) => {
+    const seconds = parseInt(hh, 10) * 3600 + parseInt(mm, 10) * 60 + parseInt(ss, 10);
+    const url = `https://www.youtube.com/watch?v=${videoId}&t=${seconds}s`;
+    return `[${hh}:${mm}:${ss}](${url})`;
+  });
+  
+  // 2. [mm:ss] 형태의 타임스탬프를 유튜브 링크로 변환
+  markdown = markdown.replace(/\[(\d{1,2}):(\d{2})\]/g, (_, mm, ss) => {
+    const seconds = parseInt(mm, 10) * 60 + parseInt(ss, 10);
+    const url = `https://www.youtube.com/watch?v=${videoId}&t=${seconds}s`;
+    return `[${mm}:${ss}](${url})`;
+  });
+  
+  // 3. 이미 링크가 아닌 독립적인 타임스탬프들도 변환
+  // hh:mm:ss 형식 (괄호 없음)
+  markdown = markdown.replace(/\b(\d{1,2}):(\d{2}):(\d{2})\b/g, (match, hh, mm, ss) => {
+    // 이미 링크로 변환된 것은 건너뛰기
+    if (match.includes('](')) return match;
+    const seconds = parseInt(hh, 10) * 3600 + parseInt(mm, 10) * 60 + parseInt(ss, 10);
+    const url = `https://www.youtube.com/watch?v=${videoId}&t=${seconds}s`;
+    return `[${hh}:${mm}:${ss}](${url})`;
+  });
+  
+  // mm:ss 형식 (괄호 없음, 유효한 시간만)
+  markdown = markdown.replace(/\b(\d{1,2}):(\d{2})\b/g, (match, mm, ss) => {
+    // 이미 링크로 변환된 것은 건너뛰기
+    if (match.includes('](')) return match;
+    const minutes = parseInt(mm, 10);
+    const secs = parseInt(ss, 10);
+    // 유효한 시간 형식인지 확인 (초는 60미만)
+    if (secs >= 60) return match;
+    const seconds = minutes * 60 + secs;
+    const url = `https://www.youtube.com/watch?v=${videoId}&t=${seconds}s`;
+    return `[${mm}:${ss}](${url})`;
+  });
 
   console.log(`[formatSummaryAsMarkdown] 변환된 마크다운 길이: ${markdown.length} 문자`);
   return markdown;
