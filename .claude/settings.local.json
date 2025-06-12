@@ -6,7 +6,10 @@
       "Bash(npm run type-check:*)",
       "Bash(npx tsc:*)",
       "Bash(npm run lint)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(rg:*)",
+      "Bash(/Users/yujeongsang/.nvm/versions/node/v22.15.1/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg \"RLS|rls|policy\" --type ts --type tsx -A 2 -B 2)",
+      "Bash(/Users/yujeongsang/.nvm/versions/node/v22.15.1/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg \"RLS|rls|policy\" -g \"*.ts\" -g \"*.tsx\" -A 2 -B 2)"
     ],
     "deny": []
   }
