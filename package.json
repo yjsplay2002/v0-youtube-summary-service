@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.52.0",
+    "@anthropic-ai/tokenizer": "^0.0.4",
     "@hookform/resolvers": "^3.9.1",
     "@radix-ui/react-accordion": "1.2.2",
     "@radix-ui/react-alert-dialog": "1.1.4",
@@ -64,6 +65,7 @@
     "sonner": "^1.7.1",
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",
+    "tiktoken": "^1.0.21",
     "vaul": "^0.9.6",
     "youtube-transcript": "^1.2.1",
     "youtube-transcript-plus": "^1.0.4",
