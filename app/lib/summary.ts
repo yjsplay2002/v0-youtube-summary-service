@@ -6,7 +6,7 @@ import OpenAI from 'openai';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { supabase } from './supabase';
-import { encoding_for_model } from 'tiktoken';
+// Dynamically import tiktoken only when needed to avoid WASM issues in server
 
 // 시스템 프롬프트 캐시
 let systemPromptCache: string | null = null;
@@ -47,15 +47,13 @@ type ClaudeModel = keyof typeof CLAUDE_MODEL_CONFIG;
 // 토큰 수 계산 함수
 export function calculateTokenCount(text: string, model: AIModel = 'claude-3-5-haiku'): number {
   try {
+    // 모든 모델에 대해 대략적인 토큰 수 계산 사용 (tiktoken 의존성 제거)
     if (model.startsWith('claude')) {
-      // Claude 모델의 경우 대략적인 토큰 수 계산 (1 토큰 ≈ 4 문자)
+      // Claude 모델의 경우 (1 토큰 ≈ 3.5 문자)
       return Math.ceil(text.length / 3.5);
     } else {
-      // OpenAI 모델의 경우 tiktoken 사용
-      const encoder = encoding_for_model('gpt-4');
-      const tokens = encoder.encode(text);
-      encoder.free();
-      return tokens.length;
+      // OpenAI 모델의 경우 (1 토큰 ≈ 4 문자)
+      return Math.ceil(text.length / 4);
     }
   } catch (error) {
     console.warn('[calculateTokenCount] 토큰 계산 중 오류:', error);
