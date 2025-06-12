@@ -31,7 +31,7 @@ async function getUserVideoSummaryFromDB(videoId: string, userId: string) {
 
 // 기존 시스템 호환성을 위한 함수 (로그인하지 않은 사용자용)
 async function getYoutubeSummaryFromDB(videoId: string) {
-  console.log(`[DB 조회 (레거시)] video_id: ${videoId}`);
+  console.log(`[게스트 DB 조회] video_id: ${videoId} - 레거시 테이블 조회 시작`);
   const { data, error } = await supabase
     .from('youtube_summaries')
     .select('*')
@@ -40,15 +40,15 @@ async function getYoutubeSummaryFromDB(videoId: string) {
 
   if (error) {
     if (error.code === 'PGRST116' && error.details && error.details.includes('0 rows')) {
-      console.log('[DB 조회 결과 없음]'); 
+      console.log(`[게스트 DB 조회] video_id: ${videoId} - 레거시 테이블에 데이터 없음`); 
       return null; 
     } else {
-      console.error('[DB 조회 에러]', error);
+      console.error(`[게스트 DB 조회] video_id: ${videoId} - 레거시 테이블 조회 에러:`, error);
       return null; 
     }
   }
   
-  console.log('[DB 조회 결과] 존재함');
+  console.log(`[게스트 DB 조회] video_id: ${videoId} - 레거시 테이블에서 데이터 발견`);
   return data;
 }
 
@@ -234,32 +234,38 @@ export async function summarizeYoutubeVideo(
       // Apify 데이터만으로도 계속 진행 가능
     }
 
-    // 7. Supabase에 저장
-    if (userId) {
-      // 로그인한 사용자는 개인 테이블에 저장 (dialog 필드에 Apify 전체 데이터 저장)
-      await upsertUserVideoSummaryToDB({
-        user_id: userId,
-        video_id: videoId,
-        video_title: title,
-        video_thumbnail: thumbnail_url,
-        video_duration: duration,
-        channel_title: channel_title,
-        summary: markdown,
-        summary_prompt: summaryPrompt,
-        dialog: JSON.stringify(apifyRawData)
-      });
-      console.log(`[summarizeYoutubeVideo] 사용자별 Supabase에 요약 결과 저장 완료: ${videoId}`);
-    } else {
-      // 로그인하지 않은 사용자는 레거시 테이블에 저장
-      await upsertYoutubeSummaryToDB({
-        video_id: videoId,
-        transcript: transcript, // rawData JSON 전체
-        summary: markdown,
-        title,
-        channel_title,
-        thumbnail_url
-      });
-      console.log(`[summarizeYoutubeVideo] 레거시 Supabase에 요약 결과 저장 완료: ${videoId}`);
+    // 7. Supabase에 저장 (게스트 사용자 우선 처리)
+    try {
+      if (userId) {
+        // 로그인한 사용자는 개인 테이블에 저장 (dialog 필드에 Apify 전체 데이터 저장)
+        await upsertUserVideoSummaryToDB({
+          user_id: userId,
+          video_id: videoId,
+          video_title: title,
+          video_thumbnail: thumbnail_url,
+          video_duration: duration,
+          channel_title: channel_title,
+          summary: markdown,
+          summary_prompt: summaryPrompt,
+          dialog: JSON.stringify(apifyRawData)
+        });
+        console.log(`[summarizeYoutubeVideo] 사용자별 Supabase에 요약 결과 저장 완료: ${videoId}`);
+      } else {
+        // 게스트 사용자는 레거시 테이블에 즉시 저장
+        console.log(`[summarizeYoutubeVideo] 게스트 사용자 - 레거시 테이블에 저장 시작: ${videoId}`);
+        await upsertYoutubeSummaryToDB({
+          video_id: videoId,
+          transcript: transcript, // rawData JSON 전체
+          summary: markdown,
+          title,
+          channel_title,
+          thumbnail_url
+        });
+        console.log(`[summarizeYoutubeVideo] 게스트 사용자 - 레거시 Supabase에 요약 결과 저장 완료: ${videoId}`);
+      }
+    } catch (saveError) {
+      console.error(`[summarizeYoutubeVideo] DB 저장 오류:`, saveError);
+      // 저장 실패해도 요약 결과는 반환 (클라이언트에서 사용 가능)
     }
     
     return { success: true, videoId, summary: markdown };
@@ -291,11 +297,13 @@ export async function getSummary(videoId: string, userId?: string): Promise<stri
       }
     } else {
       // 로그인하지 않은 사용자: 레거시 테이블에서만 조회
-      console.log(`[getSummary] 로그인하지 않은 사용자 - 레거시 테이블에서만 조회: ${videoId}`);
+      console.log(`[getSummary] 게스트 사용자 - 레거시 테이블에서 조회 시작: ${videoId}`);
       const legacyResult = await getYoutubeSummaryFromDB(videoId);
       if (legacyResult && legacyResult.summary) {
-        console.log(`[getSummary] 레거시 테이블에서 요약 반환: ${videoId}`);
+        console.log(`[getSummary] 게스트 사용자 - 레거시 테이블에서 요약 반환 성공: ${videoId}`);
         return legacyResult.summary;
+      } else {
+        console.warn(`[getSummary] 게스트 사용자 - 레거시 테이블에서 요약을 찾을 수 없음: ${videoId}`);
       }
     }
     
