@@ -195,18 +195,10 @@ export async function summarizeYoutubeVideo(
       return { success: false, videoId, error: "자막을 찾을 수 없습니다." };
     }
     
-    // transcript 필드에서 텍스트 추출 (구조에 따라 다를 수 있음)
-    let transcript = "";
-    if (apifyRawData.transcript && Array.isArray(apifyRawData.transcript)) {
-      transcript = apifyRawData.transcript.map((item: any) => item.text).join(' ');
-    } else if (typeof apifyRawData.transcript === 'string') {
-      transcript = apifyRawData.transcript;
-    } else {
-      console.error(`[summarizeYoutubeVideo] 자막 형식을 인식할 수 없음:`, apifyRawData);
-      return { success: false, videoId, error: "자막 형식을 인식할 수 없습니다." };
-    }
+    // RawData 전체를 transcript로 사용
+    const transcript = JSON.stringify(apifyRawData);
     
-    console.log(`[summarizeYoutubeVideo] 자막 가져오기 성공, 길이: ${transcript.length} 문자`);
+    console.log(`[summarizeYoutubeVideo] Apify 데이터 가져오기 성공, 전체 데이터 길이: ${transcript.length} 문자`);
 
     // 5. 요약 생성 전 토큰 수 미리 확인
     const estimatedTokens = calculateTokenCount(transcript, aiModel);
@@ -261,7 +253,7 @@ export async function summarizeYoutubeVideo(
       // 로그인하지 않은 사용자는 레거시 테이블에 저장
       await upsertYoutubeSummaryToDB({
         video_id: videoId,
-        transcript,
+        transcript: transcript, // rawData JSON 전체
         summary: markdown,
         title,
         channel_title,
