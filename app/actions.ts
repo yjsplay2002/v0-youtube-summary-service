@@ -447,12 +447,12 @@ export async function getAllSummaries(userId?: string) {
     if (userId) {
       // 로그인한 사용자는 개인 요약 목록 조회 (모든 데이터)
       console.log(`[getAllSummaries] 로그인한 사용자 요약 조회: ${userId}`);
-      // supabaseAdmin 클라이언트로 RLS 우회하여 조회
-const { data, error } = await supabaseAdmin
-.from('video_summaries')
-.select('video_id, video_title, video_thumbnail, channel_title, created_at')
-.eq('user_id', userId)
-.order('created_at', { ascending: false });
+      // 일반 클라이언트 사용 (RLS 정책에 의존)
+      const { data, error } = await supabase
+        .from('video_summaries')
+        .select('video_id, video_title, video_thumbnail, channel_title, created_at')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
       
       if (error) {
         console.error('[getAllSummaries] 사용자별 DB 조회 에러:', error);
