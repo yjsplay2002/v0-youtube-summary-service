@@ -44,6 +44,7 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     detectSessionInUrl: true,
     storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+    storageKey: 'youtube-summarizer-auth',
   },
   global: {
     headers: {
