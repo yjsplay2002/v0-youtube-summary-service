@@ -6,6 +6,7 @@ import OpenAI from 'openai';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { supabase } from './supabase';
+import { encoding_for_model } from 'tiktoken';
 
 // 시스템 프롬프트 캐시
 let systemPromptCache: string | null = null;
@@ -21,15 +22,6 @@ export type AIModel =
 // 프롬프트 타입 정의
 export type PromptType = 'general_summary' | 'discussion_format';
 
-// 시스템 프롬프트 인터페이스
-interface SystemPrompt {
-  id: string;
-  prompt_type: string;
-  title: string;
-  description: string;
-  prompt_content: string;
-  is_active: boolean;
-}
 
 // Claude 모델별 설정
 const CLAUDE_MODEL_CONFIG = {
@@ -51,6 +43,53 @@ const CLAUDE_MODEL_CONFIG = {
 } as const;
 
 type ClaudeModel = keyof typeof CLAUDE_MODEL_CONFIG;
+
+// 토큰 수 계산 함수
+export function calculateTokenCount(text: string, model: AIModel = 'claude-3-5-haiku'): number {
+  try {
+    if (model.startsWith('claude')) {
+      // Claude 모델의 경우 대략적인 토큰 수 계산 (1 토큰 ≈ 4 문자)
+      return Math.ceil(text.length / 3.5);
+    } else {
+      // OpenAI 모델의 경우 tiktoken 사용
+      const encoder = encoding_for_model('gpt-4');
+      const tokens = encoder.encode(text);
+      encoder.free();
+      return tokens.length;
+    }
+  } catch (error) {
+    console.warn('[calculateTokenCount] 토큰 계산 중 오류:', error);
+    // 오류 발생 시 대략적인 계산으로 fallback
+    return Math.ceil(text.length / 4);
+  }
+}
+
+// 토큰 수 및 예상 비용 계산 함수
+export function estimateTokensAndCost(
+  systemPrompt: string, 
+  userMessage: string, 
+  model: AIModel = 'claude-3-5-haiku'
+): { inputTokens: number; estimatedOutputTokens: number; estimatedCostUSD: number } {
+  const inputTokens = calculateTokenCount(systemPrompt + userMessage, model);
+  const estimatedOutputTokens = Math.min(8192, Math.ceil(inputTokens * 0.3)); // 출력은 입력의 약 30%로 추정
+  
+  // 모델별 비용 (1M 토큰당 USD)
+  const costs = {
+    'claude-sonnet-4': { input: 15, output: 75 },
+    'claude-3-5-sonnet': { input: 3, output: 15 },
+    'claude-3-5-haiku': { input: 0.25, output: 1.25 },
+    'openai-gpt4': { input: 10, output: 30 }
+  };
+  
+  const cost = costs[model] || costs['claude-3-5-sonnet'];
+  const estimatedCostUSD = (inputTokens * cost.input + estimatedOutputTokens * cost.output) / 1000000;
+  
+  return {
+    inputTokens,
+    estimatedOutputTokens,
+    estimatedCostUSD: Math.round(estimatedCostUSD * 1000) / 1000 // 소수점 3자리까지
+  };
+}
 
 // OpenAI 클라이언트 초기화
 const getOpenAIClient = () => {
@@ -92,8 +131,13 @@ const callClaudeAPI = async (systemPrompt: string, userMessage: string, model: C
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Claude API error: ${response.status} - ${error}`);
+    if (response.status === 529) {
+      console.warn('[callClaudeAPI] Claude API is overloaded (529).');
+      throw new Error('Claude API server is busy now (529 overloaded)');
+    }
+    const errorText = await response.text();
+    console.error('[callClaudeAPI] Claude API 요청 중 오류 발생:', response.status, errorText);
+    throw new Error(`Claude API error: ${response.status} - ${errorText}`);
   }
 
   const data = await response.json();
@@ -252,6 +296,23 @@ export async function generateSummary(
     userMessage = `다음은 유튜브 영상의 자막입니다. 위 지침에 따라 요약해주세요.\n\n요약 지침: ${summaryPrompt}\n\n자막 내용:\n${transcript}`;
   } else {
     userMessage = `다음은 유튜브 영상의 자막입니다. 위 지침에 따라 요약해주세요:\n\n${transcript}`;
+  }
+  
+  // 토큰 수 및 예상 비용 계산
+  const tokenEstimate = estimateTokensAndCost(systemPrompt, userMessage, model);
+  console.log(`[generateSummary] 토큰 분석:`, {
+    입력토큰: tokenEstimate.inputTokens,
+    예상출력토큰: tokenEstimate.estimatedOutputTokens,
+    예상비용USD: `$${tokenEstimate.estimatedCostUSD}`,
+    시스템프롬프트길이: systemPrompt.length,
+    사용자메시지길이: userMessage.length
+  });
+  
+  // 토큰 수가 너무 많은 경우 경고
+  if (tokenEstimate.inputTokens > 150000) {
+    console.warn(`[generateSummary] ⚠️  입력 토큰이 매우 많습니다 (${tokenEstimate.inputTokens} 토큰). 모델 한계를 초과할 수 있습니다.`);
+  } else if (tokenEstimate.inputTokens > 100000) {
+    console.log(`[generateSummary] 📊 큰 입력 토큰 (${tokenEstimate.inputTokens} 토큰). 처리 시간이 오래 걸릴 수 있습니다.`);
   }
   
   try {

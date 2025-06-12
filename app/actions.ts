@@ -1,8 +1,8 @@
 "use server";
 
-import { extractVideoId, fetchTranscriptWithApi, fetchTranscriptLegacy, getVideoDetails } from "./lib/youtube";
+import { extractVideoId, fetchTranscript, getVideoDetails, type VideoDetails, type ApifyTranscriptData } from "./lib/youtube";
 import { supabase, supabaseAdmin } from "@/app/lib/supabase";
-import { generateSummary, formatSummaryAsMarkdown, type AIModel, type PromptType } from "./lib/summary";
+import { generateSummary, formatSummaryAsMarkdown, calculateTokenCount, estimateTokensAndCost, type AIModel, type PromptType } from "./lib/summary";
 import { isUserAdmin } from "./lib/auth-utils";
 
 // Supabase에서 사용자별 요약 조회
@@ -61,7 +61,8 @@ async function upsertUserVideoSummaryToDB({
   video_duration, 
   channel_title,
   summary, 
-  summary_prompt 
+  summary_prompt,
+  dialog
 }: {
   user_id: string,
   video_id: string,
@@ -70,7 +71,8 @@ async function upsertUserVideoSummaryToDB({
   video_duration?: string,
   channel_title?: string,
   summary: string,
-  summary_prompt?: string
+  summary_prompt?: string,
+  dialog?: string
 }) {
   console.log(`[upsertUserVideoSummaryToDB] 시작 - user_id: ${user_id}, video_id: ${video_id}`);
   
@@ -99,7 +101,8 @@ async function upsertUserVideoSummaryToDB({
         video_duration, 
         channel_title,
         summary, 
-        summary_prompt 
+        summary_prompt,
+        dialog
       }
     ]).select();
     
@@ -153,10 +156,10 @@ export async function summarizeYoutubeVideo(
       const { data: { user } } = await supabaseAdmin.auth.admin.getUserById(userId);
       const userIsAdmin = isUserAdmin(user);
       
-      // 비관리자는 Haiku 모델만 사용 가능
-      if (!userIsAdmin && aiModel !== 'claude-3-5-haiku') {
-        console.log(`[summarizeYoutubeVideo] 비관리자가 제한된 모델 사용 시도: ${aiModel}, Haiku로 변경`);
-        aiModel = 'claude-3-5-haiku';
+      // 비관리자는 Sonnet 모델까지 사용 가능
+      if (!userIsAdmin && !['claude-3-5-haiku', 'claude-3-5-sonnet'].includes(aiModel)) {
+        console.log(`[summarizeYoutubeVideo] 비관리자가 제한된 모델 사용 시도: ${aiModel}, Sonnet으로 변경`);
+        aiModel = 'claude-3-5-sonnet';
       }
     } else {
       // 게스트 사용자는 Haiku 모델만 사용 가능
@@ -183,39 +186,65 @@ export async function summarizeYoutubeVideo(
       }
     }
 
-    // 4. 자막 가져오기 (YouTube Data API v3 사용)
-    console.log(`[summarizeYoutubeVideo] fetchTranscriptWithApi 시도 중...`);
-    const apiKey = process.env.YOUTUBE_API_KEY || "";
-    let transcript = await fetchTranscriptWithApi(videoId);
+    // 4. 자막 가져오기
+    console.log(`[summarizeYoutubeVideo] 자막 가져오기 시도 중...`);
+    const apifyRawData = await fetchTranscript(videoId);
     
-    if (!transcript) {
-      console.log(`[summarizeYoutubeVideo] YouTube Data API로 자막 가져오기 실패, legacy 방식 시도 중...`);
-      transcript = await fetchTranscriptLegacy(videoId, apiKey);
+    if (!apifyRawData) {
+      console.error(`[summarizeYoutubeVideo] Apify 데이터를 가져올 수 없음: ${videoId}`);
+      return { success: false, videoId, error: "자막을 찾을 수 없습니다." };
     }
     
-    if (!transcript) {
-      console.error(`[summarizeYoutubeVideo] 자막을 찾을 수 없음: ${videoId}`);
-      return { success: false, videoId, error: "자막을 찾을 수 없습니다." };
+    // transcript 필드에서 텍스트 추출 (구조에 따라 다를 수 있음)
+    let transcript = "";
+    if (apifyRawData.transcript && Array.isArray(apifyRawData.transcript)) {
+      transcript = apifyRawData.transcript.map((item: any) => item.text).join(' ');
+    } else if (typeof apifyRawData.transcript === 'string') {
+      transcript = apifyRawData.transcript;
+    } else {
+      console.error(`[summarizeYoutubeVideo] 자막 형식을 인식할 수 없음:`, apifyRawData);
+      return { success: false, videoId, error: "자막 형식을 인식할 수 없습니다." };
     }
     
     console.log(`[summarizeYoutubeVideo] 자막 가져오기 성공, 길이: ${transcript.length} 문자`);
 
-    // 5. 요약 생성
-    console.log(`[summarizeYoutubeVideo] 요약 생성 시작... (모델: ${aiModel}, 프롬프트 타입: ${promptType})`);
+    // 5. 요약 생성 전 토큰 수 미리 확인
+    const estimatedTokens = calculateTokenCount(transcript, aiModel);
+    console.log(`[summarizeYoutubeVideo] 예상 토큰 수: ${estimatedTokens}, 모델: ${aiModel}, 프롬프트 타입: ${promptType}`);
+    
+    if (estimatedTokens > 180000) {
+      console.error(`[summarizeYoutubeVideo] 토큰 수가 너무 많습니다 (${estimatedTokens} 토큰). 처리를 중단합니다.`);
+      return { success: false, videoId, error: "자막이 너무 길어서 처리할 수 없습니다." };
+    }
+    
+    console.log(`[summarizeYoutubeVideo] 요약 생성 시작... (예상 토큰: ${estimatedTokens})`);
     const summary = await generateSummary(transcript, aiModel, summaryPrompt, promptType);
     const markdown = formatSummaryAsMarkdown(summary, videoId);
     
-    // 6. 비디오 메타데이터 가져오기
-    const videoDetails = await getVideoDetails(videoId, apiKey);
-    const snippet = videoDetails?.items?.[0]?.snippet || {};
-    const title = snippet.title || "";
-    const channel_title = snippet.channelTitle || "";
-    const thumbnail_url = snippet.thumbnails?.medium?.url || "";
-    const duration = videoDetails?.items?.[0]?.contentDetails?.duration || "";
+    // 6. 비디오 메타데이터 가져오기 (Apify 데이터 우선 사용)
+    let title = apifyRawData.videoTitle || "";
+    let channel_title = apifyRawData.channelName || "";
+    let thumbnail_url = "";
+    let duration = "";
+    
+    // YouTube API로 추가 정보 보완
+    try {
+      const videoDetails = await getVideoDetails(videoId);
+      const snippet = videoDetails?.items?.[0]?.snippet || {};
+      
+      // Apify 데이터가 없으면 YouTube API 데이터 사용
+      if (!title) title = snippet.title || "";
+      if (!channel_title) channel_title = snippet.channelTitle || "";
+      thumbnail_url = snippet.thumbnails?.medium?.url || "";
+      duration = videoDetails?.items?.[0]?.contentDetails?.duration || "";
+    } catch (error) {
+      console.warn(`[summarizeYoutubeVideo] YouTube API 메타데이터 가져오기 실패:`, error);
+      // Apify 데이터만으로도 계속 진행 가능
+    }
 
     // 7. Supabase에 저장
     if (userId) {
-      // 로그인한 사용자는 개인 테이블에 저장
+      // 로그인한 사용자는 개인 테이블에 저장 (dialog 필드에 Apify 전체 데이터 저장)
       await upsertUserVideoSummaryToDB({
         user_id: userId,
         video_id: videoId,
@@ -224,7 +253,8 @@ export async function summarizeYoutubeVideo(
         video_duration: duration,
         channel_title: channel_title,
         summary: markdown,
-        summary_prompt: summaryPrompt
+        summary_prompt: summaryPrompt,
+        dialog: JSON.stringify(apifyRawData)
       });
       console.log(`[summarizeYoutubeVideo] 사용자별 Supabase에 요약 결과 저장 완료: ${videoId}`);
     } else {
@@ -286,52 +316,24 @@ export async function getSummary(videoId: string, userId?: string): Promise<stri
   }
 }
 
-// YouTube 영상 정보 반환 타입 정의
-interface VideoDetails {
-  items: Array<{
-    id: string;
-    snippet: {
-      title: string;
-      channelTitle: string;
-      description: string;
-      publishedAt: string;
-      thumbnails: {
-        default: { url: string; width: number; height: number };
-        medium: { url: string; width: number; height: number };
-        high: { url: string; width: number; height: number };
-      };
-    };
-  }>;
-  [key: string]: any; // 기타 속성을 위한 인덱스 시그니처
-}
-
 /**
  * YouTube 영상 정보를 가져오는 서버 액션
+ * 이 함수의 실제 구현은 app/lib/youtube.ts의 getVideoDetails로 이동되었습니다.
+ * 이 서버 액션은 클라이언트의 호출을 위한 래퍼(wrapper) 역할을 합니다.
  * @param videoId 유튜브 비디오 ID
  * @returns 비디오 상세 정보
- * @throws {Error} API 키가 없거나 비디오를 찾을 수 없는 경우
+ * @throws {Error} API 호출 중 에러 발생 시
  */
 export async function fetchVideoDetailsServer(videoId: string): Promise<VideoDetails> {
   try {
-    const apiKey = process.env.YOUTUBE_API_KEY;
-    if (!apiKey) {
-      console.error('[fetchVideoDetailsServer] YOUTUBE_API_KEY is missing');
-      throw new Error('YouTube API 키가 설정되지 않았습니다.');
-    }
-    
-    console.log(`[fetchVideoDetailsServer] Fetching details for video: ${videoId}`);
-    const details = await getVideoDetails(videoId, apiKey);
-    
-    if (!details?.items?.length) {
-      console.error(`[fetchVideoDetailsServer] No video found with ID: ${videoId}`);
-      throw new Error('지정된 ID의 비디오를 찾을 수 없습니다.');
-    }
-    
-    console.log(`[fetchVideoDetailsServer] Successfully fetched details for video: ${videoId}`);
-    return details as VideoDetails;
+    console.log(`[fetchVideoDetailsServer] Calling getVideoDetails for video: ${videoId}`);
+    // 실제 로직은 lib/youtube.ts에 위임
+    const details = await getVideoDetails(videoId);
+    return details;
   } catch (error) {
-    console.error('[fetchVideoDetailsServer] Error:', error);
-    throw error; // 상위 컴포넌트에서 처리할 수 있도록 에러 전파
+    console.error(`[fetchVideoDetailsServer] Error calling getVideoDetails:`, error);
+    // 에러를 다시 throw하여 클라이언트 측에서 처리할 수 있도록 함
+    throw error;
   }
 }
 
@@ -355,10 +357,10 @@ export async function resummarizeYoutubeVideo(
     const { data: { user } } = await supabaseAdmin.auth.admin.getUserById(userId);
     const userIsAdmin = isUserAdmin(user);
     
-    // 비관리자는 Haiku 모델만 사용 가능
-    if (!userIsAdmin && aiModel !== 'claude-3-5-haiku') {
-      console.log(`[resummarizeYoutubeVideo] 비관리자가 제한된 모델 사용 시도: ${aiModel}, Haiku로 변경`);
-      aiModel = 'claude-3-5-haiku';
+    // 비관리자는 Sonnet 모델까지 사용 가능
+    if (!userIsAdmin && !['claude-3-5-haiku', 'claude-3-5-sonnet'].includes(aiModel)) {
+      console.log(`[resummarizeYoutubeVideo] 비관리자가 제한된 모델 사용 시도: ${aiModel}, Sonnet으로 변경`);
+      aiModel = 'claude-3-5-sonnet';
     }
     
     // 3. 비디오 정보 및 기존 트랜스크립트 가져오기
@@ -397,7 +399,7 @@ export async function resummarizeYoutubeVideo(
         const apiKey = process.env.YOUTUBE_API_KEY;
         if (!apiKey) throw new Error("YOUTUBE_API_KEY is missing");
         
-        const videoData = await getVideoDetails(videoId, apiKey);
+        const videoData = await getVideoDetails(videoId);
         title = title || videoData.items[0].snippet.title;
         channel_title = channel_title || videoData.items[0].snippet.channelTitle;
         thumbnail_url = thumbnail_url || videoData.items[0].snippet.thumbnails.high.url;
@@ -413,7 +415,12 @@ export async function resummarizeYoutubeVideo(
     const summary = await generateSummary(transcript, aiModel, summaryPrompt, promptType);
     const markdown = formatSummaryAsMarkdown(summary, videoId);
     
-    // 5. Supabase에 저장
+    // 5. Supabase에 저장 (기존 dialog 데이터 유지)
+    let existingDialog = "";
+    if (userSummary && userSummary.dialog) {
+      existingDialog = userSummary.dialog;
+    }
+    
     await upsertUserVideoSummaryToDB({
       user_id: userId,
       video_id: videoId,
@@ -422,7 +429,8 @@ export async function resummarizeYoutubeVideo(
       video_duration: duration,
       channel_title: channel_title,
       summary: markdown,
-      summary_prompt: summaryPrompt
+      summary_prompt: summaryPrompt,
+      dialog: existingDialog
     });
     console.log(`[resummarizeYoutubeVideo] Supabase에 요약 결과 저장 완료: ${videoId}`);
     
@@ -481,6 +489,29 @@ const { data, error } = await supabaseAdmin
   } catch (err) {
     console.error('[getAllSummaries] 오류 발생:', err);
     return [];
+  }
+}
+
+// 토큰 수 계산 서버 액션 (디버깅/테스트용)
+export async function calculateTokensForText(text: string, model: AIModel = 'claude-3-5-haiku'): Promise<{
+  tokenCount: number;
+  characterCount: number;
+  model: string;
+}> {
+  try {
+    const tokenCount = calculateTokenCount(text, model);
+    return {
+      tokenCount,
+      characterCount: text.length,
+      model
+    };
+  } catch (error) {
+    console.error('[calculateTokensForText] 토큰 계산 오류:', error);
+    return {
+      tokenCount: Math.ceil(text.length / 4), // fallback 계산
+      characterCount: text.length,
+      model
+    };
   }
 }
 
