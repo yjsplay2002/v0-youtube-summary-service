@@ -12,6 +12,7 @@ import { AuthButton } from "@/components/auth-button";
 import { useAuth } from "@/components/auth-context";
 import { getUserSubscriptionTier } from "@/app/lib/auth-utils";
 import { UsageTracker } from "@/components/usage-tracker";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 // 디바운스 함수 구현
 function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
@@ -205,10 +206,13 @@ export function SidebarNavigation({ currentVideoId }: SidebarNavigationProps) {
         
         <div className="px-4 mb-2 flex items-center justify-between">
           {!isCollapsed && <AuthButton />}
-          <Button variant="ghost" size={isCollapsed ? "icon" : "default"} onClick={handleRefresh} disabled={refreshing || (loading && !refreshing)} className="text-sidebar-muted-foreground">
-            <RefreshCw className={`h-4 w-4 ${(refreshing || (loading && !refreshing)) ? 'animate-spin' : ''}`} />
-            {!isCollapsed && <span className="ml-2">새로고침</span>}
-          </Button>
+          <div className="flex items-center gap-1">
+            {isCollapsed && <ThemeToggle />}
+            <Button variant="ghost" size={isCollapsed ? "icon" : "default"} onClick={handleRefresh} disabled={refreshing || (loading && !refreshing)} className="text-sidebar-muted-foreground">
+              <RefreshCw className={`h-4 w-4 ${(refreshing || (loading && !refreshing)) ? 'animate-spin' : ''}`} />
+              {!isCollapsed && <span className="ml-2">새로고침</span>}
+            </Button>
+          </div>
         </div>
 
         {!isCollapsed && <UsageTracker />}
@@ -295,6 +299,10 @@ export function SidebarNavigation({ currentVideoId }: SidebarNavigationProps) {
                   <p>Plan: <span className="font-semibold capitalize text-primary">{userTier.replace('_', ' ')}</span></p>
                 </div>
               )}
+              <div className="flex items-center gap-2 mb-2">
+                <ThemeToggle />
+                <span className="text-xs text-sidebar-muted-foreground">테마 변경</span>
+              </div>
               <Link href="/feedback">
                 <Button 
                   variant="outline" 
