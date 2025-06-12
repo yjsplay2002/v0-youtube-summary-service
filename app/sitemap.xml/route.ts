@@ -51,10 +51,17 @@ export async function GET(request: NextRequest) {
   </url>
   
   <url>
+    <loc>${baseUrl}/landing</loc>
+    <lastmod>${currentDate}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  
+  <url>
     <loc>${baseUrl}/community</loc>
     <lastmod>${currentDate}</lastmod>
     <changefreq>daily</changefreq>
-    <priority>0.9</priority>
+    <priority>0.8</priority>
   </url>
   
   <url>
@@ -123,10 +130,16 @@ export async function GET(request: NextRequest) {
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>${baseUrl}/landing</loc>
+    <lastmod>${new Date().toISOString()}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
     <loc>${baseUrl}/community</loc>
     <lastmod>${new Date().toISOString()}</lastmod>
     <changefreq>daily</changefreq>
-    <priority>0.9</priority>
+    <priority>0.8</priority>
   </url>
   <url>
     <loc>${baseUrl}/feedback</loc>
