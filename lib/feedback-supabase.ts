@@ -3,7 +3,11 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = process.env.NEXT_PUBLIC_FEEDBACK_SUPABASE_URL || 'https://dummy-feedback.supabase.co'
 const supabaseKey = process.env.NEXT_PUBLIC_FEEDBACK_SUPABASE_ANON_KEY || 'dummy_feedback_key_for_development'
 
-export const feedbackSupabase = createClient(supabaseUrl, supabaseKey)
+export const feedbackSupabase = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    storageKey: 'feedback-supabase-auth',
+  },
+})
 
 export type FeedbackPost = {
   id: string
