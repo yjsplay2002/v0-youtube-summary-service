@@ -63,27 +63,14 @@ export default function CurationSection({ className }: CurationSectionProps) {
   const [nextPageToken, setNextPageToken] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
+  const [isClient, setIsClient] = useState(false);
   
   const observerRef = useRef<IntersectionObserver | null>(null);
-  const lastVideoElementRef = useCallback((node: HTMLDivElement) => {
-    if (loadingMore) return;
-    if (observerRef.current) observerRef.current.disconnect();
-    
-    observerRef.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMore && !loadingMore) {
-        console.log('[CurationSection] Intersection detected, loading more videos...');
-        loadMoreVideos();
-      }
-    }, {
-      threshold: 0.1,
-      rootMargin: '50px'
-    });
-    
-    if (node) {
-      console.log('[CurationSection] Attaching observer to last video element');
-      observerRef.current.observe(node);
-    }
-  }, [loadingMore, hasMore, loadMoreVideos]);
+
+  // Ensure this component only renders properly on client-side
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   // 초기 비디오 로드
   const loadInitialVideos = async () => {
@@ -93,7 +80,7 @@ export default function CurationSection({ className }: CurationSectionProps) {
       setError(null);
       const result = await getCuratedVideos(user?.id);
       
-      if (result.items) {
+      if (result && result.items) {
         console.log(`[CurationSection] Loaded ${result.items.length} initial videos`);
         setVideos(result.items);
         setNextPageToken(result.nextPageToken);
@@ -110,8 +97,9 @@ export default function CurationSection({ className }: CurationSectionProps) {
       }
     } catch (err) {
       console.error('[CurationSection] Error loading videos:', err);
-      setError('비디오를 불러오는데 실패했습니다.');
+      setError('비디오를 불러오는데 실패했습니다. API 키가 설정되지 않았을 수 있습니다.');
       setVideos([]);
+      setHasMore(false);
     } finally {
       setLoading(false);
     }
@@ -130,7 +118,7 @@ export default function CurationSection({ className }: CurationSectionProps) {
       setLoadingMore(true);
       const result = await getCuratedVideos(user?.id, nextPageToken);
       
-      if (result.items && result.items.length > 0) {
+      if (result && result.items && result.items.length > 0) {
         console.log(`[CurationSection] Loaded ${result.items.length} more videos`);
         setVideos(prev => [...prev, ...result.items]);
         setNextPageToken(result.nextPageToken);
@@ -147,19 +135,47 @@ export default function CurationSection({ className }: CurationSectionProps) {
     }
   }, [hasMore, loadingMore, nextPageToken, user?.id]);
 
+  const lastVideoElementRef = useCallback((node: HTMLDivElement) => {
+    if (!isClient || loadingMore) return;
+    if (observerRef.current) observerRef.current.disconnect();
+    
+    observerRef.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && hasMore && !loadingMore) {
+        console.log('[CurationSection] Intersection detected, loading more videos...');
+        loadMoreVideos();
+      }
+    }, {
+      threshold: 0.1,
+      rootMargin: '50px'
+    });
+    
+    if (node) {
+      console.log('[CurationSection] Attaching observer to last video element');
+      observerRef.current.observe(node);
+    }
+  }, [loadingMore, hasMore, loadMoreVideos, isClient]);
+
   // 비디오 클릭 핸들러
   const handleVideoClick = (videoId: string) => {
-    const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    // 같은 페이지에서 URL 입력 필드에 채우기 위해 커스텀 이벤트 발송
-    window.postMessage({ type: 'FILL_YOUTUBE_URL', url: youtubeUrl }, '*');
-    
-    // 또는 새 탭에서 YouTube로 바로 이동
-    // window.open(youtubeUrl, '_blank');
+    try {
+      const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      // 같은 페이지에서 URL 입력 필드에 채우기 위해 커스텀 이벤트 발송
+      if (typeof window !== 'undefined' && window.postMessage) {
+        window.postMessage({ type: 'FILL_YOUTUBE_URL', url: youtubeUrl }, '*');
+      }
+      
+      // 또는 새 탭에서 YouTube로 바로 이동
+      // window.open(youtubeUrl, '_blank');
+    } catch (error) {
+      console.error('[CurationSection] Error in handleVideoClick:', error);
+    }
   };
 
   useEffect(() => {
-    loadInitialVideos();
-  }, [user?.id]);
+    if (isClient) {
+      loadInitialVideos();
+    }
+  }, [user?.id, isClient]);
 
   // Cleanup observer on unmount
   useEffect(() => {
