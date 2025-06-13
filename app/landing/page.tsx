@@ -1,6 +1,6 @@
 import { HeroSection } from "@/components/hero-section"
 import { FeaturesSection } from "@/components/features-section"
-import { PricingSection } from "@/components/pricing-section"
+// import { PricingSection } from "@/components/pricing-section" - Temporarily commented out
 import { FAQSection } from "@/components/faq-section"
 import { Suspense } from "react"
 import { YoutubeForm } from "@/components/youtube-form"
@@ -28,7 +28,7 @@ export default function LandingPage() {
     <div className="min-h-screen">
       <HeroSection />
       <FeaturesSection />
-      <PricingSection />
+      {/* <PricingSection /> - Temporarily hidden as subscription feature is not ready */}
       <FAQSection />
       
       {/* Main app section */}
