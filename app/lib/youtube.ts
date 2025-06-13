@@ -139,6 +139,30 @@ export interface YoutubeSearchResult {
   totalResults?: number;
 }
 
+/**
+ * 비디오 길이를 초 단위로 변환하는 함수
+ */
+function parseDurationToSeconds(duration: string): number {
+  if (!duration || duration === 'Unknown') return 0;
+  
+  const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return 0;
+  
+  const hours = parseInt(match[1] || '0');
+  const minutes = parseInt(match[2] || '0');
+  const seconds = parseInt(match[3] || '0');
+  
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+/**
+ * 쇼츠 비디오인지 확인하는 함수 (60초 이하)
+ */
+function isShorts(duration: string): boolean {
+  if (!duration || duration === 'Unknown') return false;
+  return parseDurationToSeconds(duration) <= 60;
+}
+
 
 /**
  * YouTube 영상 정보를 가져오는 함수
@@ -209,7 +233,7 @@ export async function getTrendingVideos(maxResults: number = 12, pageToken?: str
     
     const data = await response.json();
     
-    const items: VideoListItem[] = data.items?.map((item: any) => ({
+    const allItems: VideoListItem[] = data.items?.map((item: any) => ({
       id: item.id,
       title: item.snippet.title,
       channelTitle: item.snippet.channelTitle,
@@ -219,7 +243,10 @@ export async function getTrendingVideos(maxResults: number = 12, pageToken?: str
       description: item.snippet.description
     })) || [];
     
-    console.log(`[getTrendingVideos] Successfully fetched ${items.length} trending videos`);
+    // Filter out Shorts videos (≤60 seconds) for curation purposes
+    const items = allItems.filter(item => !isShorts(item.duration));
+    
+    console.log(`[getTrendingVideos] Successfully fetched ${allItems.length} videos, filtered to ${items.length} (excluded ${allItems.length - items.length} Shorts)`);
     
     return {
       items,
@@ -276,8 +303,8 @@ export async function searchVideos(query: string, maxResults: number = 12, pageT
     
     if (!detailsResponse.ok) {
       console.warn('[searchVideos] Failed to fetch video details, using basic info');
-      // 기본 정보만으로 반환
-      const items: VideoListItem[] = data.items?.map((item: any) => ({
+      // 기본 정보만으로 반환 (Shorts는 duration이 'Unknown'이므로 필터링되지 않음)
+      const allItems: VideoListItem[] = data.items?.map((item: any) => ({
         id: item.id.videoId,
         title: item.snippet.title,
         channelTitle: item.snippet.channelTitle,
@@ -287,8 +314,9 @@ export async function searchVideos(query: string, maxResults: number = 12, pageT
         description: item.snippet.description
       })) || [];
       
+      // Since duration is unknown, we can't filter Shorts, so return all items
       return {
-        items,
+        items: allItems,
         nextPageToken: data.nextPageToken,
         totalResults: data.pageInfo?.totalResults
       };
@@ -296,7 +324,7 @@ export async function searchVideos(query: string, maxResults: number = 12, pageT
     
     const detailsData = await detailsResponse.json();
     
-    const items: VideoListItem[] = detailsData.items?.map((item: any) => ({
+    const allItems: VideoListItem[] = detailsData.items?.map((item: any) => ({
       id: item.id,
       title: item.snippet.title,
       channelTitle: item.snippet.channelTitle,
@@ -306,7 +334,10 @@ export async function searchVideos(query: string, maxResults: number = 12, pageT
       description: item.snippet.description
     })) || [];
     
-    console.log(`[searchVideos] Successfully found ${items.length} videos for query: "${query}"`);
+    // Filter out Shorts videos (≤60 seconds) for curation purposes
+    const items = allItems.filter(item => !isShorts(item.duration));
+    
+    console.log(`[searchVideos] Successfully found ${allItems.length} videos for query: "${query}", filtered to ${items.length} (excluded ${allItems.length - items.length} Shorts)`);
     
     return {
       items,

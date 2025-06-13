@@ -295,18 +295,14 @@ export default function CurationSection({ className }: CurationSectionProps) {
           </p>
         </div>
         
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3 mb-6">
-          {[...Array(8)].map((_, i) => (
-            <Card key={`shorts-loading-${i}`} className="overflow-hidden">
-              <Skeleton className="aspect-[9/16] w-full" />
-            </Card>
-          ))}
-        </div>
-        
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[...Array(6)].map((_, i) => (
             <Card key={`video-loading-${i}`} className="overflow-hidden">
               <Skeleton className="aspect-video w-full" />
+              <CardContent className="p-4">
+                <Skeleton className="h-4 w-full mb-2" />
+                <Skeleton className="h-3 w-2/3" />
+              </CardContent>
             </Card>
           ))}
         </div>
@@ -357,86 +353,12 @@ export default function CurationSection({ className }: CurationSectionProps) {
         </p>
       </div>
       
-      {/* 쇼츠 비디오들 */}
-      {playableVideos.filter(video => isShorts(video.duration)).length > 0 && (
-        <div className="mb-8">
-          <h3 className="text-lg font-semibold mb-4">Shorts</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
-            {playableVideos.filter(video => isShorts(video.duration)).map((video, index, filteredVideos) => {
-              // Find the original index of this video in the full videos array
-              const originalIndex = playableVideos.findIndex(v => v.id === video.id);
-              const isLastVideo = originalIndex === playableVideos.length - 1;
-              
-              return (
-                <div key={`shorts-${video.id}-${index}`} className="video-card relative">
-                  <Card 
-                    className={`overflow-hidden hover:shadow-lg transition-all cursor-pointer group ${
-                      selectedVideo === video.id ? 'ring-2 ring-primary' : ''
-                    }`}
-                    ref={isLastVideo ? lastVideoElementRef : null}
-                  >
-                    <div className="relative aspect-[9/16] overflow-hidden">
-                      <YouTube
-                        videoId={video.id}
-                        className="w-full h-full"
-                        iframeClassName="w-full h-full"
-                        opts={{
-                          width: '100%',
-                          height: '100%',
-                          playerVars: {
-                            rel: 0,
-                            modestbranding: 1,
-                          },
-                        }}
-                        onStateChange={(event) => {
-                          // 비디오 플레이어 클릭시 선택되도록 처리
-                          if (event.data === 1) { // playing state
-                            setSelectedVideo(video.id);
-                          }
-                        }}
-                        onError={(error) => handlePlayerError(video.id, error)}
-                      />
-                      {video.duration && (
-                        <div className="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1 py-0.5 rounded text-[10px] pointer-events-none z-10">
-                          <Clock className="inline h-2 w-2 mr-0.5" />
-                          {formatDuration(video.duration)}
-                        </div>
-                      )}
-                    </div>
-                  </Card>
-                  
-                  {/* 요약 버튼 */}
-                  {selectedVideo === video.id && (
-                    <Button
-                      className="summarize-button absolute -bottom-2 -right-2 h-8 w-8 p-0 rounded-full bg-primary hover:bg-primary/90 shadow-lg z-20"
-                      onClick={(e) => handleSummarizeClick(video.id, e)}
-                      disabled={summarizing === video.id}
-                    >
-                      {summarizing === video.id ? (
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                      ) : completedSummaries.has(video.id) ? (
-                        <ExternalLink className="h-4 w-4" />
-                      ) : (
-                        <Sparkles className="h-4 w-4" />
-                      )}
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-      
-      {/* 일반 비디오들 */}
-      {playableVideos.filter(video => !isShorts(video.duration)).length > 0 && (
+      {/* 일반 비디오들만 표시 (Shorts는 로딩 시 제외됨) */}
+      {playableVideos.length > 0 && (
         <div>
-          <h3 className="text-lg font-semibold mb-4">Videos</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {playableVideos.filter(video => !isShorts(video.duration)).map((video, index) => {
-              // Find the original index of this video in the full videos array
-              const originalIndex = playableVideos.findIndex(v => v.id === video.id);
-              const isLastVideo = originalIndex === playableVideos.length - 1;
+            {playableVideos.map((video, index) => {
+              const isLastVideo = index === playableVideos.length - 1;
               
               return (
                 <div key={`video-${video.id}-${index}`} className="video-card relative">
@@ -474,6 +396,18 @@ export default function CurationSection({ className }: CurationSectionProps) {
                         </div>
                       )}
                     </div>
+                    <CardContent className="p-4">
+                      <h3 className="font-semibold line-clamp-2 mb-2">
+                        {video.title}
+                      </h3>
+                      <div className="flex items-center text-sm text-muted-foreground mb-1">
+                        <User className="h-3 w-3 mr-1" />
+                        {video.channelTitle}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {formatRelativeDate(video.publishedAt)}
+                      </div>
+                    </CardContent>
                   </Card>
                   
                   {/* 요약 버튼 */}
@@ -504,6 +438,10 @@ export default function CurationSection({ className }: CurationSectionProps) {
           {[...Array(3)].map((_, i) => (
             <Card key={`loading-${i}`} className="overflow-hidden">
               <Skeleton className="aspect-video w-full" />
+              <CardContent className="p-4">
+                <Skeleton className="h-4 w-full mb-2" />
+                <Skeleton className="h-3 w-2/3" />
+              </CardContent>
             </Card>
           ))}
         </div>
