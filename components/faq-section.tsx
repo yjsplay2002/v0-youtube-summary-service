@@ -12,10 +12,10 @@ const faqs = [
     question: "How does the YouTube video summarization work?",
     answer: "Our AI-powered system extracts the transcript from YouTube videos and uses advanced language models like Claude 3.5 to generate comprehensive summaries. The process typically takes just a few seconds and preserves the key insights from the original content."
   },
-  {
-    question: "What's the difference between subscription tiers?",
-    answer: "Free users get 3 summaries per day with basic formatting. Pro users ($9.99/mo) get 25 summaries daily, multiple formats, and videos up to 1 hour. Pro+ users ($19.99/mo) get 100 summaries daily, all formats, videos up to 3 hours, and access to premium AI models."
-  },
+  // {
+  //   question: "What's the difference between subscription tiers?",
+  //   answer: "Free users get 3 summaries per day with basic formatting. Pro users ($9.99/mo) get 25 summaries daily, multiple formats, and videos up to 1 hour. Pro+ users ($19.99/mo) get 100 summaries daily, all formats, videos up to 3 hours, and access to premium AI models."
+  // },
   {
     question: "Can I summarize private or unlisted YouTube videos?",
     answer: "Yes, as long as the video has captions enabled and is accessible via its URL, our system can process it regardless of its privacy settings. We don't store video content permanently and respect privacy."
@@ -35,11 +35,11 @@ const faqs = [
   {
     question: "Is there an API available?",
     answer: "We're working on an API for developers and businesses. Contact us if you're interested in integrating our summarization capabilities into your applications."
-  },
-  {
-    question: "What happens if I cancel my subscription?",
-    answer: "You can cancel anytime and continue using paid features until the end of your billing period. After that, you'll be moved to the free tier with 3 summaries per day."
   }
+  // {
+  //   question: "What happens if I cancel my subscription?",
+  //   answer: "You can cancel anytime and continue using paid features until the end of your billing period. After that, you'll be moved to the free tier with 3 summaries per day."
+  // }
 ];
 
 export function FAQSection() {
