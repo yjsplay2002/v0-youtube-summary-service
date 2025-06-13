@@ -492,6 +492,44 @@ export async function getAllSummaries(userId?: string) {
   }
 }
 
+// 큐레이션용 비디오 목록 가져오기 서버 액션
+export async function getCuratedVideos(userId?: string, pageToken?: string) {
+  try {
+    if (userId) {
+      // 로그인한 사용자: 개인화된 큐레이션
+      console.log(`[getCuratedVideos] 로그인한 사용자(${userId})를 위한 개인화 큐레이션`);
+      
+      // 먼저 사용자의 요약 히스토리를 가져옴
+      const summaries = await getAllSummaries(userId);
+      
+      if (summaries.length === 0) {
+        // 히스토리가 없으면 트렌딩 비디오 반환
+        console.log('[getCuratedVideos] 히스토리가 없음 - 트렌딩 비디오 반환');
+        const { getTrendingVideos } = await import('@/app/lib/youtube');
+        return await getTrendingVideos(12, pageToken);
+      }
+      
+      // 사용자 선호도 분석 및 개인화된 검색
+      const { generateCurationQuery } = await import('@/app/lib/curation-utils');
+      const { searchVideos } = await import('@/app/lib/youtube');
+      
+      const query = generateCurationQuery(summaries);
+      console.log(`[getCuratedVideos] 개인화 검색 쿼리: "${query}"`);
+      
+      return await searchVideos(query, 12, pageToken);
+    } else {
+      // 게스트 사용자: 트렌딩 비디오
+      console.log('[getCuratedVideos] 게스트 사용자 - 트렌딩 비디오 제공');
+      const { getTrendingVideos } = await import('@/app/lib/youtube');
+      return await getTrendingVideos(12, pageToken);
+    }
+  } catch (error) {
+    console.error('[getCuratedVideos] 오류 발생:', error);
+    // 오류 발생 시 빈 결과 반환
+    return { items: [] };
+  }
+}
+
 // 토큰 수 계산 서버 액션 (디버깅/테스트용)
 export async function calculateTokensForText(text: string, model: AIModel = 'claude-3-5-haiku'): Promise<{
   tokenCount: number;

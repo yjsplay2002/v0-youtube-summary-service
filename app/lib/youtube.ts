@@ -117,6 +117,28 @@ export interface VideoDetails {
   [key: string]: any; // 기타 속성을 위한 인덱스 시그니처
 }
 
+/**
+ * YouTube 비디오 목록 아이템 타입 정의 (큐레이션용)
+ */
+export interface VideoListItem {
+  id: string;
+  title: string;
+  channelTitle: string;
+  thumbnail: string;
+  publishedAt: string;
+  duration: string;
+  description?: string;
+}
+
+/**
+ * YouTube 검색/트렌딩 결과 타입 정의
+ */
+export interface YoutubeSearchResult {
+  items: VideoListItem[];
+  nextPageToken?: string;
+  totalResults?: number;
+}
+
 
 /**
  * YouTube 영상 정보를 가져오는 함수
@@ -153,6 +175,146 @@ export async function getVideoDetails(videoId: string): Promise<VideoDetails> {
   } catch (error) {
     console.error(`[getVideoDetails] Error fetching video details:`, error);
     // Rethrow the error to be handled by the caller
+    throw error;
+  }
+}
+
+/**
+ * YouTube 트렌딩 비디오를 가져오는 함수
+ * @param maxResults 가져올 비디오 수 (기본값: 12)
+ * @param pageToken 페이지네이션 토큰
+ * @returns 트렌딩 비디오 목록
+ */
+export async function getTrendingVideos(maxResults: number = 12, pageToken?: string): Promise<YoutubeSearchResult> {
+  const apiKey = process.env.YOUTUBE_API_KEY;
+  if (!apiKey) {
+    console.error('[getTrendingVideos] YOUTUBE_API_KEY is missing');
+    throw new Error('YouTube API 키가 설정되지 않았습니다.');
+  }
+
+  console.log(`[getTrendingVideos] Fetching trending videos (maxResults: ${maxResults})`);
+  
+  let url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&chart=mostPopular&maxResults=${maxResults}&key=${apiKey}&regionCode=KR`;
+  if (pageToken) {
+    url += `&pageToken=${pageToken}`;
+  }
+  
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error(`[getTrendingVideos] YouTube API error: ${response.status}`, errorData);
+      throw new Error(`YouTube API responded with status ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    const items: VideoListItem[] = data.items?.map((item: any) => ({
+      id: item.id,
+      title: item.snippet.title,
+      channelTitle: item.snippet.channelTitle,
+      thumbnail: item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url,
+      publishedAt: item.snippet.publishedAt,
+      duration: item.contentDetails.duration,
+      description: item.snippet.description
+    })) || [];
+    
+    console.log(`[getTrendingVideos] Successfully fetched ${items.length} trending videos`);
+    
+    return {
+      items,
+      nextPageToken: data.nextPageToken,
+      totalResults: data.pageInfo?.totalResults
+    };
+  } catch (error) {
+    console.error(`[getTrendingVideos] Error fetching trending videos:`, error);
+    throw error;
+  }
+}
+
+/**
+ * YouTube에서 키워드로 비디오를 검색하는 함수
+ * @param query 검색 키워드
+ * @param maxResults 가져올 비디오 수 (기본값: 12)
+ * @param pageToken 페이지네이션 토큰
+ * @returns 검색된 비디오 목록
+ */
+export async function searchVideos(query: string, maxResults: number = 12, pageToken?: string): Promise<YoutubeSearchResult> {
+  const apiKey = process.env.YOUTUBE_API_KEY;
+  if (!apiKey) {
+    console.error('[searchVideos] YOUTUBE_API_KEY is missing');
+    throw new Error('YouTube API 키가 설정되지 않았습니다.');
+  }
+
+  console.log(`[searchVideos] Searching videos with query: "${query}" (maxResults: ${maxResults})`);
+  
+  let url = `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=${maxResults}&q=${encodeURIComponent(query)}&key=${apiKey}&regionCode=KR&order=relevance`;
+  if (pageToken) {
+    url += `&pageToken=${pageToken}`;
+  }
+  
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error(`[searchVideos] YouTube API error: ${response.status}`, errorData);
+      throw new Error(`YouTube API responded with status ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    // 검색 결과에서 비디오 ID들을 추출하여 상세 정보를 가져옴
+    const videoIds = data.items?.map((item: any) => item.id.videoId).filter(Boolean) || [];
+    
+    if (videoIds.length === 0) {
+      return { items: [] };
+    }
+    
+    // 비디오 상세 정보를 가져와서 duration 포함
+    const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&id=${videoIds.join(',')}&key=${apiKey}`;
+    const detailsResponse = await fetch(detailsUrl);
+    
+    if (!detailsResponse.ok) {
+      console.warn('[searchVideos] Failed to fetch video details, using basic info');
+      // 기본 정보만으로 반환
+      const items: VideoListItem[] = data.items?.map((item: any) => ({
+        id: item.id.videoId,
+        title: item.snippet.title,
+        channelTitle: item.snippet.channelTitle,
+        thumbnail: item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url,
+        publishedAt: item.snippet.publishedAt,
+        duration: 'Unknown',
+        description: item.snippet.description
+      })) || [];
+      
+      return {
+        items,
+        nextPageToken: data.nextPageToken,
+        totalResults: data.pageInfo?.totalResults
+      };
+    }
+    
+    const detailsData = await detailsResponse.json();
+    
+    const items: VideoListItem[] = detailsData.items?.map((item: any) => ({
+      id: item.id,
+      title: item.snippet.title,
+      channelTitle: item.snippet.channelTitle,
+      thumbnail: item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url,
+      publishedAt: item.snippet.publishedAt,
+      duration: item.contentDetails.duration,
+      description: item.snippet.description
+    })) || [];
+    
+    console.log(`[searchVideos] Successfully found ${items.length} videos for query: "${query}"`);
+    
+    return {
+      items,
+      nextPageToken: data.nextPageToken,
+      totalResults: data.pageInfo?.totalResults
+    };
+  } catch (error) {
+    console.error(`[searchVideos] Error searching videos:`, error);
     throw error;
   }
 }
