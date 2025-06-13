@@ -6,7 +6,7 @@ import { getCuratedVideos, summarizeYoutubeVideo } from '@/app/actions';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { PlayCircle, Clock, User, Sparkles, ExternalLink } from 'lucide-react';
+import { PlayCircle, Clock, Sparkles, ExternalLink } from 'lucide-react';
 import YouTube from 'react-youtube';
 import { useRouter } from 'next/navigation';
 import { useSummaryContext } from '@/components/summary-context';
@@ -63,20 +63,6 @@ function parseDurationToSeconds(duration: string): number {
 function isShorts(duration: string): boolean {
   if (!duration || duration === 'Unknown') return false;
   return parseDurationToSeconds(duration) <= 60;
-}
-
-// 날짜를 상대적 형태로 변환
-function formatRelativeDate(dateString: string): string {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffTime = Math.abs(now.getTime() - date.getTime());
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  
-  if (diffDays <= 1) return '1일 전';
-  if (diffDays <= 7) return `${diffDays}일 전`;
-  if (diffDays <= 30) return `${Math.ceil(diffDays / 7)}주 전`;
-  if (diffDays <= 365) return `${Math.ceil(diffDays / 30)}개월 전`;
-  return `${Math.ceil(diffDays / 365)}년 전`;
 }
 
 export default function CurationSection({ className }: CurationSectionProps) {
@@ -299,10 +285,6 @@ export default function CurationSection({ className }: CurationSectionProps) {
           {[...Array(6)].map((_, i) => (
             <Card key={`video-loading-${i}`} className="overflow-hidden">
               <Skeleton className="aspect-video w-full" />
-              <CardContent className="p-4">
-                <Skeleton className="h-4 w-full mb-2" />
-                <Skeleton className="h-3 w-2/3" />
-              </CardContent>
             </Card>
           ))}
         </div>
@@ -396,18 +378,6 @@ export default function CurationSection({ className }: CurationSectionProps) {
                         </div>
                       )}
                     </div>
-                    <CardContent className="p-4">
-                      <h3 className="font-semibold line-clamp-2 mb-2">
-                        {video.title}
-                      </h3>
-                      <div className="flex items-center text-sm text-muted-foreground mb-1">
-                        <User className="h-3 w-3 mr-1" />
-                        {video.channelTitle}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {formatRelativeDate(video.publishedAt)}
-                      </div>
-                    </CardContent>
                   </Card>
                   
                   {/* 요약 버튼 */}
@@ -438,10 +408,6 @@ export default function CurationSection({ className }: CurationSectionProps) {
           {[...Array(3)].map((_, i) => (
             <Card key={`loading-${i}`} className="overflow-hidden">
               <Skeleton className="aspect-video w-full" />
-              <CardContent className="p-4">
-                <Skeleton className="h-4 w-full mb-2" />
-                <Skeleton className="h-3 w-2/3" />
-              </CardContent>
             </Card>
           ))}
         </div>
