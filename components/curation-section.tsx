@@ -64,7 +64,7 @@ export default function CurationSection({ className }: CurationSectionProps) {
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   
-  const observerRef = useRef<IntersectionObserver>();
+  const observerRef = useRef<IntersectionObserver | null>(null);
   const lastVideoElementRef = useCallback((node: HTMLDivElement) => {
     if (loadingMore) return;
     if (observerRef.current) observerRef.current.disconnect();
