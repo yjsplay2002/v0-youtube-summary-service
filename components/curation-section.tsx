@@ -2,11 +2,15 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/components/auth-context';
-import { getCuratedVideos } from '@/app/actions';
+import { getCuratedVideos, summarizeYoutubeVideo } from '@/app/actions';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { PlayCircle, Clock, User } from 'lucide-react';
+import { PlayCircle, Clock, User, Sparkles, ExternalLink } from 'lucide-react';
+import YouTube from 'react-youtube';
+import { useRouter } from 'next/navigation';
+import { useSummaryContext } from '@/components/summary-context';
+import { useToast } from '@/hooks/use-toast';
 
 interface VideoItem {
   id: string;
@@ -41,6 +45,26 @@ function formatDuration(duration: string): string {
   }
 }
 
+// 비디오 길이를 초 단위로 변환
+function parseDurationToSeconds(duration: string): number {
+  if (!duration || duration === 'Unknown') return 0;
+  
+  const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return 0;
+  
+  const hours = parseInt(match[1] || '0');
+  const minutes = parseInt(match[2] || '0');
+  const seconds = parseInt(match[3] || '0');
+  
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+// 쇼츠 비디오인지 확인 (60초 이하)
+function isShorts(duration: string): boolean {
+  if (!duration || duration === 'Unknown') return false;
+  return parseDurationToSeconds(duration) <= 60;
+}
+
 // 날짜를 상대적 형태로 변환
 function formatRelativeDate(dateString: string): string {
   const date = new Date(dateString);
@@ -57,6 +81,9 @@ function formatRelativeDate(dateString: string): string {
 
 export default function CurationSection({ className }: CurationSectionProps) {
   const { user } = useAuth();
+  const router = useRouter();
+  const { refreshSummaries } = useSummaryContext();
+  const { toast } = useToast();
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -64,6 +91,10 @@ export default function CurationSection({ className }: CurationSectionProps) {
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const [isClient, setIsClient] = useState(false);
+  const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
+  const [summarizing, setSummarizing] = useState<string | null>(null);
+  const [completedSummaries, setCompletedSummaries] = useState<Set<string>>(new Set());
+  const [unplayableVideos, setUnplayableVideos] = useState<Set<string>>(new Set());
   
   const observerRef = useRef<IntersectionObserver | null>(null);
 
@@ -155,27 +186,87 @@ export default function CurationSection({ className }: CurationSectionProps) {
     }
   }, [loadingMore, hasMore, loadMoreVideos, isClient]);
 
-  // 비디오 클릭 핸들러
-  const handleVideoClick = (videoId: string) => {
+  // 요약 버튼 클릭 핸들러 - 새로운 플로우로 수정
+  const handleSummarizeClick = async (videoId: string, event: React.MouseEvent) => {
+    event.stopPropagation(); // 비디오 클릭 이벤트 전파 방지
+    
+    // 이미 완료된 요약이 있다면 결과 페이지로 이동
+    if (completedSummaries.has(videoId)) {
+      router.push(`/?videoId=${videoId}`);
+      return;
+    }
+    
     try {
+      setSummarizing(videoId);
       const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
-      // 같은 페이지에서 URL 입력 필드에 채우기 위해 커스텀 이벤트 발송
-      if (typeof window !== 'undefined' && window.postMessage) {
-        window.postMessage({ type: 'FILL_YOUTUBE_URL', url: youtubeUrl }, '*');
-      }
       
-      // 또는 새 탭에서 YouTube로 바로 이동
-      // window.open(youtubeUrl, '_blank');
+      // 요약 프로세스 실행
+      const result = await summarizeYoutubeVideo(youtubeUrl, 'claude-3-5-haiku', undefined, user?.id, 'general_summary');
+      
+      if (result.success && result.videoId) {
+        // 요약 완료 상태 추가
+        setCompletedSummaries(prev => new Set(prev).add(videoId));
+        refreshSummaries();
+        
+        // 요약 완료 토스트 표시
+        toast({
+          title: "요약 완료",
+          description: "비디오 요약이 성공적으로 완료되었습니다.",
+          duration: 3000,
+        });
+        
+        // 선택 유지 (버튼이 "요약 보러가기"로 변경됨)
+      } else {
+        console.error('[CurationSection] Summarization failed:', result.error);
+        toast({
+          title: "요약 실패",
+          description: "비디오 요약에 실패했습니다. 다시 시도해주세요.",
+          variant: "destructive",
+          duration: 5000,
+        });
+      }
     } catch (error) {
-      console.error('[CurationSection] Error in handleVideoClick:', error);
+      console.error('[CurationSection] Error in handleSummarizeClick:', error);
+      toast({
+        title: "오류 발생",
+        description: "요약 중 오류가 발생했습니다. 다시 시도해주세요.",
+        variant: "destructive",
+        duration: 5000,
+      });
+    } finally {
+      setSummarizing(null);
     }
   };
+
+  // YouTube 플레이어 에러 핸들러
+  const handlePlayerError = useCallback((videoId: string, error: any) => {
+    console.warn(`[CurationSection] YouTube player error for video ${videoId}:`, error);
+    setUnplayableVideos(prev => new Set(prev).add(videoId));
+  }, []);
 
   useEffect(() => {
     if (isClient) {
       loadInitialVideos();
     }
   }, [user?.id, isClient]);
+
+  // 외부 클릭 시 선택 해제
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      if (!target.closest('.video-card') && !target.closest('.summarize-button')) {
+        setSelectedVideo(null);
+      }
+    };
+
+    if (selectedVideo) {
+      document.addEventListener('click', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [selectedVideo]);
 
   // Cleanup observer on unmount
   useEffect(() => {
@@ -185,6 +276,9 @@ export default function CurationSection({ className }: CurationSectionProps) {
       }
     };
   }, []);
+
+  // 재생 가능한 비디오만 필터링
+  const playableVideos = videos.filter(video => !unplayableVideos.has(video.id));
 
   if (loading) {
     return (
@@ -201,15 +295,18 @@ export default function CurationSection({ className }: CurationSectionProps) {
           </p>
         </div>
         
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3 mb-6">
+          {[...Array(8)].map((_, i) => (
+            <Card key={`shorts-loading-${i}`} className="overflow-hidden">
+              <Skeleton className="aspect-[9/16] w-full" />
+            </Card>
+          ))}
+        </div>
+        
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {[...Array(6)].map((_, i) => (
-            <Card key={i} className="overflow-hidden">
+            <Card key={`video-loading-${i}`} className="overflow-hidden">
               <Skeleton className="aspect-video w-full" />
-              <CardContent className="p-4">
-                <Skeleton className="h-4 w-full mb-2" />
-                <Skeleton className="h-4 w-3/4 mb-2" />
-                <Skeleton className="h-3 w-1/2" />
-              </CardContent>
             </Card>
           ))}
         </div>
@@ -230,7 +327,7 @@ export default function CurationSection({ className }: CurationSectionProps) {
     );
   }
 
-  if (videos.length === 0) {
+  if (playableVideos.length === 0 && !loading) {
     return (
       <div className={className}>
         <div className="text-center py-8">
@@ -260,60 +357,153 @@ export default function CurationSection({ className }: CurationSectionProps) {
         </p>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {videos.map((video, index) => (
-          <Card 
-            key={`${video.id}-${index}`}
-            className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer group"
-            onClick={() => handleVideoClick(video.id)}
-            ref={index === videos.length - 1 ? lastVideoElementRef : null}
-          >
-            <div className="relative aspect-video overflow-hidden">
-              <img 
-                src={video.thumbnail}
-                alt={video.title}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                loading="lazy"
-              />
-              {video.duration && (
-                <div className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-2 py-1 rounded">
-                  <Clock className="inline h-3 w-3 mr-1" />
-                  {formatDuration(video.duration)}
+      {/* 쇼츠 비디오들 */}
+      {playableVideos.filter(video => isShorts(video.duration)).length > 0 && (
+        <div className="mb-8">
+          <h3 className="text-lg font-semibold mb-4">Shorts</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+            {playableVideos.filter(video => isShorts(video.duration)).map((video, index, filteredVideos) => {
+              // Find the original index of this video in the full videos array
+              const originalIndex = playableVideos.findIndex(v => v.id === video.id);
+              const isLastVideo = originalIndex === playableVideos.length - 1;
+              
+              return (
+                <div key={`shorts-${video.id}-${index}`} className="video-card relative">
+                  <Card 
+                    className={`overflow-hidden hover:shadow-lg transition-all cursor-pointer group ${
+                      selectedVideo === video.id ? 'ring-2 ring-primary' : ''
+                    }`}
+                    ref={isLastVideo ? lastVideoElementRef : null}
+                  >
+                    <div className="relative aspect-[9/16] overflow-hidden">
+                      <YouTube
+                        videoId={video.id}
+                        className="w-full h-full"
+                        iframeClassName="w-full h-full"
+                        opts={{
+                          width: '100%',
+                          height: '100%',
+                          playerVars: {
+                            rel: 0,
+                            modestbranding: 1,
+                          },
+                        }}
+                        onStateChange={(event) => {
+                          // 비디오 플레이어 클릭시 선택되도록 처리
+                          if (event.data === 1) { // playing state
+                            setSelectedVideo(video.id);
+                          }
+                        }}
+                        onError={(error) => handlePlayerError(video.id, error)}
+                      />
+                      {video.duration && (
+                        <div className="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1 py-0.5 rounded text-[10px] pointer-events-none z-10">
+                          <Clock className="inline h-2 w-2 mr-0.5" />
+                          {formatDuration(video.duration)}
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                  
+                  {/* 요약 버튼 */}
+                  {selectedVideo === video.id && (
+                    <Button
+                      className="summarize-button absolute -bottom-2 -right-2 h-8 w-8 p-0 rounded-full bg-primary hover:bg-primary/90 shadow-lg z-20"
+                      onClick={(e) => handleSummarizeClick(video.id, e)}
+                      disabled={summarizing === video.id}
+                    >
+                      {summarizing === video.id ? (
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      ) : completedSummaries.has(video.id) ? (
+                        <ExternalLink className="h-4 w-4" />
+                      ) : (
+                        <Sparkles className="h-4 w-4" />
+                      )}
+                    </Button>
+                  )}
                 </div>
-              )}
-              <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-200 flex items-center justify-center">
-                <PlayCircle className="h-12 w-12 text-white opacity-0 group-hover:opacity-90 transition-opacity duration-200" />
-              </div>
-            </div>
-            
-            <CardContent className="p-4">
-              <h3 className="font-semibold text-sm line-clamp-2 mb-2 group-hover:text-primary transition-colors">
-                {video.title}
-              </h3>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      
+      {/* 일반 비디오들 */}
+      {playableVideos.filter(video => !isShorts(video.duration)).length > 0 && (
+        <div>
+          <h3 className="text-lg font-semibold mb-4">Videos</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {playableVideos.filter(video => !isShorts(video.duration)).map((video, index) => {
+              // Find the original index of this video in the full videos array
+              const originalIndex = playableVideos.findIndex(v => v.id === video.id);
+              const isLastVideo = originalIndex === playableVideos.length - 1;
               
-              <div className="flex items-center text-xs text-muted-foreground mb-1">
-                <User className="h-3 w-3 mr-1" />
-                <span className="truncate">{video.channelTitle}</span>
-              </div>
-              
-              <div className="text-xs text-muted-foreground">
-                {formatRelativeDate(video.publishedAt)}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              return (
+                <div key={`video-${video.id}-${index}`} className="video-card relative">
+                  <Card 
+                    className={`overflow-hidden hover:shadow-lg transition-all cursor-pointer group ${
+                      selectedVideo === video.id ? 'ring-2 ring-primary' : ''
+                    }`}
+                    ref={isLastVideo ? lastVideoElementRef : null}
+                  >
+                    <div className="relative aspect-video overflow-hidden">
+                      <YouTube
+                        videoId={video.id}
+                        className="w-full h-full"
+                        iframeClassName="w-full h-full"
+                        opts={{
+                          width: '100%',
+                          height: '100%',
+                          playerVars: {
+                            rel: 0,
+                            modestbranding: 1,
+                          },
+                        }}
+                        onStateChange={(event) => {
+                          // 비디오 플레이어 클릭시 선택되도록 처리
+                          if (event.data === 1) { // playing state
+                            setSelectedVideo(video.id);
+                          }
+                        }}
+                        onError={(error) => handlePlayerError(video.id, error)}
+                      />
+                      {video.duration && (
+                        <div className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-2 py-1 rounded pointer-events-none z-10">
+                          <Clock className="inline h-3 w-3 mr-1" />
+                          {formatDuration(video.duration)}
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                  
+                  {/* 요약 버튼 */}
+                  {selectedVideo === video.id && (
+                    <Button
+                      className="summarize-button absolute -bottom-2 -right-2 h-10 w-10 p-0 rounded-full bg-primary hover:bg-primary/90 shadow-lg z-20"
+                      onClick={(e) => handleSummarizeClick(video.id, e)}
+                      disabled={summarizing === video.id}
+                    >
+                      {summarizing === video.id ? (
+                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      ) : completedSummaries.has(video.id) ? (
+                        <ExternalLink className="h-5 w-5" />
+                      ) : (
+                        <Sparkles className="h-5 w-5" />
+                      )}
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       
       {loadingMore && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
           {[...Array(3)].map((_, i) => (
             <Card key={`loading-${i}`} className="overflow-hidden">
               <Skeleton className="aspect-video w-full" />
-              <CardContent className="p-4">
-                <Skeleton className="h-4 w-full mb-2" />
-                <Skeleton className="h-4 w-3/4 mb-2" />
-                <Skeleton className="h-3 w-1/2" />
-              </CardContent>
             </Card>
           ))}
         </div>
