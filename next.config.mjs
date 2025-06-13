@@ -8,7 +8,7 @@ const nextConfig = {
   },
   images: {
     unoptimized: true,
-    domains: ['i.ytimg.com', 'img.youtube.com'],
+    domains: ['i.ytimg.com', 'img.youtube.com', 'i1.ytimg.com', 'i2.ytimg.com', 'i3.ytimg.com', 'i4.ytimg.com'],
   },
   compress: true,
   poweredByHeader: false,
@@ -25,11 +25,15 @@ const nextConfig = {
         },
         {
           key: 'X-Frame-Options',
-          value: 'DENY',
+          value: 'SAMEORIGIN',
         },
         {
           key: 'X-XSS-Protection',
           value: '1; mode=block',
+        },
+        {
+          key: 'Content-Security-Policy',
+          value: "frame-src *; script-src * 'unsafe-inline' 'unsafe-eval'; connect-src *; img-src * data:;",
         },
       ],
     },

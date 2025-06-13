@@ -7,7 +7,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Copy, Check } from "lucide-react"
 
 export function SummaryDisplayClient({ summary, seekTo }: { summary: string; seekTo: (seconds: number) => void }) {
-  console.log("[SummaryDisplayClient] summary prop:", summary, "type:", typeof summary, "length:", summary?.length);
   const [copied, setCopied] = useState(false)
 
   // Convert summary to interview format with timestamp support

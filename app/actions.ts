@@ -608,3 +608,149 @@ export async function getAvailablePromptTypes(): Promise<Array<{type: string, ti
     return [];
   }
 }
+
+// 사용자의 시청 기록에서 키워드 추출
+export async function getUserKeywords(userId: string): Promise<Array<{keyword: string, frequency: number}>> {
+  try {
+    console.log(`[getUserKeywords] 사용자 키워드 추출 시작: ${userId}`);
+    
+    // 사용자의 모든 요약 데이터 가져오기
+    const { data: summaries, error } = await supabase
+      .from('video_summaries')
+      .select('video_title, summary, channel_title')
+      .eq('user_id', userId)
+      .not('summary', 'is', null);
+    
+    if (error) {
+      console.error('[getUserKeywords] DB 조회 에러:', error);
+      return [];
+    }
+    
+    if (!summaries || summaries.length === 0) {
+      console.log('[getUserKeywords] 사용자 요약 데이터가 없음');
+      return [];
+    }
+    
+    console.log(`[getUserKeywords] ${summaries.length}개의 요약 데이터에서 키워드 추출`);
+    
+    // 텍스트 분석을 위한 전체 텍스트 수집
+    const allText = summaries.map(s => `${s.video_title} ${s.channel_title} ${s.summary}`).join(' ');
+    
+    // 간단한 키워드 추출 (실제 구현에서는 더 정교한 NLP 사용 가능)
+    const keywords = extractKeywordsFromText(allText);
+    
+    console.log(`[getUserKeywords] 추출된 키워드: ${keywords.length}개`);
+    return keywords.slice(0, 5); // 최대 5개 반환
+    
+  } catch (err) {
+    console.error('[getUserKeywords] 오류 발생:', err);
+    return [];
+  }
+}
+
+// 텍스트에서 키워드 추출 (간단한 구현)
+function extractKeywordsFromText(text: string): Array<{keyword: string, frequency: number}> {
+  // 한글, 영문, 숫자만 남기고 정리
+  const cleanText = text.replace(/[^\w\sㄱ-ㅎㅏ-ㅣ가-힣]/g, ' ').toLowerCase();
+  
+  // 불용어 목록 (확장 가능)
+  const stopWords = new Set([
+    '그', '저', '이', '것', '수', '있', '하', '되', '않', '같', '때', '더', '또', '등', '말', '년', '월', '일',
+    'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them'
+  ]);
+  
+  // 단어 빈도 계산
+  const wordCount = new Map<string, number>();
+  const words = cleanText.split(/\s+/).filter(word => 
+    word.length >= 2 && 
+    !stopWords.has(word) && 
+    !/^\d+$/.test(word) // 숫자만으로 구성된 단어 제외
+  );
+  
+  words.forEach(word => {
+    wordCount.set(word, (wordCount.get(word) || 0) + 1);
+  });
+  
+  // 빈도순으로 정렬하여 반환
+  return Array.from(wordCount.entries())
+    .map(([keyword, frequency]) => ({ keyword, frequency }))
+    .sort((a, b) => b.frequency - a.frequency)
+    .filter(item => item.frequency >= 2); // 최소 2번 이상 등장한 키워드만
+}
+
+// 키워드로 YouTube 동영상 검색
+export async function searchVideosByKeyword(keyword: string, maxResults: number = 10): Promise<Array<{
+  id: string;
+  title: string;
+  channelTitle: string;
+  thumbnail: string;
+  publishedAt: string;
+  duration: string;
+  description?: string;
+}>> {
+  try {
+    console.log(`[searchVideosByKeyword] 키워드 검색 시작: "${keyword}", 최대 결과: ${maxResults}`);
+    
+    const apiKey = process.env.YOUTUBE_API_KEY;
+    if (!apiKey) {
+      console.error('[searchVideosByKeyword] YouTube API 키가 설정되지 않음');
+      return [];
+    }
+    
+    // YouTube Data API v3를 사용한 검색
+    const searchUrl = `https://www.googleapis.com/youtube/v3/search?` +
+      `part=snippet&` +
+      `q=${encodeURIComponent(keyword)}&` +
+      `type=video&` +
+      `videoDuration=medium&` + // 4분~20분 영상
+      `videoDefinition=high&` +
+      `order=relevance&` +
+      `maxResults=${maxResults}&` +
+      `key=${apiKey}`;
+    
+    const searchResponse = await fetch(searchUrl);
+    if (!searchResponse.ok) {
+      throw new Error(`YouTube 검색 API 오류: ${searchResponse.status}`);
+    }
+    
+    const searchData = await searchResponse.json();
+    
+    if (!searchData.items || searchData.items.length === 0) {
+      console.log(`[searchVideosByKeyword] "${keyword}"에 대한 검색 결과 없음`);
+      return [];
+    }
+    
+    // 비디오 ID 목록 추출
+    const videoIds = searchData.items.map((item: any) => item.id.videoId).join(',');
+    
+    // 비디오 상세 정보 가져오기 (재생 시간 포함)
+    const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?` +
+      `part=snippet,contentDetails&` +
+      `id=${videoIds}&` +
+      `key=${apiKey}`;
+    
+    const detailsResponse = await fetch(detailsUrl);
+    if (!detailsResponse.ok) {
+      throw new Error(`YouTube 상세정보 API 오류: ${detailsResponse.status}`);
+    }
+    
+    const detailsData = await detailsResponse.json();
+    
+    const videos = detailsData.items.map((item: any) => ({
+      id: item.id,
+      title: item.snippet.title,
+      channelTitle: item.snippet.channelTitle,
+      thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default?.url,
+      publishedAt: item.snippet.publishedAt,
+      duration: item.contentDetails.duration,
+      description: item.snippet.description
+    }));
+    
+    console.log(`[searchVideosByKeyword] 검색 완료: ${videos.length}개 동영상`);
+    return videos;
+    
+  } catch (err) {
+    console.error('[searchVideosByKeyword] 오류 발생:', err);
+    return [];
+  }
+}

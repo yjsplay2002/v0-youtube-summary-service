@@ -108,7 +108,7 @@ const SidebarProvider = React.forwardRef<
         }
       }
 
-      window.addEventListener("keydown", handleKeyDown)
+      window.addEventListener("keydown", handleKeyDown, { passive: true })
       return () => window.removeEventListener("keydown", handleKeyDown)
     }, [toggleSidebar])
 

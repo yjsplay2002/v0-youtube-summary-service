@@ -130,7 +130,7 @@ export function YoutubeForm() {
       }
     };
 
-    window.addEventListener('message', handleMessage);
+    window.addEventListener('message', handleMessage, { passive: true });
     return () => window.removeEventListener('message', handleMessage);
   }, [user?.id, resetSummary]);
 
@@ -446,6 +446,8 @@ export function YoutubeForm() {
                         playerVars: {
                           rel: 0,
                           modestbranding: 1,
+                          enablejsapi: 1,
+                          origin: typeof window !== 'undefined' ? window.location.origin : undefined,
                         },
                       }}
                       onReady={(e: YouTubeEvent<any>) => {

@@ -10,7 +10,23 @@
       "Bash(rg:*)",
       "Bash(/Users/yujeongsang/.nvm/versions/node/v22.15.1/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg \"RLS|rls|policy\" --type ts --type tsx -A 2 -B 2)",
       "Bash(/Users/yujeongsang/.nvm/versions/node/v22.15.1/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg \"RLS|rls|policy\" -g \"*.ts\" -g \"*.tsx\" -A 2 -B 2)",
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "Bash(/Users/yujeongsang/.nvm/versions/node/v22.15.1/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg \"addEventListener.*resize\" -g \"*.tsx\" -g \"*.ts\" -A 1 -B 1)",
+      "Bash(/Users/yujeongsang/.nvm/versions/node/v22.15.1/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg \"addEventListener.*resize\" -g \"*.tsx\" -g \"*.ts\" -B 5 -A 5)",
+      "Bash(/Users/yujeongsang/.nvm/versions/node/v22.15.1/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg \"addEventListener.*scroll|addEventListener.*wheel|addEventListener.*touch\" -g \"*.tsx\" -g \"*.ts\" -B 2 -A 2)",
+      "Bash(/Users/yujeongsang/.nvm/versions/node/v22.15.1/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg \"window\\.addEventListener.*scroll\" -g \"*.tsx\" -g \"*.ts\" -B 5 -A 5)",
+      "Bash(/Users/yujeongsang/.nvm/versions/node/v22.15.1/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg \"addEventListener\" -g \"*.tsx\" -g \"*.ts\" --exclude=\"node_modules\" -B 2 -A 2)",
+      "Bash(/Users/yujeongsang/.nvm/versions/node/v22.15.1/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg \"addEventListener\" -g \"*.tsx\" -g \"*.ts\" -B 2 -A 2)",
+      "Bash(/Users/yujeongsang/.nvm/versions/node/v22.15.1/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg -n \"YouTube\" -g \"curation-section.tsx\" -A 10 -B 5)",
+      "Bash(/Users/yujeongsang/.nvm/versions/node/v22.15.1/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg \"lastVideoElementRef|Attaching observer\" -g \"curation-section.tsx\" -B 3 -A 3)",
+      "Bash(/Users/yujeongsang/.nvm/versions/node/v22.15.1/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg -n \"lastVideoElementRef = useCallback\" -g \"curation-section.tsx\" -A 15)",
+      "Bash(/Users/yujeongsang/.nvm/versions/node/v22.15.1/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg \"postMessage|origin\" -g \"*.tsx\" -g \"*.ts\" -B 2 -A 2)",
+      "Bash(/Users/yujeongsang/.nvm/versions/node/v22.15.1/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg -n \"YouTube.*opts\" -g \"*.tsx\" -A 10)",
+      "Bash(/Users/yujeongsang/.nvm/versions/node/v22.15.1/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg \"YouTube\" -g \"*.tsx\" -A 15)",
+      "Bash(/Users/yujeongsang/.nvm/versions/node/v22.15.1/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg -n \"opts.*{\" -g \"youtube-form.tsx\" -A 15)",
+      "Bash(/Users/yujeongsang/.nvm/versions/node/v22.15.1/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg -n \"opts\" -g \"youtube-form.tsx\" -A 15)",
+      "Bash(/Users/yujeongsang/.nvm/versions/node/v22.15.1/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg -n \"opts\" -g \"summary-display.tsx\" -A 15)",
+      "Bash(grep:*)"
     ],
     "deny": []
   }
