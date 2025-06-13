@@ -83,11 +83,27 @@ export default function CurationSection({ className }: CurationSectionProps) {
   const [unplayableVideos, setUnplayableVideos] = useState<Set<string>>(new Set());
   
   const observerRef = useRef<IntersectionObserver | null>(null);
+  const loadingRef = useRef<boolean>(false);
+  const hasMoreRef = useRef<boolean>(true);
+  const nextPageTokenRef = useRef<string | undefined>();
 
   // Ensure this component only renders properly on client-side
   useEffect(() => {
     setIsClient(true);
   }, []);
+
+  // Keep refs in sync with state to avoid stale closures
+  useEffect(() => {
+    loadingRef.current = loadingMore;
+  }, [loadingMore]);
+
+  useEffect(() => {
+    hasMoreRef.current = hasMore;
+  }, [hasMore]);
+
+  useEffect(() => {
+    nextPageTokenRef.current = nextPageToken;
+  }, [nextPageToken]);
 
   // 초기 비디오 로드
   const loadInitialVideos = async () => {
@@ -102,6 +118,11 @@ export default function CurationSection({ className }: CurationSectionProps) {
         setVideos(result.items);
         setNextPageToken(result.nextPageToken);
         setHasMore(!!result.nextPageToken);
+        
+        // refs 초기화
+        nextPageTokenRef.current = result.nextPageToken;
+        hasMoreRef.current = !!result.nextPageToken;
+        
         console.log('[CurationSection] Initial load state:', { 
           videosCount: result.items.length, 
           nextPageToken: result.nextPageToken, 
@@ -111,66 +132,97 @@ export default function CurationSection({ className }: CurationSectionProps) {
         console.log('[CurationSection] No videos returned from initial load');
         setVideos([]);
         setHasMore(false);
+        hasMoreRef.current = false;
       }
     } catch (err) {
       console.error('[CurationSection] Error loading videos:', err);
       setError('비디오를 불러오는데 실패했습니다. API 키가 설정되지 않았을 수 있습니다.');
       setVideos([]);
       setHasMore(false);
+      hasMoreRef.current = false;
     } finally {
       setLoading(false);
     }
   };
 
-  // 추가 비디오 로드 (무한 스크롤)
+  // 추가 비디오 로드 (무한 스크롤) - race condition 방지 개선
   const loadMoreVideos = useCallback(async () => {
-    if (!hasMore || loadingMore || !nextPageToken) {
-      console.log('[CurationSection] Skipping loadMoreVideos:', { hasMore, loadingMore, nextPageToken });
+    // 이미 로딩 중이거나 더 이상 로드할 수 없는 상태라면 중단
+    if (loadingRef.current || !hasMoreRef.current || !nextPageTokenRef.current) {
+      console.log('[CurationSection] Skipping loadMoreVideos:', { 
+        loading: loadingRef.current, 
+        hasMore: hasMoreRef.current, 
+        nextPageToken: nextPageTokenRef.current 
+      });
       return;
     }
     
-    console.log('[CurationSection] Loading more videos with pageToken:', nextPageToken);
+    console.log('[CurationSection] Loading more videos with pageToken:', nextPageTokenRef.current);
     
     try {
+      // 즉시 로딩 상태로 설정하여 중복 호출 방지
+      loadingRef.current = true;
       setLoadingMore(true);
-      const result = await getCuratedVideos(user?.id, nextPageToken);
+      
+      const result = await getCuratedVideos(user?.id, nextPageTokenRef.current);
       
       if (result && result.items && result.items.length > 0) {
         console.log(`[CurationSection] Loaded ${result.items.length} more videos`);
         setVideos(prev => [...prev, ...result.items]);
         setNextPageToken(result.nextPageToken);
         setHasMore(!!result.nextPageToken);
+        
+        // refs 업데이트
+        nextPageTokenRef.current = result.nextPageToken;
+        hasMoreRef.current = !!result.nextPageToken;
       } else {
         console.log('[CurationSection] No more videos to load');
         setHasMore(false);
+        hasMoreRef.current = false;
       }
     } catch (err) {
       console.error('[CurationSection] Error loading more videos:', err);
       setHasMore(false);
+      hasMoreRef.current = false;
     } finally {
+      loadingRef.current = false;
       setLoadingMore(false);
     }
-  }, [hasMore, loadingMore, nextPageToken, user?.id]);
+  }, [user?.id]);
 
   const lastVideoElementRef = useCallback((node: HTMLDivElement) => {
-    if (!isClient || loadingMore) return;
-    if (observerRef.current) observerRef.current.disconnect();
+    if (!isClient) return;
     
-    observerRef.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && hasMore && !loadingMore) {
-        console.log('[CurationSection] Intersection detected, loading more videos...');
-        loadMoreVideos();
-      }
-    }, {
-      threshold: 0.1,
-      rootMargin: '50px'
-    });
-    
-    if (node) {
-      console.log('[CurationSection] Attaching observer to last video element');
-      observerRef.current.observe(node);
+    // 현재 observer가 있다면 정리
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+      observerRef.current = null;
     }
-  }, [loadingMore, hasMore, loadMoreVideos, isClient]);
+    
+    // 노드가 없거나 이미 로딩 중이면 observer 생성하지 않음
+    if (!node || loadingRef.current) return;
+    
+    // 새로운 observer 생성
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry && entry.isIntersecting) {
+          // ref로 최신 상태 확인하여 stale closure 방지
+          if (hasMoreRef.current && !loadingRef.current && nextPageTokenRef.current) {
+            console.log('[CurationSection] Intersection detected, loading more videos...');
+            loadMoreVideos();
+          }
+        }
+      },
+      {
+        threshold: 0.1,
+        rootMargin: '50px'
+      }
+    );
+    
+    console.log('[CurationSection] Attaching observer to last video element');
+    observerRef.current.observe(node);
+  }, [isClient, loadMoreVideos]);
 
   // 요약 버튼 클릭 핸들러 - 새로운 플로우로 수정
   const handleSummarizeClick = async (videoId: string, event: React.MouseEvent) => {
@@ -254,12 +306,17 @@ export default function CurationSection({ className }: CurationSectionProps) {
     };
   }, [selectedVideo]);
 
-  // Cleanup observer on unmount
+  // Cleanup observer on unmount and reset refs
   useEffect(() => {
     return () => {
       if (observerRef.current) {
         observerRef.current.disconnect();
+        observerRef.current = null;
       }
+      // reset refs to prevent memory leaks
+      loadingRef.current = false;
+      hasMoreRef.current = true;
+      nextPageTokenRef.current = undefined;
     };
   }, []);
 
