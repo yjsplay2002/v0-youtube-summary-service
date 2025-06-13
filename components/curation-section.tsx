@@ -335,45 +335,51 @@ export default function CurationSection({ className }: CurationSectionProps) {
         <div className="mb-8">
           <h3 className="text-lg font-semibold mb-4">Shorts</h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
-            {videos.filter(video => isShorts(video.duration)).map((video, index) => (
-              <div key={`shorts-${video.id}-${index}`} className="video-card relative">
-                <Card 
-                  className={`overflow-hidden hover:shadow-lg transition-all cursor-pointer group ${
-                    selectedVideo === video.id ? 'ring-2 ring-primary' : ''
-                  }`}
-                  onClick={(e) => handleVideoClick(video.id, e)}
-                  ref={index === videos.length - 1 ? lastVideoElementRef : null}
-                >
-                  <div className="relative aspect-[9/16] overflow-hidden">
-                    <img 
-                      src={video.thumbnail}
-                      alt={video.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                      loading="lazy"
-                    />
-                    {video.duration && (
-                      <div className="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1 py-0.5 rounded text-[10px]">
-                        <Clock className="inline h-2 w-2 mr-0.5" />
-                        {formatDuration(video.duration)}
-                      </div>
-                    )}
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-200 flex items-center justify-center">
-                      <PlayCircle className="h-8 w-8 text-white opacity-0 group-hover:opacity-90 transition-opacity duration-200" />
-                    </div>
-                  </div>
-                </Card>
-                
-                {/* 요약 버튼 */}
-                {selectedVideo === video.id && (
-                  <Button
-                    className="summarize-button absolute -bottom-2 -right-2 h-8 w-8 p-0 rounded-full bg-primary hover:bg-primary/90 shadow-lg z-10"
-                    onClick={(e) => handleSummarizeClick(video.id, e)}
+            {videos.filter(video => isShorts(video.duration)).map((video, index, filteredVideos) => {
+              // Find the original index of this video in the full videos array
+              const originalIndex = videos.findIndex(v => v.id === video.id);
+              const isLastVideo = originalIndex === videos.length - 1;
+              
+              return (
+                <div key={`shorts-${video.id}-${index}`} className="video-card relative">
+                  <Card 
+                    className={`overflow-hidden hover:shadow-lg transition-all cursor-pointer group ${
+                      selectedVideo === video.id ? 'ring-2 ring-primary' : ''
+                    }`}
+                    onClick={(e) => handleVideoClick(video.id, e)}
+                    ref={isLastVideo ? lastVideoElementRef : null}
                   >
-                    <Sparkles className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-            ))}
+                    <div className="relative aspect-[9/16] overflow-hidden">
+                      <img 
+                        src={video.thumbnail}
+                        alt={video.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                        loading="lazy"
+                      />
+                      {video.duration && (
+                        <div className="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1 py-0.5 rounded text-[10px]">
+                          <Clock className="inline h-2 w-2 mr-0.5" />
+                          {formatDuration(video.duration)}
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-200 flex items-center justify-center">
+                        <PlayCircle className="h-8 w-8 text-white opacity-0 group-hover:opacity-90 transition-opacity duration-200" />
+                      </div>
+                    </div>
+                  </Card>
+                  
+                  {/* 요약 버튼 */}
+                  {selectedVideo === video.id && (
+                    <Button
+                      className="summarize-button absolute -bottom-2 -right-2 h-8 w-8 p-0 rounded-full bg-primary hover:bg-primary/90 shadow-lg z-10"
+                      onClick={(e) => handleSummarizeClick(video.id, e)}
+                    >
+                      <Sparkles className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -383,45 +389,51 @@ export default function CurationSection({ className }: CurationSectionProps) {
         <div>
           <h3 className="text-lg font-semibold mb-4">Videos</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {videos.filter(video => !isShorts(video.duration)).map((video, index) => (
-              <div key={`video-${video.id}-${index}`} className="video-card relative">
-                <Card 
-                  className={`overflow-hidden hover:shadow-lg transition-all cursor-pointer group ${
-                    selectedVideo === video.id ? 'ring-2 ring-primary' : ''
-                  }`}
-                  onClick={(e) => handleVideoClick(video.id, e)}
-                  ref={index === videos.length - 1 ? lastVideoElementRef : null}
-                >
-                  <div className="relative aspect-video overflow-hidden">
-                    <img 
-                      src={video.thumbnail}
-                      alt={video.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                      loading="lazy"
-                    />
-                    {video.duration && (
-                      <div className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-2 py-1 rounded">
-                        <Clock className="inline h-3 w-3 mr-1" />
-                        {formatDuration(video.duration)}
-                      </div>
-                    )}
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-200 flex items-center justify-center">
-                      <PlayCircle className="h-12 w-12 text-white opacity-0 group-hover:opacity-90 transition-opacity duration-200" />
-                    </div>
-                  </div>
-                </Card>
-                
-                {/* 요약 버튼 */}
-                {selectedVideo === video.id && (
-                  <Button
-                    className="summarize-button absolute -bottom-2 -right-2 h-10 w-10 p-0 rounded-full bg-primary hover:bg-primary/90 shadow-lg z-10"
-                    onClick={(e) => handleSummarizeClick(video.id, e)}
+            {videos.filter(video => !isShorts(video.duration)).map((video, index) => {
+              // Find the original index of this video in the full videos array
+              const originalIndex = videos.findIndex(v => v.id === video.id);
+              const isLastVideo = originalIndex === videos.length - 1;
+              
+              return (
+                <div key={`video-${video.id}-${index}`} className="video-card relative">
+                  <Card 
+                    className={`overflow-hidden hover:shadow-lg transition-all cursor-pointer group ${
+                      selectedVideo === video.id ? 'ring-2 ring-primary' : ''
+                    }`}
+                    onClick={(e) => handleVideoClick(video.id, e)}
+                    ref={isLastVideo ? lastVideoElementRef : null}
                   >
-                    <Sparkles className="h-5 w-5" />
-                  </Button>
-                )}
-              </div>
-            ))}
+                    <div className="relative aspect-video overflow-hidden">
+                      <img 
+                        src={video.thumbnail}
+                        alt={video.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                        loading="lazy"
+                      />
+                      {video.duration && (
+                        <div className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-2 py-1 rounded">
+                          <Clock className="inline h-3 w-3 mr-1" />
+                          {formatDuration(video.duration)}
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-200 flex items-center justify-center">
+                        <PlayCircle className="h-12 w-12 text-white opacity-0 group-hover:opacity-90 transition-opacity duration-200" />
+                      </div>
+                    </div>
+                  </Card>
+                  
+                  {/* 요약 버튼 */}
+                  {selectedVideo === video.id && (
+                    <Button
+                      className="summarize-button absolute -bottom-2 -right-2 h-10 w-10 p-0 rounded-full bg-primary hover:bg-primary/90 shadow-lg z-10"
+                      onClick={(e) => handleSummarizeClick(video.id, e)}
+                    >
+                      <Sparkles className="h-5 w-5" />
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
