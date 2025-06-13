@@ -29,18 +29,20 @@ export default function HomeClient({ currentVideoId }: HomeClientProps) {
   if (!user && !currentVideoId) {
     return (
       <div className="min-h-screen">
+        {/*
         <HeroSection />
         <FeaturesSection />
         <PricingSection />
         <FAQSection />
-        
+        */}        
         {/* Main app section */}
         <section id="youtube-form" className="py-20">
           <div className="container mx-auto py-10 px-4 max-w-5xl">
             <div className="text-center mb-8">
-              <h2 className="text-3xl font-bold mb-4">Start Summarizing</h2>
+              <h2 className="text-3xl font-bold mb-4">AI-Powered Video Summarization</h2>
               <p className="text-muted-foreground">
-                Enter a YouTube link to get a summarized markdown version of the video content
+              Save hours of watching time. Get comprehensive, structured summaries of any YouTube video 
+              in seconds using advanced AI technology.
               </p>
             </div>
 
