@@ -7,6 +7,7 @@ import { HeroSection } from "@/components/hero-section"
 import { FeaturesSection } from "@/components/features-section"
 import { PricingSection } from "@/components/pricing-section"
 import { FAQSection } from "@/components/faq-section"
+import CurationSection from "@/components/curation-section"
 import { Suspense } from "react"
 
 interface HomeClientProps {
@@ -50,6 +51,13 @@ export default function HomeClient({ currentVideoId }: HomeClientProps) {
                 <SummaryDisplay />
               </Suspense>
             </div>
+            
+            {/* 큐레이션 섹션 추가 */}
+            <div className="mt-16">
+              <Suspense fallback={<div className="text-center">Loading recommendations...</div>}>
+                <CurationSection />
+              </Suspense>
+            </div>
           </div>
         </section>
       </div>
@@ -74,6 +82,13 @@ export default function HomeClient({ currentVideoId }: HomeClientProps) {
             <SummaryDisplay />
           </Suspense>
         </div>
+        
+        {/* 큐레이션 섹션 추가 */}
+        <div className="mt-16">
+          <Suspense fallback={<div className="text-center">Loading recommendations...</div>}>
+            <CurationSection />
+          </Suspense>
+        </div>
       </div>
     );
   }
@@ -92,6 +107,13 @@ export default function HomeClient({ currentVideoId }: HomeClientProps) {
       <div className="mt-10">
         <Suspense fallback={<div className="text-center">Loading summary...</div>}>
           <SummaryDisplay />
+        </Suspense>
+      </div>
+      
+      {/* 큐레이션 섹션 추가 */}
+      <div className="mt-16">
+        <Suspense fallback={<div className="text-center">Loading recommendations...</div>}>
+          <CurationSection />
         </Suspense>
       </div>
     </div>
