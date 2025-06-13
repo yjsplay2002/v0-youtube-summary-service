@@ -6,10 +6,11 @@ import { getCuratedVideos, summarizeYoutubeVideo } from '@/app/actions';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { PlayCircle, Clock, User, Sparkles } from 'lucide-react';
+import { PlayCircle, Clock, User, Sparkles, ExternalLink } from 'lucide-react';
 import YouTube from 'react-youtube';
 import { useRouter } from 'next/navigation';
 import { useSummaryContext } from '@/components/summary-context';
+import { useToast } from '@/hooks/use-toast';
 
 interface VideoItem {
   id: string;
@@ -82,6 +83,7 @@ export default function CurationSection({ className }: CurationSectionProps) {
   const { user } = useAuth();
   const router = useRouter();
   const { refreshSummaries } = useSummaryContext();
+  const { toast } = useToast();
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -91,6 +93,8 @@ export default function CurationSection({ className }: CurationSectionProps) {
   const [isClient, setIsClient] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState<string | null>(null);
+  const [completedSummaries, setCompletedSummaries] = useState<Set<string>>(new Set());
+  const [unplayableVideos, setUnplayableVideos] = useState<Set<string>>(new Set());
   
   const observerRef = useRef<IntersectionObserver | null>(null);
 
@@ -182,9 +186,16 @@ export default function CurationSection({ className }: CurationSectionProps) {
     }
   }, [loadingMore, hasMore, loadMoreVideos, isClient]);
 
-  // 요약 버튼 클릭 핸들러 - 실제 요약 프로세스 실행
+  // 요약 버튼 클릭 핸들러 - 새로운 플로우로 수정
   const handleSummarizeClick = async (videoId: string, event: React.MouseEvent) => {
     event.stopPropagation(); // 비디오 클릭 이벤트 전파 방지
+    
+    // 이미 완료된 요약이 있다면 결과 페이지로 이동
+    if (completedSummaries.has(videoId)) {
+      router.push(`/?videoId=${videoId}`);
+      return;
+    }
+    
     try {
       setSummarizing(videoId);
       const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
@@ -193,30 +204,45 @@ export default function CurationSection({ className }: CurationSectionProps) {
       const result = await summarizeYoutubeVideo(youtubeUrl, 'claude-3-5-haiku', undefined, user?.id, 'general_summary');
       
       if (result.success && result.videoId) {
-        // 요약 완료 후 결과 페이지로 이동
-        router.push(`/?videoId=${result.videoId}`);
+        // 요약 완료 상태 추가
+        setCompletedSummaries(prev => new Set(prev).add(videoId));
         refreshSummaries();
-        setSelectedVideo(null);
+        
+        // 요약 완료 토스트 표시
+        toast({
+          title: "요약 완료",
+          description: "비디오 요약이 성공적으로 완료되었습니다.",
+          duration: 3000,
+        });
+        
+        // 선택 유지 (버튼이 "요약 보러가기"로 변경됨)
       } else {
         console.error('[CurationSection] Summarization failed:', result.error);
-        // 요약 실패시 URL 입력 필드에 채우는 방식으로 fallback
-        if (typeof window !== 'undefined' && window.postMessage) {
-          window.postMessage({ type: 'FILL_YOUTUBE_URL', url: youtubeUrl }, '*');
-        }
-        setSelectedVideo(null);
+        toast({
+          title: "요약 실패",
+          description: "비디오 요약에 실패했습니다. 다시 시도해주세요.",
+          variant: "destructive",
+          duration: 5000,
+        });
       }
     } catch (error) {
       console.error('[CurationSection] Error in handleSummarizeClick:', error);
-      // 에러 발생시 URL 입력 필드에 채우는 방식으로 fallback
-      const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
-      if (typeof window !== 'undefined' && window.postMessage) {
-        window.postMessage({ type: 'FILL_YOUTUBE_URL', url: youtubeUrl }, '*');
-      }
-      setSelectedVideo(null);
+      toast({
+        title: "오류 발생",
+        description: "요약 중 오류가 발생했습니다. 다시 시도해주세요.",
+        variant: "destructive",
+        duration: 5000,
+      });
     } finally {
       setSummarizing(null);
     }
   };
+
+  // YouTube 플레이어 에러 핸들러
+  const handlePlayerError = useCallback((videoId: string, error: any) => {
+    console.warn(`[CurationSection] YouTube player error for video ${videoId}:`, error);
+    setUnplayableVideos(prev => new Set(prev).add(videoId));
+  }, []);
 
   useEffect(() => {
     if (isClient) {
@@ -250,6 +276,9 @@ export default function CurationSection({ className }: CurationSectionProps) {
       }
     };
   }, []);
+
+  // 재생 가능한 비디오만 필터링
+  const playableVideos = videos.filter(video => !unplayableVideos.has(video.id));
 
   if (loading) {
     return (
@@ -298,7 +327,7 @@ export default function CurationSection({ className }: CurationSectionProps) {
     );
   }
 
-  if (videos.length === 0) {
+  if (playableVideos.length === 0 && !loading) {
     return (
       <div className={className}>
         <div className="text-center py-8">
@@ -329,14 +358,14 @@ export default function CurationSection({ className }: CurationSectionProps) {
       </div>
       
       {/* 쇼츠 비디오들 */}
-      {videos.filter(video => isShorts(video.duration)).length > 0 && (
+      {playableVideos.filter(video => isShorts(video.duration)).length > 0 && (
         <div className="mb-8">
           <h3 className="text-lg font-semibold mb-4">Shorts</h3>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
-            {videos.filter(video => isShorts(video.duration)).map((video, index, filteredVideos) => {
+            {playableVideos.filter(video => isShorts(video.duration)).map((video, index, filteredVideos) => {
               // Find the original index of this video in the full videos array
-              const originalIndex = videos.findIndex(v => v.id === video.id);
-              const isLastVideo = originalIndex === videos.length - 1;
+              const originalIndex = playableVideos.findIndex(v => v.id === video.id);
+              const isLastVideo = originalIndex === playableVideos.length - 1;
               
               return (
                 <div key={`shorts-${video.id}-${index}`} className="video-card relative">
@@ -365,6 +394,7 @@ export default function CurationSection({ className }: CurationSectionProps) {
                             setSelectedVideo(video.id);
                           }
                         }}
+                        onError={(error) => handlePlayerError(video.id, error)}
                       />
                       {video.duration && (
                         <div className="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1 py-0.5 rounded text-[10px] pointer-events-none z-10">
@@ -384,6 +414,8 @@ export default function CurationSection({ className }: CurationSectionProps) {
                     >
                       {summarizing === video.id ? (
                         <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      ) : completedSummaries.has(video.id) ? (
+                        <ExternalLink className="h-4 w-4" />
                       ) : (
                         <Sparkles className="h-4 w-4" />
                       )}
@@ -397,14 +429,14 @@ export default function CurationSection({ className }: CurationSectionProps) {
       )}
       
       {/* 일반 비디오들 */}
-      {videos.filter(video => !isShorts(video.duration)).length > 0 && (
+      {playableVideos.filter(video => !isShorts(video.duration)).length > 0 && (
         <div>
           <h3 className="text-lg font-semibold mb-4">Videos</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {videos.filter(video => !isShorts(video.duration)).map((video, index) => {
+            {playableVideos.filter(video => !isShorts(video.duration)).map((video, index) => {
               // Find the original index of this video in the full videos array
-              const originalIndex = videos.findIndex(v => v.id === video.id);
-              const isLastVideo = originalIndex === videos.length - 1;
+              const originalIndex = playableVideos.findIndex(v => v.id === video.id);
+              const isLastVideo = originalIndex === playableVideos.length - 1;
               
               return (
                 <div key={`video-${video.id}-${index}`} className="video-card relative">
@@ -433,6 +465,7 @@ export default function CurationSection({ className }: CurationSectionProps) {
                             setSelectedVideo(video.id);
                           }
                         }}
+                        onError={(error) => handlePlayerError(video.id, error)}
                       />
                       {video.duration && (
                         <div className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-2 py-1 rounded pointer-events-none z-10">
@@ -452,6 +485,8 @@ export default function CurationSection({ className }: CurationSectionProps) {
                     >
                       {summarizing === video.id ? (
                         <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      ) : completedSummaries.has(video.id) ? (
+                        <ExternalLink className="h-5 w-5" />
                       ) : (
                         <Sparkles className="h-5 w-5" />
                       )}

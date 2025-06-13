@@ -8,6 +8,7 @@ import { SummaryProvider } from "@/components/summary-context"
 import { ResetProvider } from "@/components/reset-context"
 import { AuthProvider } from "@/components/auth-context"
 import { generateWebApplicationStructuredData } from "@/app/lib/structured-data"
+import { Toaster } from "@/components/ui/toaster"
 
 export const metadata: Metadata = {
   title: "YouTube Video Summarizer - AI-Powered Video Summary Tool",
@@ -73,6 +74,7 @@ export default function RootLayout({
               </ResetProvider>
             </SummaryProvider>
           </AuthProvider>
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>
