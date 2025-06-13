@@ -19,11 +19,11 @@ export const metadata: Metadata = {
     siteName: "YouTube Video Summarizer",
   },
   alternates: {
-    canonical: "/landing"
+    canonical: "/randing"
   }
 }
 
-export default function LandingPage() {
+export default function RandingPage() {
   return (
     <div className="min-h-screen">
       <HeroSection />
