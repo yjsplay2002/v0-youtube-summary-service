@@ -97,6 +97,43 @@ export function YoutubeForm() {
     loadOptions();
   }, [user, selectedModel, userTier]);
 
+  // 큐레이션 섹션에서 비디오 클릭 시 URL 자동 입력을 위한 이벤트 리스너
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data.type === 'FILL_YOUTUBE_URL' && event.data.url) {
+        setYoutubeUrl(event.data.url);
+        // URL이 설정되면 자동으로 비디오 정보 로드
+        const videoId = extractYoutubeVideoId(event.data.url);
+        if (videoId) {
+          setVideoInfo(null);
+          setError("");
+          resetSummary();
+          setVideoLoading(true);
+          
+          fetchVideoDetailsServer(videoId)
+            .then(info => {
+              setVideoInfo(info.items[0]);
+              setVideoLoading(false);
+              
+              // 요약 존재 여부 확인
+              getSummary(videoId, user?.id)
+                .then(summary => {
+                  setSummaryExists(!!summary);
+                })
+                .catch(() => setSummaryExists(false));
+            })
+            .catch(err => {
+              setVideoLoading(false);
+              setError("비디오 정보를 불러올 수 없습니다.");
+            });
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [user?.id, resetSummary]);
+
   // 영상 시킹 함수 (props/context로 전달 가능)
   const seekTo = (seconds: number) => {
     if (playerRef.current) {
