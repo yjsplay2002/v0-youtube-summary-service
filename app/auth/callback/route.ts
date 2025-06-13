@@ -22,8 +22,21 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // URL to redirect to after sign in process completes
-  const redirectUrl = new URL(next, requestUrl.origin).toString();
+  // Validate redirect URL to prevent open redirect attacks
+  let redirectUrl: string;
+  try {
+    const nextUrl = new URL(next, requestUrl.origin);
+    // Only allow redirects to the same origin
+    if (nextUrl.origin === requestUrl.origin) {
+      redirectUrl = nextUrl.toString();
+    } else {
+      redirectUrl = requestUrl.origin;
+    }
+  } catch {
+    // If next is not a valid URL, default to home
+    redirectUrl = requestUrl.origin;
+  }
+
   console.log('Auth callback - redirecting to:', redirectUrl);
   return NextResponse.redirect(redirectUrl);
 }
