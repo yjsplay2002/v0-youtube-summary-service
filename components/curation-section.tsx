@@ -2,12 +2,14 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/components/auth-context';
-import { getCuratedVideos } from '@/app/actions';
+import { getCuratedVideos, summarizeYoutubeVideo } from '@/app/actions';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { PlayCircle, Clock, User, X, Sparkles } from 'lucide-react';
+import { PlayCircle, Clock, User, Sparkles } from 'lucide-react';
 import YouTube from 'react-youtube';
+import { useRouter } from 'next/navigation';
+import { useSummaryContext } from '@/components/summary-context';
 
 interface VideoItem {
   id: string;
@@ -78,6 +80,8 @@ function formatRelativeDate(dateString: string): string {
 
 export default function CurationSection({ className }: CurationSectionProps) {
   const { user } = useAuth();
+  const router = useRouter();
+  const { refreshSummaries } = useSummaryContext();
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -86,7 +90,7 @@ export default function CurationSection({ className }: CurationSectionProps) {
   const [hasMore, setHasMore] = useState(true);
   const [isClient, setIsClient] = useState(false);
   const [selectedVideo, setSelectedVideo] = useState<string | null>(null);
-  const [fullscreenVideo, setFullscreenVideo] = useState<string | null>(null);
+  const [summarizing, setSummarizing] = useState<string | null>(null);
   
   const observerRef = useRef<IntersectionObserver | null>(null);
 
@@ -178,46 +182,40 @@ export default function CurationSection({ className }: CurationSectionProps) {
     }
   }, [loadingMore, hasMore, loadMoreVideos, isClient]);
 
-  // 비디오 클릭 핸들러
-  const handleVideoClick = (videoId: string, event: React.MouseEvent) => {
-    try {
-      // 이미 선택된 비디오를 다시 클릭한 경우 전체화면으로 재생
-      if (selectedVideo === videoId) {
-        setFullscreenVideo(videoId);
-        return;
-      }
-      
-      // 새로운 비디오 선택
-      setSelectedVideo(videoId);
-      
-      // 기존 URL 입력 필드에 채우는 기능도 유지
-      const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
-      if (typeof window !== 'undefined' && window.postMessage) {
-        window.postMessage({ type: 'FILL_YOUTUBE_URL', url: youtubeUrl }, '*');
-      }
-    } catch (error) {
-      console.error('[CurationSection] Error in handleVideoClick:', error);
-    }
-  };
-
-  // 요약 버튼 클릭 핸들러
-  const handleSummarizeClick = (videoId: string, event: React.MouseEvent) => {
+  // 요약 버튼 클릭 핸들러 - 실제 요약 프로세스 실행
+  const handleSummarizeClick = async (videoId: string, event: React.MouseEvent) => {
     event.stopPropagation(); // 비디오 클릭 이벤트 전파 방지
     try {
+      setSummarizing(videoId);
+      const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      
+      // 요약 프로세스 실행
+      const result = await summarizeYoutubeVideo(youtubeUrl, 'claude-3-5-haiku', undefined, user?.id, 'general_summary');
+      
+      if (result.success && result.videoId) {
+        // 요약 완료 후 결과 페이지로 이동
+        router.push(`/?videoId=${result.videoId}`);
+        refreshSummaries();
+        setSelectedVideo(null);
+      } else {
+        console.error('[CurationSection] Summarization failed:', result.error);
+        // 요약 실패시 URL 입력 필드에 채우는 방식으로 fallback
+        if (typeof window !== 'undefined' && window.postMessage) {
+          window.postMessage({ type: 'FILL_YOUTUBE_URL', url: youtubeUrl }, '*');
+        }
+        setSelectedVideo(null);
+      }
+    } catch (error) {
+      console.error('[CurationSection] Error in handleSummarizeClick:', error);
+      // 에러 발생시 URL 입력 필드에 채우는 방식으로 fallback
       const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
       if (typeof window !== 'undefined' && window.postMessage) {
         window.postMessage({ type: 'FILL_YOUTUBE_URL', url: youtubeUrl }, '*');
       }
-      // 선택 해제
       setSelectedVideo(null);
-    } catch (error) {
-      console.error('[CurationSection] Error in handleSummarizeClick:', error);
+    } finally {
+      setSummarizing(null);
     }
-  };
-
-  // 전체화면 비디오 닫기
-  const handleCloseFullscreen = () => {
-    setFullscreenVideo(null);
   };
 
   useEffect(() => {
@@ -346,35 +344,49 @@ export default function CurationSection({ className }: CurationSectionProps) {
                     className={`overflow-hidden hover:shadow-lg transition-all cursor-pointer group ${
                       selectedVideo === video.id ? 'ring-2 ring-primary' : ''
                     }`}
-                    onClick={(e) => handleVideoClick(video.id, e)}
                     ref={isLastVideo ? lastVideoElementRef : null}
                   >
                     <div className="relative aspect-[9/16] overflow-hidden">
-                      <img 
-                        src={video.thumbnail}
-                        alt={video.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                        loading="lazy"
+                      <YouTube
+                        videoId={video.id}
+                        className="w-full h-full"
+                        iframeClassName="w-full h-full"
+                        opts={{
+                          width: '100%',
+                          height: '100%',
+                          playerVars: {
+                            rel: 0,
+                            modestbranding: 1,
+                          },
+                        }}
+                        onStateChange={(event) => {
+                          // 비디오 플레이어 클릭시 선택되도록 처리
+                          if (event.data === 1) { // playing state
+                            setSelectedVideo(video.id);
+                          }
+                        }}
                       />
                       {video.duration && (
-                        <div className="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1 py-0.5 rounded text-[10px]">
+                        <div className="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1 py-0.5 rounded text-[10px] pointer-events-none z-10">
                           <Clock className="inline h-2 w-2 mr-0.5" />
                           {formatDuration(video.duration)}
                         </div>
                       )}
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-200 flex items-center justify-center">
-                        <PlayCircle className="h-8 w-8 text-white opacity-0 group-hover:opacity-90 transition-opacity duration-200" />
-                      </div>
                     </div>
                   </Card>
                   
                   {/* 요약 버튼 */}
                   {selectedVideo === video.id && (
                     <Button
-                      className="summarize-button absolute -bottom-2 -right-2 h-8 w-8 p-0 rounded-full bg-primary hover:bg-primary/90 shadow-lg z-10"
+                      className="summarize-button absolute -bottom-2 -right-2 h-8 w-8 p-0 rounded-full bg-primary hover:bg-primary/90 shadow-lg z-20"
                       onClick={(e) => handleSummarizeClick(video.id, e)}
+                      disabled={summarizing === video.id}
                     >
-                      <Sparkles className="h-4 w-4" />
+                      {summarizing === video.id ? (
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      ) : (
+                        <Sparkles className="h-4 w-4" />
+                      )}
                     </Button>
                   )}
                 </div>
@@ -400,35 +412,49 @@ export default function CurationSection({ className }: CurationSectionProps) {
                     className={`overflow-hidden hover:shadow-lg transition-all cursor-pointer group ${
                       selectedVideo === video.id ? 'ring-2 ring-primary' : ''
                     }`}
-                    onClick={(e) => handleVideoClick(video.id, e)}
                     ref={isLastVideo ? lastVideoElementRef : null}
                   >
                     <div className="relative aspect-video overflow-hidden">
-                      <img 
-                        src={video.thumbnail}
-                        alt={video.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                        loading="lazy"
+                      <YouTube
+                        videoId={video.id}
+                        className="w-full h-full"
+                        iframeClassName="w-full h-full"
+                        opts={{
+                          width: '100%',
+                          height: '100%',
+                          playerVars: {
+                            rel: 0,
+                            modestbranding: 1,
+                          },
+                        }}
+                        onStateChange={(event) => {
+                          // 비디오 플레이어 클릭시 선택되도록 처리
+                          if (event.data === 1) { // playing state
+                            setSelectedVideo(video.id);
+                          }
+                        }}
                       />
                       {video.duration && (
-                        <div className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-2 py-1 rounded">
+                        <div className="absolute bottom-2 right-2 bg-black/80 text-white text-xs px-2 py-1 rounded pointer-events-none z-10">
                           <Clock className="inline h-3 w-3 mr-1" />
                           {formatDuration(video.duration)}
                         </div>
                       )}
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-200 flex items-center justify-center">
-                        <PlayCircle className="h-12 w-12 text-white opacity-0 group-hover:opacity-90 transition-opacity duration-200" />
-                      </div>
                     </div>
                   </Card>
                   
                   {/* 요약 버튼 */}
                   {selectedVideo === video.id && (
                     <Button
-                      className="summarize-button absolute -bottom-2 -right-2 h-10 w-10 p-0 rounded-full bg-primary hover:bg-primary/90 shadow-lg z-10"
+                      className="summarize-button absolute -bottom-2 -right-2 h-10 w-10 p-0 rounded-full bg-primary hover:bg-primary/90 shadow-lg z-20"
                       onClick={(e) => handleSummarizeClick(video.id, e)}
+                      disabled={summarizing === video.id}
                     >
-                      <Sparkles className="h-5 w-5" />
+                      {summarizing === video.id ? (
+                        <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      ) : (
+                        <Sparkles className="h-5 w-5" />
+                      )}
                     </Button>
                   )}
                 </div>
@@ -451,37 +477,6 @@ export default function CurationSection({ className }: CurationSectionProps) {
       {!hasMore && videos.length > 0 && (
         <div className="text-center py-8">
           <p className="text-muted-foreground">더 이상 불러올 동영상이 없습니다.</p>
-        </div>
-      )}
-      
-      {/* 전체화면 비디오 플레이어 */}
-      {fullscreenVideo && (
-        <div className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center">
-          <div className="relative w-full h-full max-w-6xl max-h-[90vh] flex items-center justify-center">
-            <Button
-              className="absolute top-4 right-4 z-60 bg-black/50 hover:bg-black/70 text-white"
-              onClick={handleCloseFullscreen}
-              size="sm"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-            <div className="w-full h-full">
-              <YouTube
-                videoId={fullscreenVideo}
-                className="w-full h-full"
-                iframeClassName="w-full h-full"
-                opts={{
-                  width: '100%',
-                  height: '100%',
-                  playerVars: {
-                    autoplay: 1,
-                    rel: 0,
-                    modestbranding: 1,
-                  },
-                }}
-              />
-            </div>
-          </div>
         </div>
       )}
     </div>
