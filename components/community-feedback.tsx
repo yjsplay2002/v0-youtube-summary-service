@@ -53,7 +53,7 @@ export default function CommunityFeedback({ serviceName, currentUser }: Communit
       }
     }
 
-    window.addEventListener('scroll', handleScroll)
+    window.addEventListener('scroll', handleScroll, { passive: true })
     return () => window.removeEventListener('scroll', handleScroll)
   }, [loading, loadingMore, hasMore, posts.length])
 

@@ -48,11 +48,6 @@ export default function HomeClient({ currentVideoId }: HomeClientProps) {
             </div>
 
             <YoutubeForm />
-            <div className="mt-10">
-              <Suspense fallback={<div className="text-center">Loading summary...</div>}>
-                <SummaryDisplay />
-              </Suspense>
-            </div>
             
             {/* 큐레이션 섹션 추가 */}
             <div className="mt-16">
@@ -66,36 +61,7 @@ export default function HomeClient({ currentVideoId }: HomeClientProps) {
     );
   }
 
-  // If user is logged in or processing a video, show focused interface
-  if (currentVideoId) {
-    // Show focused interface when processing a video
-    return (
-      <div className="container mx-auto py-10 px-4 max-w-5xl">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold mb-4">YouTube Video Summarizer</h1>
-          <p className="text-muted-foreground">
-            Enter a YouTube link to get a summarized markdown version of the video content
-          </p>
-        </div>
-
-        <YoutubeForm />
-        <div className="mt-10">
-          <Suspense fallback={<div className="text-center">Loading summary...</div>}>
-            <SummaryDisplay />
-          </Suspense>
-        </div>
-        
-        {/* 큐레이션 섹션 추가 */}
-        <div className="mt-16">
-          <Suspense fallback={<div className="text-center">Loading recommendations...</div>}>
-            <CurationSection />
-          </Suspense>
-        </div>
-      </div>
-    );
-  }
-
-  // Logged in user with no video - show clean interface
+  // Default interface for both logged in users and when processing videos
   return (
     <div className="container mx-auto py-10 px-4 max-w-5xl">
       <div className="text-center mb-8">

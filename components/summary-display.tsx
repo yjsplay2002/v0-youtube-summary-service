@@ -119,7 +119,7 @@ export default function SummaryDisplay() {
         timeoutRef.current = null;
       }
     };
-  }, [videoId, fetchSummaryWithRetry]);
+  }, [videoId, user?.id]); // fetchSummaryWithRetry 의존성 제거
   
   // Function to handle seeking in the video directly in this component
   const handleSeek = (seconds: number) => {
@@ -195,6 +195,8 @@ export default function SummaryDisplay() {
                   playerVars: {
                     rel: 0,
                     modestbranding: 1,
+                    enablejsapi: 1,
+                    origin: typeof window !== 'undefined' ? window.location.origin : undefined,
                   },
                 }}
                 onReady={(e: { target: YouTubePlayer }) => {
@@ -229,6 +231,8 @@ export default function SummaryDisplay() {
                 playerVars: {
                   rel: 0,
                   modestbranding: 1,
+                  enablejsapi: 1,
+                  origin: typeof window !== 'undefined' ? window.location.origin : undefined,
                 },
               }}
               onReady={(e: { target: YouTubePlayer }) => {
