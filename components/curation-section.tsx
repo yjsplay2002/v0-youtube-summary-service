@@ -58,6 +58,7 @@ function parseDurationToSeconds(duration: string): number {
 
 // 쇼츠 비디오인지 확인 (60초 이하)
 function isShorts(duration: string): boolean {
+  if (!duration || duration === 'Unknown') return false;
   return parseDurationToSeconds(duration) <= 60;
 }
 
