@@ -71,25 +71,40 @@ export default function CurationSection({ className }: CurationSectionProps) {
     
     observerRef.current = new IntersectionObserver(entries => {
       if (entries[0].isIntersecting && hasMore && !loadingMore) {
+        console.log('[CurationSection] Intersection detected, loading more videos...');
         loadMoreVideos();
       }
+    }, {
+      threshold: 0.1,
+      rootMargin: '50px'
     });
     
-    if (node) observerRef.current.observe(node);
-  }, [loadingMore, hasMore]);
+    if (node) {
+      console.log('[CurationSection] Attaching observer to last video element');
+      observerRef.current.observe(node);
+    }
+  }, [loadingMore, hasMore, loadMoreVideos]);
 
   // 초기 비디오 로드
   const loadInitialVideos = async () => {
     try {
+      console.log('[CurationSection] Loading initial videos for user:', user?.id || 'guest');
       setLoading(true);
       setError(null);
       const result = await getCuratedVideos(user?.id);
       
       if (result.items) {
+        console.log(`[CurationSection] Loaded ${result.items.length} initial videos`);
         setVideos(result.items);
         setNextPageToken(result.nextPageToken);
         setHasMore(!!result.nextPageToken);
+        console.log('[CurationSection] Initial load state:', { 
+          videosCount: result.items.length, 
+          nextPageToken: result.nextPageToken, 
+          hasMore: !!result.nextPageToken 
+        });
       } else {
+        console.log('[CurationSection] No videos returned from initial load');
         setVideos([]);
         setHasMore(false);
       }
@@ -103,18 +118,25 @@ export default function CurationSection({ className }: CurationSectionProps) {
   };
 
   // 추가 비디오 로드 (무한 스크롤)
-  const loadMoreVideos = async () => {
-    if (!hasMore || loadingMore || !nextPageToken) return;
+  const loadMoreVideos = useCallback(async () => {
+    if (!hasMore || loadingMore || !nextPageToken) {
+      console.log('[CurationSection] Skipping loadMoreVideos:', { hasMore, loadingMore, nextPageToken });
+      return;
+    }
+    
+    console.log('[CurationSection] Loading more videos with pageToken:', nextPageToken);
     
     try {
       setLoadingMore(true);
       const result = await getCuratedVideos(user?.id, nextPageToken);
       
       if (result.items && result.items.length > 0) {
+        console.log(`[CurationSection] Loaded ${result.items.length} more videos`);
         setVideos(prev => [...prev, ...result.items]);
         setNextPageToken(result.nextPageToken);
         setHasMore(!!result.nextPageToken);
       } else {
+        console.log('[CurationSection] No more videos to load');
         setHasMore(false);
       }
     } catch (err) {
@@ -123,7 +145,7 @@ export default function CurationSection({ className }: CurationSectionProps) {
     } finally {
       setLoadingMore(false);
     }
-  };
+  }, [hasMore, loadingMore, nextPageToken, user?.id]);
 
   // 비디오 클릭 핸들러
   const handleVideoClick = (videoId: string) => {
@@ -138,6 +160,15 @@ export default function CurationSection({ className }: CurationSectionProps) {
   useEffect(() => {
     loadInitialVideos();
   }, [user?.id]);
+
+  // Cleanup observer on unmount
+  useEffect(() => {
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+      }
+    };
+  }, []);
 
   if (loading) {
     return (
