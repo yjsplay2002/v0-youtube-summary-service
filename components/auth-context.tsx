@@ -61,16 +61,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Supabase 공식 문서에 따른 URL 생성 함수
+  const getURL = () => {
+    let url = 
+      process?.env?.NEXT_PUBLIC_SITE_URL ?? // Production site URL from env
+      process?.env?.NEXT_PUBLIC_VERCEL_URL ?? // Vercel deployment URL
+      (typeof window !== 'undefined' ? window.location.origin : null) ?? // Current origin
+      'http://localhost:3000'; // Fallback for development
+
+    // Ensure proper URL formatting
+    url = url.startsWith('http') ? url : `https://${url}`;
+    url = url.endsWith('/') ? url : `${url}/`;
+    return url;
+  };
+
   const signInWithGoogle = async (redirectPath?: string) => {
-    const currentPath = redirectPath || window.location.pathname + window.location.search;
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(currentPath)}`,
-      },
-    });
-    if (error) {
-      console.error('Error signing in with Google:', error);
+    try {
+      const currentPath = redirectPath || (typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/');
+      
+      // Supabase 권장 방식으로 base URL 생성
+      const baseURL = getURL();
+      const redirectTo = `${baseURL}`;
+      
+      console.log('Google OAuth 시작:', { 
+        baseURL,
+        redirectTo, 
+        currentPath,
+        env: process.env.NODE_ENV,
+        siteUrl: process.env.NEXT_PUBLIC_SITE_URL,
+        vercelUrl: process.env.NEXT_PUBLIC_VERCEL_URL
+      });
+      
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          },
+        },
+      });
+      
+      if (error) {
+        console.error('Google OAuth 오류:', error);
+        console.error('사용된 redirectTo:', redirectTo);
+        throw error;
+      }
+      
+      console.log('Google OAuth 성공적으로 시작됨:', data);
+    } catch (error) {
+      console.error('signInWithGoogle 실행 중 오류:', error);
       throw error;
     }
   };
