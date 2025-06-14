@@ -4,6 +4,8 @@ import { extractVideoId, fetchTranscript, getVideoDetails, type VideoDetails, ty
 import { supabase, supabaseAdmin } from "@/app/lib/supabase";
 import { generateSummary, formatSummaryAsMarkdown, calculateTokenCount, estimateTokensAndCost, type AIModel, type PromptType } from "./lib/summary";
 import { isUserAdmin } from "./lib/auth-utils";
+import { extractVideoKeywords, extractVideoTopics } from "./lib/video-keywords";
+import { extractKeywordsFromHistory } from "./lib/curation-utils";
 
 // Supabase에서 사용자별 요약 조회
 async function getUserVideoSummaryFromDB(videoId: string, userId: string) {
@@ -60,6 +62,10 @@ async function upsertUserVideoSummaryToDB({
   video_thumbnail, 
   video_duration, 
   channel_title,
+  video_tags,
+  video_description,
+  inferred_topics,
+  inferred_keywords,
   summary, 
   summary_prompt,
   dialog
@@ -70,6 +76,10 @@ async function upsertUserVideoSummaryToDB({
   video_thumbnail?: string,
   video_duration?: string,
   channel_title?: string,
+  video_tags?: string[],
+  video_description?: string,
+  inferred_topics?: string[],
+  inferred_keywords?: string[],
   summary: string,
   summary_prompt?: string,
   dialog?: string
@@ -84,6 +94,9 @@ async function upsertUserVideoSummaryToDB({
     video_thumbnail: video_thumbnail || '',
     video_duration: video_duration || '',
     channel_title: channel_title || '',
+    video_tags_count: video_tags?.length || 0,
+    inferred_topics_count: inferred_topics?.length || 0,
+    inferred_keywords_count: inferred_keywords?.length || 0,
     summary_length: summary ? summary.length : 0,
     summary_prompt: summary_prompt || ''
   });
@@ -100,6 +113,10 @@ async function upsertUserVideoSummaryToDB({
         video_thumbnail, 
         video_duration, 
         channel_title,
+        video_tags,
+        video_description,
+        inferred_topics,
+        inferred_keywords,
         summary, 
         summary_prompt,
         dialog
@@ -218,6 +235,8 @@ export async function summarizeYoutubeVideo(
     let channel_title = apifyRawData.channelName || "";
     let thumbnail_url = "";
     let duration = "";
+    let description = "";
+    let tags: string[] = [];
     
     // YouTube API로 추가 정보 보완
     try {
@@ -229,12 +248,21 @@ export async function summarizeYoutubeVideo(
       if (!channel_title) channel_title = snippet.channelTitle || "";
       thumbnail_url = snippet.thumbnails?.medium?.url || "";
       duration = videoDetails?.items?.[0]?.contentDetails?.duration || "";
+      description = snippet.description || "";
+      tags = snippet.tags || [];
     } catch (error) {
       console.warn(`[summarizeYoutubeVideo] YouTube API 메타데이터 가져오기 실패:`, error);
       // Apify 데이터만으로도 계속 진행 가능
     }
 
-    // 7. Supabase에 저장 (게스트 사용자 우선 처리)
+    // 7. 키워드와 주제 추출
+    const inferredKeywords = extractVideoKeywords(title, description, tags);
+    const inferredTopics = extractVideoTopics(title, description, tags);
+    
+    console.log(`[summarizeYoutubeVideo] 추출된 키워드 (${inferredKeywords.length}개):`, inferredKeywords.slice(0, 5));
+    console.log(`[summarizeYoutubeVideo] 추출된 주제 (${inferredTopics.length}개):`, inferredTopics);
+
+    // 8. Supabase에 저장 (게스트 사용자 우선 처리)
     try {
       if (userId) {
         // 로그인한 사용자는 개인 테이블에 저장 (dialog 필드에 Apify 전체 데이터 저장)
@@ -245,6 +273,10 @@ export async function summarizeYoutubeVideo(
           video_thumbnail: thumbnail_url,
           video_duration: duration,
           channel_title: channel_title,
+          video_tags: tags,
+          video_description: description,
+          inferred_topics: inferredTopics,
+          inferred_keywords: inferredKeywords,
           summary: markdown,
           summary_prompt: summaryPrompt,
           dialog: JSON.stringify(apifyRawData)
@@ -614,12 +646,12 @@ export async function getUserKeywords(userId: string): Promise<Array<{keyword: s
   try {
     console.log(`[getUserKeywords] 사용자 키워드 추출 시작: ${userId}`);
     
-    // 사용자의 모든 요약 데이터 가져오기
+    // 사용자의 모든 요약 데이터 가져오기 (새로운 필드 포함)
     const { data: summaries, error } = await supabase
       .from('video_summaries')
-      .select('video_title, summary, channel_title')
+      .select('video_id, video_title, channel_title, video_thumbnail, created_at, inferred_keywords, inferred_topics')
       .eq('user_id', userId)
-      .not('summary', 'is', null);
+      .not('video_title', 'is', null);
     
     if (error) {
       console.error('[getUserKeywords] DB 조회 에러:', error);
@@ -633,49 +665,34 @@ export async function getUserKeywords(userId: string): Promise<Array<{keyword: s
     
     console.log(`[getUserKeywords] ${summaries.length}개의 요약 데이터에서 키워드 추출`);
     
-    // 텍스트 분석을 위한 전체 텍스트 수집
-    const allText = summaries.map(s => `${s.video_title} ${s.channel_title} ${s.summary}`).join(' ');
+    // UserSummary 형식으로 변환
+    const userSummaries = summaries.map(s => ({
+      video_id: s.video_id,
+      title: s.video_title,
+      channel_title: s.channel_title,
+      thumbnail_url: s.video_thumbnail || '',
+      created_at: s.created_at,
+      inferred_keywords: s.inferred_keywords || [],
+      inferred_topics: s.inferred_topics || []
+    }));
     
-    // 간단한 키워드 추출 (실제 구현에서는 더 정교한 NLP 사용 가능)
-    const keywords = extractKeywordsFromText(allText);
+    // 개선된 키워드 추출 함수 사용
+    const keywords = extractKeywordsFromHistory(userSummaries);
     
     console.log(`[getUserKeywords] 추출된 키워드: ${keywords.length}개`);
-    return keywords.slice(0, 5); // 최대 5개 반환
+    
+    // 키워드별 빈도 계산
+    const keywordFrequency = keywords.map((keyword, index) => ({
+      keyword,
+      frequency: keywords.length - index // 순서대로 빈도 부여
+    }));
+    
+    return keywordFrequency.slice(0, 5); // 상위 5개 반환
     
   } catch (err) {
     console.error('[getUserKeywords] 오류 발생:', err);
     return [];
   }
-}
-
-// 텍스트에서 키워드 추출 (간단한 구현)
-function extractKeywordsFromText(text: string): Array<{keyword: string, frequency: number}> {
-  // 한글, 영문, 숫자만 남기고 정리
-  const cleanText = text.replace(/[^\w\sㄱ-ㅎㅏ-ㅣ가-힣]/g, ' ').toLowerCase();
-  
-  // 불용어 목록 (확장 가능)
-  const stopWords = new Set([
-    '그', '저', '이', '것', '수', '있', '하', '되', '않', '같', '때', '더', '또', '등', '말', '년', '월', '일',
-    'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them'
-  ]);
-  
-  // 단어 빈도 계산
-  const wordCount = new Map<string, number>();
-  const words = cleanText.split(/\s+/).filter(word => 
-    word.length >= 2 && 
-    !stopWords.has(word) && 
-    !/^\d+$/.test(word) // 숫자만으로 구성된 단어 제외
-  );
-  
-  words.forEach(word => {
-    wordCount.set(word, (wordCount.get(word) || 0) + 1);
-  });
-  
-  // 빈도순으로 정렬하여 반환
-  return Array.from(wordCount.entries())
-    .map(([keyword, frequency]) => ({ keyword, frequency }))
-    .sort((a, b) => b.frequency - a.frequency)
-    .filter(item => item.frequency >= 2); // 최소 2번 이상 등장한 키워드만
 }
 
 // 키워드로 YouTube 동영상 검색
