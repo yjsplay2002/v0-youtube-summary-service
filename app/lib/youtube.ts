@@ -104,6 +104,7 @@ export interface VideoDetails {
       channelTitle: string;
       description: string;
       publishedAt: string;
+      tags?: string[];
       thumbnails: {
         default: { url: string; width: number; height: number };
         medium: { url: string; width: number; height: number };

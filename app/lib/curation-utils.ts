@@ -9,6 +9,8 @@ export interface UserSummary {
   channel_title: string;
   thumbnail_url: string;
   created_at: string;
+  inferred_keywords?: string[];
+  inferred_topics?: string[];
 }
 
 /**
@@ -21,42 +23,63 @@ export function extractKeywordsFromHistory(summaries: UserSummary[]): string[] {
     return [];
   }
 
-  // 비디오 제목들을 모두 합쳐서 분석
-  const allTitles = summaries.map(s => s.title).join(' ');
-  
-  // 한국어와 영어 키워드 추출을 위한 정규식
-  const koreanWords = allTitles.match(/[가-힣]{2,}/g) || [];
-  const englishWords = allTitles.match(/[a-zA-Z]{3,}/g) || [];
-  
-  // 불용어 제거 (한국어)
-  const koreanStopWords = new Set([
-    '그리고', '하지만', '그러나', '또한', '따라서', '그래서', '그런데', '하나의', '이것을', '그것을',
-    '무엇인가', '어떻게', '왜냐하면', '비디오', '영상', '동영상', '채널', '구독', '좋아요', '댓글',
-    '시청', '리뷰', '분석', '설명', '소개', '방법', '하는', '있는', '되는', '하기', '되기', '위한'
-  ]);
-  
-  // 불용어 제거 (영어)
-  const englishStopWords = new Set([
-    'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'how', 'what', 'why',
-    'video', 'tutorial', 'review', 'guide', 'tips', 'channel', 'subscribe', 'like', 'comment', 'watch'
-  ]);
-
-  // 키워드 빈도 계산
   const keywordCount = new Map<string, number>();
-  
-  koreanWords.forEach(word => {
-    const lowerWord = word.toLowerCase();
-    if (!koreanStopWords.has(lowerWord) && word.length >= 2) {
-      keywordCount.set(word, (keywordCount.get(word) || 0) + 1);
+
+  // 1. 먼저 inferred_keywords 사용 (우선순위 높음)
+  summaries.forEach(summary => {
+    if (summary.inferred_keywords && summary.inferred_keywords.length > 0) {
+      summary.inferred_keywords.forEach(keyword => {
+        if (keyword && keyword.length >= 2) {
+          keywordCount.set(keyword, (keywordCount.get(keyword) || 0) + 2); // 추론된 키워드는 가중치 2
+        }
+      });
+    }
+    
+    if (summary.inferred_topics && summary.inferred_topics.length > 0) {
+      summary.inferred_topics.forEach(topic => {
+        if (topic && topic.length >= 2) {
+          keywordCount.set(topic, (keywordCount.get(topic) || 0) + 3); // 주제는 가중치 3
+        }
+      });
     }
   });
-  
-  englishWords.forEach(word => {
-    const lowerWord = word.toLowerCase();
-    if (!englishStopWords.has(lowerWord) && word.length >= 3) {
-      keywordCount.set(word, (keywordCount.get(word) || 0) + 1);
-    }
-  });
+
+  // 2. inferred_keywords가 부족한 경우 제목에서 추가 추출
+  if (keywordCount.size < 10) {
+    // 비디오 제목들을 모두 합쳐서 분석
+    const allTitles = summaries.map(s => s.title).join(' ');
+    
+    // 한국어와 영어 키워드 추출을 위한 정규식
+    const koreanWords = allTitles.match(/[가-힣]{2,}/g) || [];
+    const englishWords = allTitles.match(/[a-zA-Z]{3,}/g) || [];
+    
+    // 불용어 제거 (한국어)
+    const koreanStopWords = new Set([
+      '그리고', '하지만', '그러나', '또한', '따라서', '그래서', '그런데', '하나의', '이것을', '그것을',
+      '무엇인가', '어떻게', '왜냐하면', '비디오', '영상', '동영상', '채널', '구독', '좋아요', '댓글',
+      '시청', '리뷰', '분석', '설명', '소개', '방법', '하는', '있는', '되는', '하기', '되기', '위한'
+    ]);
+    
+    // 불용어 제거 (영어)
+    const englishStopWords = new Set([
+      'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'how', 'what', 'why',
+      'video', 'tutorial', 'review', 'guide', 'tips', 'channel', 'subscribe', 'like', 'comment', 'watch'
+    ]);
+
+    koreanWords.forEach(word => {
+      const lowerWord = word.toLowerCase();
+      if (!koreanStopWords.has(lowerWord) && word.length >= 2) {
+        keywordCount.set(word, (keywordCount.get(word) || 0) + 1); // 제목 키워드는 가중치 1
+      }
+    });
+    
+    englishWords.forEach(word => {
+      const lowerWord = word.toLowerCase();
+      if (!englishStopWords.has(lowerWord) && word.length >= 3) {
+        keywordCount.set(word, (keywordCount.get(word) || 0) + 1); // 제목 키워드는 가중치 1
+      }
+    });
+  }
 
   // 빈도 순으로 정렬하여 상위 키워드들 반환
   const sortedKeywords = Array.from(keywordCount.entries())

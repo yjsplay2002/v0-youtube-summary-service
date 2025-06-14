@@ -7,6 +7,10 @@ export interface VideoSummary {
   video_title: string;
   video_thumbnail?: string;
   video_duration?: string;
+  video_tags?: string[];
+  video_description?: string;
+  inferred_topics?: string[];
+  inferred_keywords?: string[];
   summary: string;
   summary_prompt?: string;
   created_at: string;
