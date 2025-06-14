@@ -7,7 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { PlayCircle, Clock, User, Sparkles, Tag, Loader2 } from 'lucide-react';
+import { PlayCircle, Clock, User, Sparkles, Tag, Loader2, X } from 'lucide-react';
 import YouTube from 'react-youtube';
 
 interface VideoItem {
@@ -72,6 +72,8 @@ export default function CurationSection({ className }: CurationSectionProps) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedVideo, setSelectedVideo] = useState<VideoItem | null>(null);
+  const [showFullscreen, setShowFullscreen] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // 게스트 유저에게는 큐레이션 섹션을 보여주지 않음
@@ -172,7 +174,39 @@ export default function CurationSection({ className }: CurationSectionProps) {
     setSelectedKeyword(keyword);
     setVideos([]); // 기존 리스트 초기화
     setHasMore(true);
+    setSelectedVideo(null); // 선택된 비디오 초기화
     searchVideosForKeyword(keyword);
+  };
+
+  // 비디오 클릭 핸들러 (두 번 클릭 시스템)
+  const handleVideoClick = (video: VideoItem) => {
+    if (selectedVideo?.id === video.id) {
+      // 두 번째 클릭: 전체화면 모달 열기
+      setShowFullscreen(true);
+    } else {
+      // 첫 번째 클릭: 비디오 선택
+      setSelectedVideo(video);
+    }
+  };
+
+  // 요약 버튼 클릭 핸들러
+  const handleSummarizeClick = () => {
+    if (selectedVideo) {
+      const videoUrl = `https://www.youtube.com/watch?v=${selectedVideo.id}`;
+      // 기존 요약 워크플로우와 연동
+      window.postMessage({
+        type: 'FILL_YOUTUBE_URL',
+        url: videoUrl
+      }, '*');
+      
+      // 선택 해제
+      setSelectedVideo(null);
+    }
+  };
+
+  // 전체화면 모달 닫기
+  const handleCloseFullscreen = () => {
+    setShowFullscreen(false);
   };
 
   // 컴포넌트 마운트 시 키워드 로드
@@ -296,28 +330,48 @@ export default function CurationSection({ className }: CurationSectionProps) {
         >
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {videos.map((video) => (
-              <Card key={video.id} className="overflow-hidden hover:shadow-lg transition-all cursor-pointer group">
-                <div className="relative aspect-video overflow-hidden">
-                  <YouTube
-                    videoId={video.id}
-                    className="w-full h-full"
-                    opts={{
-                      width: '100%',
-                      height: '100%',
-                      playerVars: {
-                        autoplay: 0,
-                        controls: 1,
-                        rel: 0,
-                        showinfo: 0,
-                        modestbranding: 1,
-                      },
-                    }}
+              <Card 
+                key={video.id} 
+                className={`overflow-hidden hover:shadow-lg transition-all cursor-pointer group ${
+                  selectedVideo?.id === video.id ? 'ring-2 ring-primary ring-offset-2' : ''
+                }`}
+                onClick={() => handleVideoClick(video)}
+              >
+                <div className="relative aspect-video overflow-hidden bg-muted">
+                  <img
+                    src={video.thumbnail}
+                    alt={video.title}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
+                  <div className="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors duration-300" />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <PlayCircle className="h-12 w-12 text-white opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all duration-300" />
+                  </div>
                   <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">
                     {formatDuration(video.duration)}
                   </div>
+                  {selectedVideo?.id === video.id && (
+                    <div className="absolute top-2 left-2 bg-primary text-primary-foreground text-xs px-2 py-1 rounded-full font-medium">
+                      선택됨
+                    </div>
+                  )}
                 </div>
-                {/* 제목과 채널명 제거 - 영상만 보여줌 */}
+                <CardContent className="p-3">
+                  <h3 className="font-medium text-sm mb-1 overflow-hidden" title={video.title} style={{
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                    textOverflow: 'ellipsis'
+                  }}>
+                    {video.title}
+                  </h3>
+                  <p className="text-xs text-muted-foreground mb-1 overflow-hidden whitespace-nowrap text-ellipsis" title={video.channelTitle}>
+                    {video.channelTitle}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatRelativeDate(video.publishedAt)}
+                  </p>
+                </CardContent>
               </Card>
             ))}
           </div>
@@ -350,6 +404,52 @@ export default function CurationSection({ className }: CurationSectionProps) {
           <p className="text-muted-foreground">
             관심 있는 키워드를 선택해보세요!
           </p>
+        </div>
+      )}
+      
+      {/* 플로팅 요약 버튼 */}
+      {selectedVideo && (
+        <div className="fixed bottom-6 right-6 z-40">
+          <Button
+            onClick={handleSummarizeClick}
+            size="lg"
+            className="rounded-full shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
+          >
+            <Sparkles className="h-5 w-5 mr-2" />
+            요약하기
+          </Button>
+        </div>
+      )}
+
+      {/* 전체화면 비디오 모달 */}
+      {showFullscreen && selectedVideo && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4">
+          <div className="relative w-full max-w-6xl aspect-video bg-black rounded-lg overflow-hidden">
+            <Button
+              onClick={handleCloseFullscreen}
+              variant="ghost"
+              size="icon"
+              className="absolute top-4 right-4 z-10 bg-black/50 hover:bg-black/70 text-white rounded-full"
+            >
+              <X className="h-6 w-6" />
+            </Button>
+            <YouTube
+              videoId={selectedVideo.id}
+              className="w-full h-full"
+              opts={{
+                width: '100%',
+                height: '100%',
+                playerVars: {
+                  autoplay: 1,
+                  controls: 1,
+                  rel: 0,
+                  showinfo: 0,
+                  modestbranding: 1,
+                  fs: 1,
+                },
+              }}
+            />
+          </div>
         </div>
       )}
     </div>
