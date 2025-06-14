@@ -76,7 +76,6 @@ export default function CurationSection({ className }: CurationSectionProps) {
   const [selectedVideo, setSelectedVideo] = useState<VideoItem | null>(null);
   const [showFullscreen, setShowFullscreen] = useState(false);
   const [nextPageToken, setNextPageToken] = useState<string | undefined>(undefined);
-  const [summarizing, setSummarizing] = useState(false);
   const [videoSummaryStatus, setVideoSummaryStatus] = useState<{[videoId: string]: boolean}>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -228,42 +227,29 @@ export default function CurationSection({ className }: CurationSectionProps) {
     const videoId = selectedVideo.id;
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
     
-    // 이미 요약이 존재하는 경우 요약 페이지로 이동
+    // 이미 요약이 존재하는 경우 메인 페이지로 이동하여 해당 비디오 표시
     if (videoSummaryStatus[videoId]) {
-      window.location.href = `/summary/${videoId}`;
+      window.location.href = `/?videoId=${videoId}`;
       return;
     }
     
-    // 요약 시작
-    setSummarizing(true);
+    // 요약 시작 - 기존 YouTube Form으로 URL 전달
+    window.postMessage({
+      type: 'FILL_YOUTUBE_URL',
+      url: videoUrl
+    }, '*');
     
-    try {
-      // 기존 요약 워크플로우와 연동 (바로 요약 시작)
-      window.postMessage({
-        type: 'START_SUMMARIZATION',
-        url: videoUrl,
-        videoData: selectedVideo
-      }, '*');
-      
-      // 요약 완료 대기 (실제 구현에서는 이벤트 리스너나 폴링을 사용해야 함)
-      // 여기서는 간단하게 3초 후 완료로 처리
-      setTimeout(() => {
-        setSummarizing(false);
-        setVideoSummaryStatus(prev => ({ ...prev, [videoId]: true }));
-        toast.success('요약이 완료되었습니다!', {
-          description: '요약 보러가기 버튼을 클릭하여 결과를 확인하세요.',
-          duration: 3000,
-        });
-      }, 3000);
-      
-    } catch (error) {
-      console.error('요약 중 오류 발생:', error);
-      setSummarizing(false);
-      toast.error('요약 중 오류가 발생했습니다.', {
-        description: '다시 시도해 주세요.',
-        duration: 3000,
-      });
+    // 스크롤을 YouTube Form 섹션으로 이동
+    const youtubeFormSection = document.getElementById('youtube-form');
+    if (youtubeFormSection) {
+      youtubeFormSection.scrollIntoView({ behavior: 'smooth' });
     }
+    
+    // 알림 토스트
+    toast.success('동영상이 설정되었습니다', {
+      description: '아래 요약 폼에서 요약을 시작하세요.',
+      duration: 3000,
+    });
   };
 
   // 전체화면 모달 닫기
@@ -463,11 +449,8 @@ export default function CurationSection({ className }: CurationSectionProps) {
                     size="sm"
                     variant={videoSummaryStatus[video.id] ? "default" : "secondary"}
                     className="rounded-full shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 p-2"
-                    disabled={summarizing && selectedVideo?.id === video.id}
                   >
-                    {summarizing && selectedVideo?.id === video.id ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : videoSummaryStatus[video.id] ? (
+                    {videoSummaryStatus[video.id] ? (
                       <Eye className="h-4 w-4" />
                     ) : (
                       <FileText className="h-4 w-4" />
