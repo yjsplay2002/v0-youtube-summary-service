@@ -695,35 +695,149 @@ export async function getUserKeywords(userId: string): Promise<Array<{keyword: s
   }
 }
 
-// 키워드로 YouTube 동영상 검색
-export async function searchVideosByKeyword(keyword: string, maxResults: number = 10): Promise<Array<{
-  id: string;
-  title: string;
-  channelTitle: string;
-  thumbnail: string;
-  publishedAt: string;
-  duration: string;
-  description?: string;
-}>> {
+// 게스트 사용자를 위한 키워드 추출 (게스트로 등록된 비디오들에서)
+export async function getGuestKeywords(): Promise<Array<{keyword: string, frequency: number}>> {
   try {
-    console.log(`[searchVideosByKeyword] 키워드 검색 시작: "${keyword}", 최대 결과: ${maxResults}`);
+    console.log(`[getGuestKeywords] 게스트 키워드 추출 시작`);
+    
+    // 게스트 사용자 요약 데이터 가져오기 (user_id가 null이거나 'guest'인 데이터)
+    const { data: summaries, error } = await supabase
+      .from('video_summaries')
+      .select('video_id, video_title, channel_title, video_thumbnail, created_at, inferred_keywords, inferred_topics')
+      .or('user_id.is.null,user_id.eq.guest')
+      .not('video_title', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(50); // 최근 50개 게스트 요약만 사용
+    
+    if (error) {
+      console.error('[getGuestKeywords] DB 조회 에러:', error);
+      return [];
+    }
+    
+    if (!summaries || summaries.length === 0) {
+      console.log('[getGuestKeywords] 게스트 요약 데이터가 없음');
+      return [];
+    }
+    
+    console.log(`[getGuestKeywords] ${summaries.length}개의 게스트 요약 데이터에서 키워드 추출`);
+    
+    // UserSummary 형식으로 변환
+    const userSummaries = summaries.map(s => ({
+      video_id: s.video_id,
+      title: s.video_title,
+      channel_title: s.channel_title,
+      thumbnail_url: s.video_thumbnail || '',
+      created_at: s.created_at,
+      inferred_keywords: s.inferred_keywords || [],
+      inferred_topics: s.inferred_topics || []
+    }));
+    
+    // 개선된 키워드 추출 함수 사용
+    const keywords = extractKeywordsFromHistory(userSummaries);
+    
+    console.log(`[getGuestKeywords] 추출된 키워드: ${keywords.length}개`);
+    
+    // 키워드별 빈도 계산
+    const keywordFrequency = keywords.map((keyword, index) => ({
+      keyword,
+      frequency: keywords.length - index // 순서대로 빈도 부여
+    }));
+    
+    return keywordFrequency.slice(0, 5); // 상위 5개 반환
+    
+  } catch (err) {
+    console.error('[getGuestKeywords] 오류 발생:', err);
+    return [];
+  }
+}
+
+// 비디오 요약 존재 여부 확인
+export async function checkVideoSummaryExists(videoId: string, userId?: string): Promise<boolean> {
+  try {
+    console.log(`[checkVideoSummaryExists] 요약 존재 확인: ${videoId}, userId: ${userId || 'guest'}`);
+    
+    if (userId) {
+      // 로그인한 사용자의 개인 요약 확인
+      const { data: userSummary, error: userError } = await supabase
+        .from('video_summaries')
+        .select('id')
+        .eq('video_id', videoId)
+        .eq('user_id', userId)
+        .single();
+      
+      if (userError && userError.code !== 'PGRST116') { // PGRST116은 no rows 에러
+        console.error('[checkVideoSummaryExists] 개인 요약 조회 에러:', userError);
+      }
+      
+      if (userSummary) {
+        console.log(`[checkVideoSummaryExists] 개인 요약 존재: ${videoId}`);
+        return true;
+      }
+    }
+    
+    // 게스트 요약 또는 레거시 요약 확인
+    const { data: guestSummary, error: guestError } = await supabase
+      .from('video_summaries')
+      .select('id')
+      .eq('video_id', videoId)
+      .or('user_id.is.null,user_id.eq.guest')
+      .single();
+    
+    if (guestError && guestError.code !== 'PGRST116') {
+      console.error('[checkVideoSummaryExists] 게스트 요약 조회 에러:', guestError);
+    }
+    
+    if (guestSummary) {
+      console.log(`[checkVideoSummaryExists] 게스트 요약 존재: ${videoId}`);
+      return true;
+    }
+    
+    console.log(`[checkVideoSummaryExists] 요약 없음: ${videoId}`);
+    return false;
+    
+  } catch (err) {
+    console.error('[checkVideoSummaryExists] 오류 발생:', err);
+    return false;
+  }
+}
+
+// 키워드로 YouTube 동영상 검색 (페이지네이션 지원)
+export async function searchVideosByKeyword(keyword: string, maxResults: number = 10, pageToken?: string): Promise<{
+  videos: Array<{
+    id: string;
+    title: string;
+    channelTitle: string;
+    thumbnail: string;
+    publishedAt: string;
+    duration: string;
+    description?: string;
+  }>;
+  nextPageToken?: string;
+}> {
+  try {
+    console.log(`[searchVideosByKeyword] 키워드 검색 시작: "${keyword}", 최대 결과: ${maxResults}, 페이지 토큰: ${pageToken || 'none'}`);
     
     const apiKey = process.env.YOUTUBE_API_KEY;
     if (!apiKey) {
       console.error('[searchVideosByKeyword] YouTube API 키가 설정되지 않음');
-      return [];
+      return { videos: [] };
     }
     
     // YouTube Data API v3를 사용한 검색
-    const searchUrl = `https://www.googleapis.com/youtube/v3/search?` +
+    let searchUrl = `https://www.googleapis.com/youtube/v3/search?` +
       `part=snippet&` +
       `q=${encodeURIComponent(keyword)}&` +
       `type=video&` +
       `videoDuration=medium&` + // 4분~20분 영상
       `videoDefinition=high&` +
+      `videoEmbeddable=true&` + // 임베드 가능한 비디오만
       `order=relevance&` +
       `maxResults=${maxResults}&` +
       `key=${apiKey}`;
+    
+    if (pageToken) {
+      searchUrl += `&pageToken=${pageToken}`;
+    }
     
     const searchResponse = await fetch(searchUrl);
     if (!searchResponse.ok) {
@@ -734,15 +848,15 @@ export async function searchVideosByKeyword(keyword: string, maxResults: number 
     
     if (!searchData.items || searchData.items.length === 0) {
       console.log(`[searchVideosByKeyword] "${keyword}"에 대한 검색 결과 없음`);
-      return [];
+      return { videos: [] };
     }
     
     // 비디오 ID 목록 추출
     const videoIds = searchData.items.map((item: any) => item.id.videoId).join(',');
     
-    // 비디오 상세 정보 가져오기 (재생 시간 포함)
+    // 비디오 상세 정보 가져오기 (재생 시간 및 상태 포함)
     const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?` +
-      `part=snippet,contentDetails&` +
+      `part=snippet,contentDetails,status&` +
       `id=${videoIds}&` +
       `key=${apiKey}`;
     
@@ -753,21 +867,32 @@ export async function searchVideosByKeyword(keyword: string, maxResults: number 
     
     const detailsData = await detailsResponse.json();
     
-    const videos = detailsData.items.map((item: any) => ({
-      id: item.id,
-      title: item.snippet.title,
-      channelTitle: item.snippet.channelTitle,
-      thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default?.url,
-      publishedAt: item.snippet.publishedAt,
-      duration: item.contentDetails.duration,
-      description: item.snippet.description
-    }));
+    // 재생 가능한 비디오만 필터링
+    const videos = detailsData.items
+      .filter((item: any) => {
+        // 비디오 상태 확인: 공개되어 있고 임베드 가능한 것만
+        return item.status?.uploadStatus === 'processed' && 
+               item.status?.privacyStatus === 'public' &&
+               item.status?.embeddable !== false;
+      })
+      .map((item: any) => ({
+        id: item.id,
+        title: item.snippet.title,
+        channelTitle: item.snippet.channelTitle,
+        thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default?.url,
+        publishedAt: item.snippet.publishedAt,
+        duration: item.contentDetails.duration,
+        description: item.snippet.description
+      }));
     
-    console.log(`[searchVideosByKeyword] 검색 완료: ${videos.length}개 동영상`);
-    return videos;
+    console.log(`[searchVideosByKeyword] 검색 완료: ${videos.length}개 재생 가능한 동영상`);
+    return { 
+      videos, 
+      nextPageToken: searchData.nextPageToken 
+    };
     
   } catch (err) {
     console.error('[searchVideosByKeyword] 오류 발생:', err);
-    return [];
+    return { videos: [] };
   }
 }
