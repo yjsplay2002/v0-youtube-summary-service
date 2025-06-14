@@ -111,13 +111,21 @@ export default function CurationSection({ className }: CurationSectionProps) {
       const videoData = await searchVideosByKeyword(keyword, 12);
       
       if (append) {
-        setVideos(prev => [...prev, ...videoData]);
+        // 중복 제거: 기존 비디오 ID와 새로운 비디오 ID를 비교
+        const existingIds = new Set(videos.map(v => v.id));
+        const newVideos = videoData.filter(video => !existingIds.has(video.id));
+        setVideos(prev => [...prev, ...newVideos]);
+        
+        // 새로운 비디오가 너무 적으면 더 이상 로드할 것이 없다고 간주
+        if (newVideos.length < 6) {
+          setHasMore(false);
+        }
       } else {
         setVideos(videoData);
       }
       
       // 더 적은 결과가 반환되면 더 이상 로드할 것이 없다고 간주
-      if (videoData.length < 12) {
+      if (!append && videoData.length < 12) {
         setHasMore(false);
       }
     } catch (err) {
