@@ -337,7 +337,10 @@ export default function CurationSection({ className }: CurationSectionProps) {
         <div className="text-center py-8">
           <Tag className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
           <p className="text-muted-foreground">
-            아직 충분한 시청 기록이 없습니다. 더 많은 동영상을 요약해보세요!
+            {user 
+              ? '아직 충분한 시청 기록이 없습니다. 더 많은 동영상을 요약해보세요!' 
+              : '아직 게스트 요약 데이터가 충분하지 않습니다. 동영상을 요약하여 키워드를 생성해보세요!'
+            }
           </p>
         </div>
       </div>
