@@ -110,7 +110,7 @@ export default function CurationSection({ className }: CurationSectionProps) {
       setError(null);
       
       const currentVideoCount = append ? videos.length : 0;
-      const videoData = await searchVideosByKeyword(keyword, 12);
+      const videoData = await searchVideosByKeyword(keyword, 10);
       
       if (append) {
         // 중복 제거: 기존 비디오 ID와 새로운 비디오 ID를 비교
@@ -119,7 +119,7 @@ export default function CurationSection({ className }: CurationSectionProps) {
         setVideos(prev => [...prev, ...newVideos]);
         
         // 새로운 비디오가 너무 적으면 더 이상 로드할 것이 없다고 간주
-        if (newVideos.length < 6) {
+        if (newVideos.length < 5) {
           setHasMore(false);
         }
       } else {
@@ -127,7 +127,7 @@ export default function CurationSection({ className }: CurationSectionProps) {
       }
       
       // 더 적은 결과가 반환되면 더 이상 로드할 것이 없다고 간주
-      if (!append && videoData.length < 12) {
+      if (!append && videoData.length < 10) {
         setHasMore(false);
       }
     } catch (err) {
@@ -208,6 +208,27 @@ export default function CurationSection({ className }: CurationSectionProps) {
   const handleCloseFullscreen = () => {
     setShowFullscreen(false);
   };
+
+  // 키보드 이벤트 핸들러 (ESC 키로 전체화면 닫기)
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && showFullscreen) {
+        handleCloseFullscreen();
+      }
+    };
+
+    if (showFullscreen) {
+      document.addEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'hidden'; // 스크롤 방지
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'unset';
+    };
+  }, [showFullscreen]);
 
   // 컴포넌트 마운트 시 키워드 로드
   useEffect(() => {
@@ -316,7 +337,7 @@ export default function CurationSection({ className }: CurationSectionProps) {
       {/* 동영상 리스트 - 스크롤 가능한 컨테이너 */}
       {videosLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {[...Array(12)].map((_, i) => (
+          {[...Array(10)].map((_, i) => (
             <Card key={i} className="overflow-hidden">
               <Skeleton className="aspect-video w-full" />
             </Card>
@@ -345,7 +366,16 @@ export default function CurationSection({ className }: CurationSectionProps) {
                   />
                   <div className="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors duration-300" />
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <PlayCircle className="h-12 w-12 text-white opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all duration-300" />
+                    {selectedVideo?.id === video.id ? (
+                      <div className="flex flex-col items-center gap-2">
+                        <PlayCircle className="h-12 w-12 text-white opacity-100 group-hover:scale-110 transition-all duration-300" />
+                        <span className="text-white text-xs font-medium bg-black/50 px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                          클릭하여 전체화면
+                        </span>
+                      </div>
+                    ) : (
+                      <PlayCircle className="h-12 w-12 text-white opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all duration-300" />
+                    )}
                   </div>
                   <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">
                     {formatDuration(video.duration)}
