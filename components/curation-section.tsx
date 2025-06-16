@@ -78,6 +78,7 @@ export default function CurationSection({ className }: CurationSectionProps) {
   const [nextPageToken, setNextPageToken] = useState<string | undefined>(undefined);
   const [videoSummaryStatus, setVideoSummaryStatus] = useState<{[videoId: string]: boolean}>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const isLoadingMoreRef = useRef(false); // 중복 호출 방지용 ref
 
   // 유저(또는 게스트)의 키워드 추출
   const fetchKeywords = async () => {
@@ -122,33 +123,64 @@ export default function CurationSection({ className }: CurationSectionProps) {
   // 선택된 키워드로 관련 동영상 검색
   const searchVideosForKeyword = async (keyword: string, append: boolean = false) => {
     try {
+      // 중복 호출 방지
+      if (append && isLoadingMoreRef.current) {
+        console.log('Already loading more videos, skipping...');
+        return;
+      }
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log('searchVideosForKeyword called:', { keyword, append, nextPageToken, hasMore });
+      }
+      
       if (!append) {
         setVideosLoading(true);
         setVideos([]);
         setHasMore(true);
         setNextPageToken(undefined);
+        isLoadingMoreRef.current = false;
       } else {
         setLoadingMore(true);
+        isLoadingMoreRef.current = true;
       }
       setError(null);
       
       const currentPageToken = append ? nextPageToken : undefined;
+      
       const searchResult = await searchVideosByKeyword(keyword, 10, currentPageToken);
+      
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Search result:', { 
+          videosCount: searchResult.videos.length, 
+          nextPageToken: searchResult.nextPageToken 
+        });
+      }
       
       if (append) {
         // 중복 제거: 기존 비디오 ID와 새로운 비디오 ID를 비교
-        const existingIds = new Set(videos.map(v => v.id));
-        const newVideos = searchResult.videos.filter(video => !existingIds.has(video.id));
-        setVideos(prev => [...prev, ...newVideos]);
+        setVideos(prev => {
+          const existingIds = new Set(prev.map(v => v.id));
+          const newVideos = searchResult.videos.filter(video => !existingIds.has(video.id));
+          
+          if (process.env.NODE_ENV === 'development') {
+            console.log('Adding new videos:', { existing: prev.length, new: newVideos.length });
+          }
+          
+          return [...prev, ...newVideos];
+        });
         
-        // 새로운 비디오가 너무 적으면 더 이상 로드할 것이 없다고 간주
-        if (newVideos.length < 5 || !searchResult.nextPageToken) {
+        // 새로운 비디오가 없거나 다음 페이지 토큰이 없으면 더 이상 로드할 것이 없다고 간주
+        if (searchResult.videos.length === 0 || !searchResult.nextPageToken) {
+          if (process.env.NODE_ENV === 'development') {
+            console.log('No more videos to load');
+          }
           setHasMore(false);
         }
         
         // 새 비디오들의 요약 상태 확인
-        if (newVideos.length > 0) {
-          await checkVideoSummaryStatus(newVideos.map(v => v.id));
+        if (searchResult.videos.length > 0) {
+          const newVideoIds = searchResult.videos.map(v => v.id);
+          await checkVideoSummaryStatus(newVideoIds);
         }
       } else {
         setVideos(searchResult.videos);
@@ -157,60 +189,93 @@ export default function CurationSection({ className }: CurationSectionProps) {
         if (searchResult.videos.length > 0) {
           await checkVideoSummaryStatus(searchResult.videos.map(v => v.id));
         }
+        
+        // 첫 번째 로드에서 결과가 적거나 nextPageToken이 없으면 hasMore를 false로 설정
+        if (searchResult.videos.length < 10 || !searchResult.nextPageToken) {
+          setHasMore(false);
+        }
       }
       
       // 페이지 토큰 업데이트
       setNextPageToken(searchResult.nextPageToken);
       
-      // 더 적은 결과가 반환되거나 다음 페이지 토큰이 없으면 더 이상 로드할 것이 없다고 간주
-      if (!append && (searchResult.videos.length < 10 || !searchResult.nextPageToken)) {
-        setHasMore(false);
-      }
     } catch (err) {
       console.error('동영상 검색 실패:', err);
       setError('동영상을 불러오는 중 오류가 발생했습니다.');
     } finally {
       setVideosLoading(false);
       setLoadingMore(false);
+      isLoadingMoreRef.current = false;
     }
   };
 
   // 더 많은 동영상 로드
   const loadMoreVideos = useCallback(() => {
-    if (selectedKeyword && !loadingMore && hasMore && nextPageToken) {
+    if (selectedKeyword && !loadingMore && hasMore) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Loading more videos:', { selectedKeyword, loadingMore, hasMore, nextPageToken });
+      }
       searchVideosForKeyword(selectedKeyword, true);
     }
   }, [selectedKeyword, loadingMore, hasMore, nextPageToken]);
 
   // 스크롤 이벤트 핸들러
   const handleScroll = useCallback(() => {
-    if (!scrollContainerRef.current || loadingMore || !hasMore) return;
+    if (!scrollContainerRef.current || loadingMore || !hasMore || !selectedKeyword) return;
     
     const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    const scrollPercentage = (scrollTop + clientHeight) / scrollHeight;
     
-    // 하단에서 200px 전에 도달하면 더 로드
-    if (scrollHeight - scrollTop <= clientHeight + 200) {
+    // 90% 스크롤했을 때 더 로드
+    if (scrollPercentage >= 0.9) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Scroll threshold reached:', { 
+          scrollPercentage: Math.round(scrollPercentage * 100) + '%',
+          loadingMore,
+          hasMore,
+          selectedKeyword
+        });
+      }
       loadMoreVideos();
     }
-  }, [loadMoreVideos, loadingMore, hasMore]);
+  }, [loadMoreVideos, loadingMore, hasMore, selectedKeyword]);
 
   // 스크롤 이벤트 리스너 등록
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (!container) return;
     
-    container.addEventListener('scroll', handleScroll);
-    return () => container.removeEventListener('scroll', handleScroll);
+    // 스크롤 이벤트 디바운싱
+    let timeoutId: NodeJS.Timeout;
+    const debouncedScroll = (e: Event) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => handleScroll(), 100);
+    };
+    
+    container.addEventListener('scroll', debouncedScroll, { passive: true });
+    return () => {
+      container.removeEventListener('scroll', debouncedScroll);
+      clearTimeout(timeoutId);
+    };
   }, [handleScroll]);
 
   // 태그 선택 핸들러
   const handleKeywordSelect = (keyword: string) => {
     if (selectedKeyword === keyword) return; // 이미 선택된 키워드면 무시
     
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Keyword selected:', keyword);
+    }
+    
+    // 모든 상태 초기화
     setSelectedKeyword(keyword);
-    setVideos([]); // 기존 리스트 초기화
+    setVideos([]); 
     setHasMore(true);
-    setSelectedVideo(null); // 선택된 비디오 초기화
+    setSelectedVideo(null); 
+    setNextPageToken(undefined);
+    setLoadingMore(false);
+    isLoadingMoreRef.current = false;
+    
     searchVideosForKeyword(keyword);
   };
 
@@ -423,11 +488,22 @@ export default function CurationSection({ className }: CurationSectionProps) {
                         fs: 0,
                         disablekb: 1,
                         iv_load_policy: 3,
+                        origin: typeof window !== 'undefined' ? window.location.origin : undefined,
+                        enablejsapi: 1,
                       },
                     }}
                     onReady={(event) => {
-                      // 썸네일만 보여주고 자동재생 방지
-                      event.target.pauseVideo();
+                      try {
+                        // 썸네일만 보여주고 자동재생 방지
+                        event.target.pauseVideo();
+                      } catch (error) {
+                        // CORS 에러 무시
+                        console.debug('YouTube player ready - CORS error ignored:', error);
+                      }
+                    }}
+                    onError={(error) => {
+                      // YouTube 플레이어 에러 무시 (CORS 관련)
+                      console.debug('YouTube player error ignored:', error);
                     }}
                   />
                   <div className="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors duration-300" />
