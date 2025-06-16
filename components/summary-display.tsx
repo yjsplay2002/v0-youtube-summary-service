@@ -200,7 +200,14 @@ export default function SummaryDisplay() {
                   },
                 }}
                 onReady={(e: { target: YouTubePlayer }) => {
-                  setPlayerRef(e.target);
+                  try {
+                    setPlayerRef(e.target);
+                  } catch (error) {
+                    console.debug('YouTube player ready - CORS error ignored:', error);
+                  }
+                }}
+                onError={(error) => {
+                  console.debug('YouTube player error ignored:', error);
                 }}
               />
             </div>
@@ -236,7 +243,14 @@ export default function SummaryDisplay() {
                 },
               }}
               onReady={(e: { target: YouTubePlayer }) => {
-                setPlayerRef(e.target);
+                try {
+                  setPlayerRef(e.target);
+                } catch (error) {
+                  console.debug('YouTube player ready - CORS error ignored:', error);
+                }
+              }}
+              onError={(error) => {
+                console.debug('YouTube player error ignored:', error);
               }}
             />
           </div>

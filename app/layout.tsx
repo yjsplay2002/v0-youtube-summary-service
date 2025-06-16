@@ -63,6 +63,27 @@ export default function RootLayout({
         />
       </head>
       <body className="font-sans antialiased">
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              // YouTube iframe CORS 에러 무시
+              window.addEventListener('error', function(e) {
+                if (e.message && e.message.includes('postMessage') && e.message.includes('youtube.com')) {
+                  e.preventDefault();
+                  return false;
+                }
+              }, true);
+              
+              // unhandledrejection 이벤트로 Promise 에러도 처리
+              window.addEventListener('unhandledrejection', function(e) {
+                if (e.reason && e.reason.message && e.reason.message.includes('postMessage') && e.reason.message.includes('youtube.com')) {
+                  e.preventDefault();
+                  return false;
+                }
+              });
+            `,
+          }}
+        />
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
           <AuthProvider>
             <SummaryProvider>
