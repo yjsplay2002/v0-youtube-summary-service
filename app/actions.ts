@@ -573,14 +573,43 @@ export async function getCuratedVideos(userId?: string, pageToken?: string) {
         }
       }
     } else {
-      // 게스트 사용자: 트렌딩 비디오
-      console.log('[getCuratedVideos] 게스트 사용자 - 트렌딩 비디오 제공');
+      // 게스트 사용자: 게스트 요약 데이터를 기반으로 한 개인화된 큐레이션
+      console.log('[getCuratedVideos] 게스트 사용자 - 게스트 요약 데이터 기반 큐레이션');
+      
+      // 먼저 게스트 요약 히스토리를 가져옴
+      const guestSummaries = await getAllSummaries(); // userId 없이 호출하면 guest 데이터 반환
+      
+      if (guestSummaries.length === 0) {
+        // 게스트 요약이 없으면 트렌딩 비디오 반환
+        console.log('[getCuratedVideos] 게스트 요약 없음 - 트렌딩 비디오 반환');
+        try {
+          const { getTrendingVideos } = await import('@/app/lib/youtube');
+          return await getTrendingVideos(12, pageToken);
+        } catch (trendingError) {
+          console.error('[getCuratedVideos] 트렌딩 비디오 가져오기 실패:', trendingError);
+          return { items: [], nextPageToken: undefined };
+        }
+      }
+      
+      // 게스트 선호도 분석 및 개인화된 검색
       try {
-        const { getTrendingVideos } = await import('@/app/lib/youtube');
-        return await getTrendingVideos(12, pageToken);
-      } catch (trendingError) {
-        console.error('[getCuratedVideos] 트렌딩 비디오 가져오기 실패:', trendingError);
-        return { items: [], nextPageToken: undefined };
+        const { generateCurationQuery } = await import('@/app/lib/curation-utils');
+        const { searchVideos } = await import('@/app/lib/youtube');
+        
+        const query = generateCurationQuery(guestSummaries);
+        console.log(`[getCuratedVideos] 게스트 개인화 검색 쿼리: "${query}"`);
+        
+        return await searchVideos(query, 12, pageToken);
+      } catch (searchError) {
+        console.error('[getCuratedVideos] 게스트 개인화 검색 실패:', searchError);
+        // 개인화 검색 실패 시 트렌딩으로 폴백
+        try {
+          const { getTrendingVideos } = await import('@/app/lib/youtube');
+          return await getTrendingVideos(12, pageToken);
+        } catch (fallbackError) {
+          console.error('[getCuratedVideos] 폴백 트렌딩 비디오도 실패:', fallbackError);
+          return { items: [], nextPageToken: undefined };
+        }
       }
     }
   } catch (error) {
