@@ -63,11 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Supabase 공식 문서에 따른 URL 생성 함수
   const getURL = () => {
-    let url = 
-      process?.env?.NEXT_PUBLIC_SITE_URL ?? // Production site URL from env
-      process?.env?.NEXT_PUBLIC_VERCEL_URL ?? // Vercel deployment URL
-      (typeof window !== 'undefined' ? window.location.origin : null) ?? // Current origin
-      'http://localhost:3000'; // Fallback for development
+    let url = `${window.location.origin}/auth/callback`;
 
     // Ensure proper URL formatting
     url = url.startsWith('http') ? url : `https://${url}`;

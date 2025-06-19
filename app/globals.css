@@ -9,7 +9,7 @@ body {
 @layer utilities {
   .text-balance {
     text-wrap: balance;
-  }
+  } 
   
   .line-clamp-2 {
     overflow: hidden;
