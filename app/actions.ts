@@ -156,7 +156,8 @@ export async function summarizeYoutubeVideo(
   aiModel: AIModel = 'claude-3-5-haiku',
   summaryPrompt?: string,
   userId?: string,
-  promptType: PromptType = 'general_summary'
+  promptType: PromptType = 'general_summary',
+  language?: string
 ): Promise<{ success: boolean; videoId?: string; error?: string; summary?: string }> {
   console.log(`[summarizeYoutubeVideo] 요청 URL: ${youtubeUrl}, AI 모델: ${aiModel}, userId: ${userId || 'anonymous'}`);
   try {
@@ -227,7 +228,7 @@ export async function summarizeYoutubeVideo(
     }
     
     console.log(`[summarizeYoutubeVideo] 요약 생성 시작... (예상 토큰: ${estimatedTokens})`);
-    const summary = await generateSummary(transcript, aiModel, summaryPrompt, promptType);
+    const summary = await generateSummary(transcript, aiModel, summaryPrompt, promptType, language);
     const markdown = formatSummaryAsMarkdown(summary, videoId);
     
     // 6. 비디오 메타데이터 가져오기 (Apify 데이터 우선 사용)
@@ -375,7 +376,8 @@ export async function resummarizeYoutubeVideo(
   userId: string,
   aiModel: AIModel = 'claude-3-5-haiku',
   summaryPrompt?: string,
-  promptType: PromptType = 'general_summary'
+  promptType: PromptType = 'general_summary',
+  language?: string
 ): Promise<{ success: boolean; videoId?: string; error?: string; summary?: string }> {
   console.log(`[resummarizeYoutubeVideo] 요청 videoId: ${videoId}, userId: ${userId}, AI 모델: ${aiModel}`);
   try {
@@ -444,7 +446,7 @@ export async function resummarizeYoutubeVideo(
     
     // 4. 요약 생성
     console.log(`[resummarizeYoutubeVideo] 요약 생성 시작: ${videoId}, 프롬프트 타입: ${promptType}`);
-    const summary = await generateSummary(transcript, aiModel, summaryPrompt, promptType);
+    const summary = await generateSummary(transcript, aiModel, summaryPrompt, promptType, language);
     const markdown = formatSummaryAsMarkdown(summary, videoId);
     
     // 5. Supabase에 저장 (기존 dialog 데이터 유지)

@@ -99,7 +99,7 @@ const getOpenAIClient = () => {
 };
 
 // Claude API 클라이언트 함수
-const callClaudeAPI = async (systemPrompt: string, userMessage: string, model: ClaudeModel): Promise<string> => {
+const callClaudeAPI = async (systemPrompt: string, userMessage: string, model: ClaudeModel, language?: string): Promise<string> => {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error('ANTHROPIC_API_KEY is missing');
@@ -118,7 +118,8 @@ const callClaudeAPI = async (systemPrompt: string, userMessage: string, model: C
       model: config.model,
       max_tokens: config.maxTokens,
       temperature: config.temperature,
-      system: systemPrompt,
+      // 사용자의 언어 설정에 따라 응답 언어를 지정하는 프롬프트를 추가합니다.
+      system: systemPrompt + (language ? `\n\nPlease provide the answer in the following language: ${language}.` : ''),
       messages: [
         {
           role: 'user',
@@ -143,24 +144,60 @@ const callClaudeAPI = async (systemPrompt: string, userMessage: string, model: C
 };
 
 // 데이터베이스에서 시스템 프롬프트를 가져오는 함수
-const getSystemPromptFromDB = async (promptType: PromptType = 'general_summary'): Promise<string> => {
+const getSystemPromptFromDB = async (promptType: PromptType = 'general_summary', language?: string): Promise<string> => {
   try {
-    console.log(`[getSystemPromptFromDB] 프롬프트 타입: ${promptType}`);
+    console.log(`[getSystemPromptFromDB] 프롬프트 타입: ${promptType}, 언어: ${language || 'ko'}`);
     
-    const { data, error } = await supabase
+    // 언어별 프롬프트 쿼리 로직
+    let query = supabase
       .from('system_prompts')
       .select('prompt_content')
       .eq('prompt_type', promptType)
-      .eq('is_active', true)
-      .single();
+      .eq('is_active', true);
+    
+    // 언어가 지정된 경우 해당 언어 프롬프트 우선 검색
+    if (language && language !== 'ko') {
+      query = query.eq('language', language);
+    } else {
+      // 한국어 또는 언어 미지정시 기본 한국어 프롬프트
+      query = query.or(`language.eq.ko,language.is.null`);
+    }
+    
+    const { data, error } = await query.single();
     
     if (error) {
+      // 특정 언어 프롬프트가 없는 경우 한국어 fallback 시도
+      if (language && language !== 'ko' && error.code === 'PGRST116') {
+        console.log(`[getSystemPromptFromDB] ${language} 언어 프롬프트 없음, 한국어로 fallback`);
+        const fallbackQuery = supabase
+          .from('system_prompts')
+          .select('prompt_content')
+          .eq('prompt_type', promptType)
+          .eq('is_active', true)
+          .or(`language.eq.ko,language.is.null`);
+        
+        const { data: fallbackData, error: fallbackError } = await fallbackQuery.single();
+        
+        if (fallbackError) {
+          console.error('[getSystemPromptFromDB] Fallback DB 조회 오류:', fallbackError);
+          throw fallbackError;
+        }
+        
+        if (!fallbackData || !fallbackData.prompt_content) {
+          console.warn(`[getSystemPromptFromDB] Fallback 프롬프트 타입 '${promptType}'에 대한 데이터가 없음`);
+          throw new Error(`프롬프트 타입 '${promptType}'을 찾을 수 없습니다.`);
+        }
+        
+        console.log(`[getSystemPromptFromDB] Fallback 성공, 프롬프트 길이: ${fallbackData.prompt_content.length} 문자`);
+        return fallbackData.prompt_content;
+      }
+      
       console.error('[getSystemPromptFromDB] DB 조회 오류:', error);
       throw error;
     }
     
     if (!data || !data.prompt_content) {
-      console.warn(`[getSystemPromptFromDB] 프롬프트 타입 '${promptType}'에 대한 데이터가 없음`);
+      console.warn(`[getSystemPromptFromDB] 프롬프트 타입 '${promptType}', 언어 '${language || 'ko'}'에 대한 데이터가 없음`);
       throw new Error(`프롬프트 타입 '${promptType}'을 찾을 수 없습니다.`);
     }
     
@@ -173,11 +210,11 @@ const getSystemPromptFromDB = async (promptType: PromptType = 'general_summary')
 };
 
 // 통합 시스템 프롬프트 가져오기 함수 (DB 우선, 파일 fallback)
-const getSystemPrompt = async (promptType: PromptType = 'general_summary'): Promise<string> => {
+const getSystemPrompt = async (promptType: PromptType = 'general_summary', language?: string): Promise<string> => {
   try {
     // 1. 데이터베이스에서 프롬프트 가져오기 시도
     console.log(`[getSystemPrompt] DB에서 프롬프트 가져오기 시도: ${promptType}`);
-    return await getSystemPromptFromDB(promptType);
+    return await getSystemPromptFromDB(promptType, language);
   } catch (dbError) {
     console.warn('[getSystemPrompt] DB에서 프롬프트 가져오기 실패, 파일 시스템 시도:', dbError);
     throw dbError;
@@ -189,12 +226,13 @@ export async function generateSummary(
   transcript: string, 
   model: AIModel = 'claude-3-5-haiku', 
   summaryPrompt?: string,
-  promptType: PromptType = 'general_summary'
+  promptType: PromptType = 'general_summary',
+  language?: string
 ): Promise<string> {
   console.log(`[generateSummary] 사용 모델: ${model}, 프롬프트 타입: ${promptType}, 입력 트랜스크립트 길이: ${transcript.length} 문자`);
   console.log(`[generateSummary] 트랜스크립트 일부: ${transcript.slice(0, 100)}...`);
   
-  const systemPrompt = await getSystemPrompt(promptType);
+  const systemPrompt = await getSystemPrompt(promptType, language);
   let userMessage = '';
   
   if (summaryPrompt) {
@@ -226,7 +264,7 @@ export async function generateSummary(
     
     if (model.startsWith('claude')) {
       console.log(`[generateSummary] Claude API 요청 시작...`);
-      summary = await callClaudeAPI(systemPrompt, userMessage, model as ClaudeModel);
+      summary = await callClaudeAPI(systemPrompt, userMessage, model as ClaudeModel, language);
       console.log(`[generateSummary] Claude API 응답 받음, 요약 길이: ${summary.length} 문자`);
     } else {
       console.log(`[generateSummary] OpenAI API 요청 시작...`);

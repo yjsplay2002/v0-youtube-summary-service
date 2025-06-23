@@ -36,6 +36,7 @@ export function YoutubeForm() {
   const [selectedPromptType, setSelectedPromptType] = useState<PromptType>("general_summary")
   const [availablePromptTypes, setAvailablePromptTypes] = useState<Array<{type: string, title: string, description: string}>>([])
   const [availableModels, setAvailableModels] = useState<Array<{value: string, label: string}>>([])
+  const [userLanguage, setUserLanguage] = useState<string>('ko')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const [showApiKeyError, setShowApiKeyError] = useState(false)
@@ -51,6 +52,19 @@ export function YoutubeForm() {
   const userIsAdmin = isUserAdmin(user);
   const userTier = getUserSubscriptionTier(user);
   const userLimits = getSubscriptionLimits(userTier);
+
+  // 브라우저 언어 감지
+  useEffect(() => {
+    const detectLanguage = () => {
+      if (typeof window !== 'undefined') {
+        const browserLang = navigator.language || navigator.languages?.[0] || 'ko';
+        const langCode = browserLang.split('-')[0]; // 'ko-KR' -> 'ko'
+        setUserLanguage(langCode);
+        console.log('[YoutubeForm] 감지된 브라우저 언어:', langCode);
+      }
+    };
+    detectLanguage();
+  }, []);
 
   // 사용자별 권한에 따른 모델 및 프롬프트 타입 로드
   useEffect(() => {
@@ -160,7 +174,7 @@ export function YoutubeForm() {
     setShowApiKeyError(false)
 
     // Call the server action to process the YouTube URL
-    const result = await summarizeYoutubeVideo(youtubeUrl, selectedModel, undefined, user?.id, selectedPromptType)
+    const result = await summarizeYoutubeVideo(youtubeUrl, selectedModel, undefined, user?.id, selectedPromptType, userLanguage)
 
     setLoadingStage("summary");
 
@@ -346,60 +360,46 @@ export function YoutubeForm() {
                   Summarize
                 </Button>
                 {summaryExists && isSpecialUser && (
-                  <Button 
-                    type="button" 
-                    className="shrink-0" 
-                    variant="outline" 
+                  <Button
+                    type="button"
+                    className="shrink-0"
+                    variant="outline"
                     disabled={isLoading}
-                    onClick={async (e) => {
-                      e.preventDefault();
+                    onClick={async () => {
+                      if (!videoInfo?.id) {
+                        setError("Video ID is missing for re-summarization.");
+                        return;
+                      }
+                      if (!user?.id) {
+                        setError("You must be logged in to re-summarize.");
+                        return;
+                      }
+
+                      setIsLoading(true);
+                      setLoadingStage("summary");
+                      setError("");
+                      resetSummary();
+
                       try {
-                        const videoId = extractYoutubeVideoId(youtubeUrl);
-                        if (!videoId) {
-                          setError("Please enter a valid YouTube URL");
-                          return;
-                        }
-                        
-                        setError("");
-                        setShowApiKeyError(false);
-                        
-                        // Check if user is logged in
-                        if (!user) {
-                          setError("로그인이 필요합니다.");
-                          setLoadingStage("none");
-                          return;
-                        }
-                        
-                        setIsLoading(true);
-                        setLoadingStage("summary");
-                        
-                        // Call the resummarizeYoutubeVideo server action
-                        const result = await resummarizeYoutubeVideo(videoId, user.id, selectedModel, undefined, selectedPromptType);
-                        
+                        const result = await resummarizeYoutubeVideo(
+                          videoInfo.id,
+                          user.id,
+                          selectedModel,
+                          undefined,
+                          selectedPromptType,
+                          userLanguage
+                        );
+
                         if (result.success && result.videoId) {
-                          setLoadingStage("none");
-                          // Handle successful processing by navigating to the results page
                           router.push(`/?videoId=${result.videoId}`);
                           refreshSummaries();
                         } else {
-                          setLoadingStage("none");
-                          // Handle error from server action
-                          if (result.error?.includes("OPENAI_API_KEY is missing") || result.error?.includes("ANTHROPIC_API_KEY is missing")) {
-                            setShowApiKeyError(true);
-                          } else {
-                            setError(result.error || "Failed to re-summarize the video");
-                          }
+                          setError(result.error || "Failed to re-summarize the video.");
                         }
                       } catch (err) {
-                        setLoadingStage("none");
                         console.error(err);
                         const errorMessage = err instanceof Error ? err.message : "Failed to re-summarize the video";
-                        
-                        if (errorMessage.includes("OPENAI_API_KEY is missing") || errorMessage.includes("ANTHROPIC_API_KEY is missing")) {
-                          setShowApiKeyError(true);
-                        } else {
-                          setError(errorMessage);
-                        }
+                        setError(errorMessage);
                       } finally {
                         setIsLoading(false);
                         setLoadingStage("none");
