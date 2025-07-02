@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Loader2, AlertCircle } from "lucide-react"
-import { summarizeYoutubeVideo, fetchVideoDetailsServer, resummarizeYoutubeVideo, getAvailablePromptTypes } from "@/app/actions"
+import { summarizeYoutubeVideo, fetchVideoDetailsServer, resummarizeYoutubeVideo } from "@/app/actions"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useRouter, useSearchParams } from "next/navigation"
 import type { AIModel, PromptType } from "@/app/lib/summary"
@@ -31,8 +31,7 @@ export function SimpleYoutubeForm() {
   const [videoLoading, setVideoLoading] = useState(false)
   const [summaryExists, setSummaryExists] = useState(false)
   const [selectedModel, setSelectedModel] = useState<AIModel>('claude-3-5-haiku')
-  const [selectedPromptType, setSelectedPromptType] = useState<PromptType>('general_summary')
-  const [availablePromptTypes, setAvailablePromptTypes] = useState<PromptType[]>([])
+  const selectedPromptType: PromptType = 'general_summary' // Always use default summary style
   const [isSpecialUser, setIsSpecialUser] = useState(false)
   const [availableModels, setAvailableModels] = useState<AIModel[]>([])
   
@@ -126,14 +125,12 @@ export function SimpleYoutubeForm() {
     const initializeUserSettings = async () => {
       if (user) {
         try {
-          const models = await getAvailableModels(user.id)
-          const defaultModel = await getDefaultModel(user.id)
-          const promptTypes = await getAvailablePromptTypes(user.id)
-          const adminStatus = await isUserAdmin(user.id)
+          const models = getAvailableModels(user)
+          const defaultModel = getDefaultModel(user)
+          const adminStatus = isUserAdmin(user)
           
           setAvailableModels(models)
           setSelectedModel(defaultModel)
-          setAvailablePromptTypes(promptTypes)
           setIsSpecialUser(adminStatus || user.email === 'yjs@lnrgame.com')
         } catch (error) {
           console.error('Error initializing user settings:', error)
@@ -142,7 +139,6 @@ export function SimpleYoutubeForm() {
         // Guest user settings
         setAvailableModels(['claude-3-5-haiku'])
         setSelectedModel('claude-3-5-haiku')
-        setAvailablePromptTypes(['general_summary'])
         setIsSpecialUser(false)
       }
     }
@@ -278,25 +274,6 @@ export function SimpleYoutubeForm() {
                   </div>
                 )}
 
-                {/* Prompt Type Selection */}
-                {availablePromptTypes.length > 1 && (
-                  <div className="space-y-2">
-                    <Label htmlFor="prompt-select">요약 스타일</Label>
-                    <select
-                      id="prompt-select"
-                      value={selectedPromptType}
-                      onChange={(e) => setSelectedPromptType(e.target.value as PromptType)}
-                      className="w-full p-2 border rounded-md"
-                      disabled={isLoading}
-                    >
-                      {availablePromptTypes.map((promptType) => (
-                        <option key={promptType} value={promptType}>
-                          {promptType === 'general_summary' ? '일반 요약' : '토론형 요약'}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
 
                 {/* Action Buttons */}
                 <div className="flex flex-col gap-2">

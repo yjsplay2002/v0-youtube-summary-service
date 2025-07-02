@@ -9,6 +9,13 @@ export function isUserAdmin(user: User | null): boolean {
   return user.user_metadata?.role === 'admin';
 }
 
+// Async version that accepts user ID (for backward compatibility)
+export async function isUserAdminById(userId: string): Promise<boolean> {
+  // This function should not be used since we don't have access to user metadata via ID
+  // Always return false and rely on the synchronous version with the user object
+  return false;
+}
+
 export function getUserSubscriptionTier(user: User | null): SubscriptionTier {
   if (!user) return 'free';
   
@@ -24,37 +31,23 @@ export function getUserSubscriptionTier(user: User | null): SubscriptionTier {
   return 'free';
 }
 
-export function getAvailableModels(user: User | null): Array<{value: string, label: string}> {
+export function getAvailableModels(user: User | null): string[] {
   const tier = getUserSubscriptionTier(user);
   
   switch (tier) {
     case 'admin':
       // Admin can use all models
-      return [
-        { value: 'claude-3-5-haiku', label: 'Claude 3.5 Haiku (Fast)' },
-        { value: 'claude-3-5-sonnet', label: 'Claude 3.5 Sonnet (Balanced)' },
-        { value: 'claude-sonnet-4', label: 'Claude Sonnet 4 (Premium)' },
-        { value: 'openai-gpt4', label: 'OpenAI GPT-4' }
-      ];
+      return ['claude-3-5-haiku', 'claude-3-5-sonnet', 'claude-sonnet-4', 'openai-gpt4'];
     case 'pro_plus':
       // Pro+ can use premium models
-      return [
-        { value: 'claude-3-5-haiku', label: 'Claude 3.5 Haiku (Fast)' },
-        { value: 'claude-3-5-sonnet', label: 'Claude 3.5 Sonnet (Balanced)' },
-        { value: 'claude-sonnet-4', label: 'Claude Sonnet 4 (Premium)' }
-      ];
+      return ['claude-3-5-haiku', 'claude-3-5-sonnet', 'claude-sonnet-4'];
     case 'pro':
       // Pro can use balanced models
-      return [
-        { value: 'claude-3-5-haiku', label: 'Claude 3.5 Haiku (Fast)' },
-        { value: 'claude-3-5-sonnet', label: 'Claude 3.5 Sonnet (Balanced)' }
-      ];
+      return ['claude-3-5-haiku', 'claude-3-5-sonnet'];
     case 'free':
     default:
       // Free users can only use basic model
-      return [
-        { value: 'claude-3-5-haiku', label: 'Claude 3.5 Haiku' }
-      ];
+      return ['claude-3-5-haiku'];
   }
 }
 
