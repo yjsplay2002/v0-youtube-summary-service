@@ -17,7 +17,8 @@ export type AIModel =
   | 'openai-gpt4' 
   | 'claude-sonnet-4'
   | 'claude-3-5-sonnet' 
-  | 'claude-3-5-haiku';
+  | 'claude-3-5-haiku'
+  | 'gemini-2.5-flash';
 
 // 프롬프트 타입 정의
 export type PromptType = 'general_summary' | 'discussion_format';
@@ -45,12 +46,15 @@ const CLAUDE_MODEL_CONFIG = {
 type ClaudeModel = keyof typeof CLAUDE_MODEL_CONFIG;
 
 // 토큰 수 계산 함수
-export function calculateTokenCount(text: string, model: AIModel = 'claude-3-5-haiku'): number {
+export function calculateTokenCount(text: string, model: AIModel = 'gemini-2.5-flash'): number {
   try {
     // 모든 모델에 대해 대략적인 토큰 수 계산 사용 (tiktoken 의존성 제거)
     if (model.startsWith('claude')) {
       // Claude 모델의 경우 (1 토큰 ≈ 3.5 문자)
       return Math.ceil(text.length / 3.5);
+    } else if (model.startsWith('gemini')) {
+      // Gemini 모델의 경우 (1 토큰 ≈ 4 문자)
+      return Math.ceil(text.length / 4);
     } else {
       // OpenAI 모델의 경우 (1 토큰 ≈ 4 문자)
       return Math.ceil(text.length / 4);
@@ -66,7 +70,7 @@ export function calculateTokenCount(text: string, model: AIModel = 'claude-3-5-h
 export function estimateTokensAndCost(
   systemPrompt: string, 
   userMessage: string, 
-  model: AIModel = 'claude-3-5-haiku'
+  model: AIModel = 'gemini-2.5-flash'
 ): { inputTokens: number; estimatedOutputTokens: number; estimatedCostUSD: number } {
   const inputTokens = calculateTokenCount(systemPrompt + userMessage, model);
   const estimatedOutputTokens = Math.min(8192, Math.ceil(inputTokens * 0.3)); // 출력은 입력의 약 30%로 추정
@@ -76,7 +80,8 @@ export function estimateTokensAndCost(
     'claude-sonnet-4': { input: 15, output: 75 },
     'claude-3-5-sonnet': { input: 3, output: 15 },
     'claude-3-5-haiku': { input: 0.25, output: 1.25 },
-    'openai-gpt4': { input: 10, output: 30 }
+    'openai-gpt4': { input: 10, output: 30 },
+    'gemini-2.5-flash': { input: 0.075, output: 0.3 }
   };
   
   const cost = costs[model] || costs['claude-3-5-sonnet'];
@@ -96,6 +101,68 @@ const getOpenAIClient = () => {
     throw new Error('OPENAI_API_KEY is missing');
   }
   return new OpenAI({ apiKey });
+};
+
+// Gemini API 클라이언트 함수
+const callGeminiAPI = async (systemPrompt: string, userMessage: string, language?: string): Promise<string> => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error('GEMINI_API_KEY is missing');
+  }
+
+  try {
+    console.log(`[callGeminiAPI] Gemini API 호출 시작`);
+    
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{
+            text: systemPrompt + (language ? `\n\nPlease provide the answer in the following language: ${language}.` : '') + '\n\n' + userMessage
+          }]
+        }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 32768,
+          topP: 0.95,
+          topK: 64
+        }
+      })
+    });
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        console.warn(`[callGeminiAPI] Gemini API 요청 한도 초과 (429)`);
+        throw new Error('Gemini API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요. (요청 한도 초과 - 429)');
+      }
+      
+      const errorText = await response.text();
+      console.error('[callGeminiAPI] Gemini API 요청 중 오류 발생:', response.status, errorText);
+      throw new Error(`Gemini AI 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요. (오류 코드: ${response.status})`);
+    }
+
+    const data = await response.json();
+    const result = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    if (!result) {
+      throw new Error('Gemini AI에서 유효한 응답을 받지 못했습니다. 다시 시도해주세요.');
+    }
+    
+    console.log(`[callGeminiAPI] API 호출 성공 - 응답 길이: ${result.length}자`);
+    return result;
+    
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Gemini')) {
+      // 이미 사용자 친화적인 메시지인 경우 그대로 throw
+      throw error;
+    }
+    
+    console.error('[callGeminiAPI] 예상치 못한 오류:', error);
+    throw new Error('Gemini AI 서비스에 연결할 수 없습니다. 네트워크 연결을 확인하고 다시 시도해주세요.');
+  }
 };
 
 // Claude API 클라이언트 함수
@@ -215,7 +282,7 @@ export const getSystemPrompt = async (promptType: PromptType = 'general_summary'
 // Generate summary using selected AI model
 export async function generateSummary(
   transcript: string, 
-  model: AIModel = 'claude-3-5-haiku', 
+  model: AIModel = 'gemini-2.5-flash', 
   summaryPrompt?: string,
   promptType: PromptType = 'general_summary',
   language?: string
@@ -257,6 +324,10 @@ export async function generateSummary(
       console.log(`[generateSummary] Claude API 요청 시작...`);
       summary = await callClaudeAPI(systemPrompt, userMessage, model as ClaudeModel, language);
       console.log(`[generateSummary] Claude API 응답 받음, 요약 길이: ${summary.length} 문자`);
+    } else if (model.startsWith('gemini')) {
+      console.log(`[generateSummary] Gemini API 요청 시작...`);
+      summary = await callGeminiAPI(systemPrompt, userMessage, language);
+      console.log(`[generateSummary] Gemini API 응답 받음, 요약 길이: ${summary.length} 문자`);
     } else {
       console.log(`[generateSummary] OpenAI API 요청 시작...`);
       const openai = getOpenAIClient();

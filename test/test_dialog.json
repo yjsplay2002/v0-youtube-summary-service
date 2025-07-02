@@ -1,0 +1,2158 @@
+{
+    "videoTitle": "Claude Designer is insane...Ultimate vibe coding UI workflow",
+    "url": "https://www.youtube.com/watch?v=YJ3Z9XhlF5w",
+    "channelName": "AI Jason",
+    "views": "98,423 views",
+    "videoPostDate": "Jun 26, 2025",
+    "channelSubscription": "192K subscribers",
+    "transcript": [
+        {
+            "text": "i was able to customize my cloud code",
+            "timestamp": "0:00"
+        },
+        {
+            "text": "into a cloud designer which allows me to",
+            "timestamp": "0:03"
+        },
+        {
+            "text": "iterate UI 10 times faster in cursor and",
+            "timestamp": "0:05"
+        },
+        {
+            "text": "wings serve directly forking and",
+            "timestamp": "0:07"
+        },
+        {
+            "text": "generating five to even 10 different UIs",
+            "timestamp": "0:09"
+        },
+        {
+            "text": "at the same time and all this are made",
+            "timestamp": "0:12"
+        },
+        {
+            "text": "possible with some hidden clock code",
+            "timestamp": "0:14"
+        },
+        {
+            "text": "feature like parallel task commands and",
+            "timestamp": "0:15"
+        },
+        {
+            "text": "new SDK that they just introduced i'll",
+            "timestamp": "0:18"
+        },
+        {
+            "text": "break it down for you so you can",
+            "timestamp": "0:20"
+        },
+        {
+            "text": "replicate on your end so one thing I",
+            "timestamp": "0:21"
+        },
+        {
+            "text": "think people didn't realize is that you",
+            "timestamp": "0:24"
+        },
+        {
+            "text": "can actually spin up multiple sub agents",
+            "timestamp": "0:25"
+        },
+        {
+            "text": "within cloud code by simply prompiting",
+            "timestamp": "0:27"
+        },
+        {
+            "text": "for example I can give a simple prompt",
+            "timestamp": "0:29"
+        },
+        {
+            "text": "start a three parallel agent to",
+            "timestamp": "0:30"
+        },
+        {
+            "text": "implement variations of the to-do app UI",
+            "timestamp": "0:32"
+        },
+        {
+            "text": "and then you will see that it start",
+            "timestamp": "0:34"
+        },
+        {
+            "text": "three different task that is happening",
+            "timestamp": "0:36"
+        },
+        {
+            "text": "at the same time one agent will be doing",
+            "timestamp": "0:38"
+        },
+        {
+            "text": "minimalist to-do UI another will be",
+            "timestamp": "0:39"
+        },
+        {
+            "text": "doing modern to-do and third will be",
+            "timestamp": "0:41"
+        },
+        {
+            "text": "cambban UI and boom you just got three",
+            "timestamp": "0:43"
+        },
+        {
+            "text": "totally different style at the same time",
+            "timestamp": "0:46"
+        },
+        {
+            "text": "so it'll be much faster for you to",
+            "timestamp": "0:48"
+        },
+        {
+            "text": "iterate and you can imagine we can",
+            "timestamp": "0:50"
+        },
+        {
+            "text": "actually package this to be some really",
+            "timestamp": "0:52"
+        },
+        {
+            "text": "interesting UI iteration process with",
+            "timestamp": "0:53"
+        },
+        {
+            "text": "this parallel task capability there was",
+            "timestamp": "0:56"
+        },
+        {
+            "text": "actually pretty heated debate last week",
+            "timestamp": "0:57"
+        },
+        {
+            "text": "on Twitter where dev team published a",
+            "timestamp": "0:59"
+        },
+        {
+            "text": "blog post called don't build multi- aent",
+            "timestamp": "1:01"
+        },
+        {
+            "text": "system one of the key insights they got",
+            "timestamp": "1:03"
+        },
+        {
+            "text": "is that for task like coding where each",
+            "timestamp": "1:04"
+        },
+        {
+            "text": "action you take actually imply specific",
+            "timestamp": "1:07"
+        },
+        {
+            "text": "set of decisions you make and when you",
+            "timestamp": "1:09"
+        },
+        {
+            "text": "do parallel task it is very likely leads",
+            "timestamp": "1:10"
+        },
+        {
+            "text": "to things like merge conflicts because",
+            "timestamp": "1:12"
+        },
+        {
+            "text": "each sub agent has no context about what",
+            "timestamp": "1:14"
+        },
+        {
+            "text": "the other agent is working on and the",
+            "timestamp": "1:16"
+        },
+        {
+            "text": "best approach they found is actually",
+            "timestamp": "1:18"
+        },
+        {
+            "text": "just don't do parallel task at all and",
+            "timestamp": "1:20"
+        },
+        {
+            "text": "putting everything into one single",
+            "timestamp": "1:22"
+        },
+        {
+            "text": "thread however a few days later Entropy",
+            "timestamp": "1:23"
+        },
+        {
+            "text": "released their own blog post about how",
+            "timestamp": "1:25"
+        },
+        {
+            "text": "do they apply multi- aent in their own",
+            "timestamp": "1:27"
+        },
+        {
+            "text": "research system where they build this",
+            "timestamp": "1:29"
+        },
+        {
+            "text": "group of agents and each sub agent can",
+            "timestamp": "1:30"
+        },
+        {
+            "text": "actually have parallel task to do things",
+            "timestamp": "1:32"
+        },
+        {
+            "text": "like research and I think both had",
+            "timestamp": "1:34"
+        },
+        {
+            "text": "pretty valid points because most of the",
+            "timestamp": "1:36"
+        },
+        {
+            "text": "time you do want to making sure the",
+            "timestamp": "1:37"
+        },
+        {
+            "text": "agent has a full context when execute",
+            "timestamp": "1:39"
+        },
+        {
+            "text": "task but there are scenario that makes",
+            "timestamp": "1:41"
+        },
+        {
+            "text": "sense like research it is going to be",
+            "timestamp": "1:43"
+        },
+        {
+            "text": "faster if you spin up five research",
+            "timestamp": "1:45"
+        },
+        {
+            "text": "topics and summarize everything in the",
+            "timestamp": "1:47"
+        },
+        {
+            "text": "end and same thing for the UI design",
+            "timestamp": "1:49"
+        },
+        {
+            "text": "paralas is actually perfect use case",
+            "timestamp": "1:51"
+        },
+        {
+            "text": "because When we do design in Figma what",
+            "timestamp": "1:53"
+        },
+        {
+            "text": "we often do is that we'll just fork and",
+            "timestamp": "1:55"
+        },
+        {
+            "text": "do a few different variations and",
+            "timestamp": "1:57"
+        },
+        {
+            "text": "compare them kind of side by side and",
+            "timestamp": "1:58"
+        },
+        {
+            "text": "eventually we get like final version so",
+            "timestamp": "2:00"
+        },
+        {
+            "text": "have that capability of have parallel",
+            "timestamp": "2:02"
+        },
+        {
+            "text": "task on design has been a pretty good",
+            "timestamp": "2:04"
+        },
+        {
+            "text": "pattern and what I want to show you is",
+            "timestamp": "2:06"
+        },
+        {
+            "text": "how I utilize the parallel task",
+            "timestamp": "2:07"
+        },
+        {
+            "text": "capability in cloud code to have some",
+            "timestamp": "2:09"
+        },
+        {
+            "text": "really interesting UI workflow but",
+            "timestamp": "2:11"
+        },
+        {
+            "text": "before I dive into that I know many of",
+            "timestamp": "2:13"
+        },
+        {
+            "text": "you are building AI applications or AI",
+            "timestamp": "2:14"
+        },
+        {
+            "text": "agents that needs access to internet",
+            "timestamp": "2:16"
+        },
+        {
+            "text": "data from research about business to get",
+            "timestamp": "2:18"
+        },
+        {
+            "text": "latest news and a smart and reliable way",
+            "timestamp": "2:19"
+        },
+        {
+            "text": "to turn any website data into large",
+            "timestamp": "2:21"
+        },
+        {
+            "text": "language model friendly format is",
+            "timestamp": "2:23"
+        },
+        {
+            "text": "critical that's why I want to introduce",
+            "timestamp": "2:25"
+        },
+        {
+            "text": "you to FRO they were the first open-",
+            "timestamp": "2:26"
+        },
+        {
+            "text": "source project they offer effective way",
+            "timestamp": "2:28"
+        },
+        {
+            "text": "to turn any website into clean format",
+            "timestamp": "2:30"
+        },
+        {
+            "text": "that is optimized for large language",
+            "timestamp": "2:32"
+        },
+        {
+            "text": "model to consume you can browse through",
+            "timestamp": "2:33"
+        },
+        {
+            "text": "all the subpage of a website and it",
+            "timestamp": "2:35"
+        },
+        {
+            "text": "handle PDF word doc or even Excel file",
+            "timestamp": "2:37"
+        },
+        {
+            "text": "that are attached from URL and has",
+            "timestamp": "2:39"
+        },
+        {
+            "text": "capability like smart weight d content",
+            "timestamp": "2:41"
+        },
+        {
+            "text": "loading so that you can guess website",
+            "timestamp": "2:43"
+        },
+        {
+            "text": "with more strict anti-bos setup and for",
+            "timestamp": "2:45"
+        },
+        {
+            "text": "the past few months they just launched a",
+            "timestamp": "2:47"
+        },
+        {
+            "text": "whole bunch of new feature that is going",
+            "timestamp": "2:48"
+        },
+        {
+            "text": "to make web scraping 10x easier for",
+            "timestamp": "2:49"
+        },
+        {
+            "text": "example they introduced this new search",
+            "timestamp": "2:51"
+        },
+        {
+            "text": "endpoint that's going to give you back",
+            "timestamp": "2:53"
+        },
+        {
+            "text": "the most random websites as well as",
+            "timestamp": "2:54"
+        },
+        {
+            "text": "extract markdown content of those",
+            "timestamp": "2:56"
+        },
+        {
+            "text": "website directly in just one API call",
+            "timestamp": "2:58"
+        },
+        {
+            "text": "this is going to make your AI",
+            "timestamp": "3:00"
+        },
+        {
+            "text": "application way faster because you don't",
+            "timestamp": "3:01"
+        },
+        {
+            "text": "need scarfolding the whole pipeline of",
+            "timestamp": "3:02"
+        },
+        {
+            "text": "search and scrape from different service",
+            "timestamp": "3:04"
+        },
+        {
+            "text": "and they also introduced this new",
+            "timestamp": "3:05"
+        },
+        {
+            "text": "extract endpoint where it can handle",
+            "timestamp": "3:07"
+        },
+        {
+            "text": "things like pageionation and page",
+            "timestamp": "3:08"
+        },
+        {
+            "text": "interaction with their own fire one",
+            "timestamp": "3:10"
+        },
+        {
+            "text": "agent that is capable to interact with",
+            "timestamp": "3:12"
+        },
+        {
+            "text": "website like e-commerce to clicks",
+            "timestamp": "3:13"
+        },
+        {
+            "text": "through buttons get a full content and",
+            "timestamp": "3:15"
+        },
+        {
+            "text": "it can even similar complex action like",
+            "timestamp": "3:16"
+        },
+        {
+            "text": "login and authentication as well all you",
+            "timestamp": "3:18"
+        },
+        {
+            "text": "need is just give a URL the prompt the",
+            "timestamp": "3:20"
+        },
+        {
+            "text": "data structure you want and this agent",
+            "timestamp": "3:22"
+        },
+        {
+            "text": "will open up the browser navigate",
+            "timestamp": "3:24"
+        },
+        {
+            "text": "through the website to multiple",
+            "timestamp": "3:25"
+        },
+        {
+            "text": "different pages until they find",
+            "timestamp": "3:26"
+        },
+        {
+            "text": "information you want and most",
+            "timestamp": "3:28"
+        },
+        {
+            "text": "importantly those abilities can be",
+            "timestamp": "3:29"
+        },
+        {
+            "text": "called from API endpoint directly so you",
+            "timestamp": "3:30"
+        },
+        {
+            "text": "can give your own agents internet and",
+            "timestamp": "3:32"
+        },
+        {
+            "text": "research capability with just few lines",
+            "timestamp": "3:34"
+        },
+        {
+            "text": "code or integrate to automation platform",
+            "timestamp": "3:36"
+        },
+        {
+            "text": "like Zapier and relevance AI by calling",
+            "timestamp": "3:38"
+        },
+        {
+            "text": "firecore API directly so if you're",
+            "timestamp": "3:40"
+        },
+        {
+            "text": "looking for a smart way to script",
+            "timestamp": "3:41"
+        },
+        {
+            "text": "internet data I highly recommend you go",
+            "timestamp": "3:43"
+        },
+        {
+            "text": "and check out firecro now let's get back",
+            "timestamp": "3:44"
+        },
+        {
+            "text": "how can you customize cloud code into",
+            "timestamp": "3:46"
+        },
+        {
+            "text": "cloud designer so to understand the",
+            "timestamp": "3:48"
+        },
+        {
+            "text": "workflow I'm going to show you there are",
+            "timestamp": "3:49"
+        },
+        {
+            "text": "four core concepts we already covered",
+            "timestamp": "3:51"
+        },
+        {
+            "text": "the sub aents part and second one is",
+            "timestamp": "3:53"
+        },
+        {
+            "text": "cloud.md if you're pretty familiar with",
+            "timestamp": "3:54"
+        },
+        {
+            "text": "cursor is basically cursor rules but for",
+            "timestamp": "3:56"
+        },
+        {
+            "text": "cloud code with this one we can",
+            "timestamp": "3:58"
+        },
+        {
+            "text": "customize how cloud code should work and",
+            "timestamp": "4:00"
+        },
+        {
+            "text": "give it knowledge about what type of",
+            "timestamp": "4:02"
+        },
+        {
+            "text": "task you should do in parallel what type",
+            "timestamp": "4:03"
+        },
+        {
+            "text": "of task you shouldn't and I will show",
+            "timestamp": "4:05"
+        },
+        {
+            "text": "you a quick example for example if you",
+            "timestamp": "4:06"
+        },
+        {
+            "text": "open cloud in any folder and just create",
+            "timestamp": "4:08"
+        },
+        {
+            "text": "a file called cloud.md and you can just",
+            "timestamp": "4:10"
+        },
+        {
+            "text": "put whatever instruction here like you",
+            "timestamp": "4:12"
+        },
+        {
+            "text": "always respond in all caps now if you",
+            "timestamp": "4:14"
+        },
+        {
+            "text": "try to run cloud and say hi it will",
+            "timestamp": "4:16"
+        },
+        {
+            "text": "respond back in all caps but you can",
+            "timestamp": "4:18"
+        },
+        {
+            "text": "imagine we can also put some very",
+            "timestamp": "4:20"
+        },
+        {
+            "text": "specialized prompt for this as well for",
+            "timestamp": "4:22"
+        },
+        {
+            "text": "example this is a prompt that I have",
+            "timestamp": "4:24"
+        },
+        {
+            "text": "been playing with internal UI design",
+            "timestamp": "4:25"
+        },
+        {
+            "text": "where it includes things like the color",
+            "timestamp": "4:26"
+        },
+        {
+            "text": "font layout stuff like that so I can put",
+            "timestamp": "4:29"
+        },
+        {
+            "text": "in this and also adding maybe some",
+            "timestamp": "4:31"
+        },
+        {
+            "text": "special rules that when you were asked",
+            "timestamp": "4:33"
+        },
+        {
+            "text": "to build UI iterations you always just",
+            "timestamp": "4:35"
+        },
+        {
+            "text": "create one single HTML file so I can",
+            "timestamp": "4:37"
+        },
+        {
+            "text": "give a simple prompt like build me a",
+            "timestamp": "4:39"
+        },
+        {
+            "text": "modern to-do app UI it will basically",
+            "timestamp": "4:40"
+        },
+        {
+            "text": "following my rules it won't create some",
+            "timestamp": "4:42"
+        },
+        {
+            "text": "complicated project and this will just",
+            "timestamp": "4:44"
+        },
+        {
+            "text": "create a one single HTML file that",
+            "timestamp": "4:45"
+        },
+        {
+            "text": "contain a nice kind of modern UI so this",
+            "timestamp": "4:48"
+        },
+        {
+            "text": "is cloud MD the custom rules for cloud",
+            "timestamp": "4:50"
+        },
+        {
+            "text": "code the next thing which is very",
+            "timestamp": "4:52"
+        },
+        {
+            "text": "powerful called commands so you can",
+            "timestamp": "4:54"
+        },
+        {
+            "text": "basically predefine list of common",
+            "timestamp": "4:56"
+        },
+        {
+            "text": "workflow that you want cloud to follow",
+            "timestamp": "4:57"
+        },
+        {
+            "text": "so you can create a folder called cloud",
+            "timestamp": "4:59"
+        },
+        {
+            "text": "inside you can have another folder",
+            "timestamp": "5:01"
+        },
+        {
+            "text": "called commands this is where we're",
+            "timestamp": "5:02"
+        },
+        {
+            "text": "going to create some cool stuff let's",
+            "timestamp": "5:04"
+        },
+        {
+            "text": "say you want to create a joke generated",
+            "timestamp": "5:05"
+        },
+        {
+            "text": "command so you create a joke.md and we",
+            "timestamp": "5:07"
+        },
+        {
+            "text": "can just say make a joke about arguments",
+            "timestamp": "5:09"
+        },
+        {
+            "text": "so arguments is a special thing that",
+            "timestamp": "5:11"
+        },
+        {
+            "text": "pass to clock in the command so that you",
+            "timestamp": "5:13"
+        },
+        {
+            "text": "almost create a prompt template that can",
+            "timestamp": "5:15"
+        },
+        {
+            "text": "be used for many different scenarios and",
+            "timestamp": "5:17"
+        },
+        {
+            "text": "I can give it some custom instruction",
+            "timestamp": "5:18"
+        },
+        {
+            "text": "always and a joke with a man eating",
+            "timestamp": "5:20"
+        },
+        {
+            "text": "chips and now if I do slash you will see",
+            "timestamp": "5:22"
+        },
+        {
+            "text": "that there's a slash joke option and I",
+            "timestamp": "5:24"
+        },
+        {
+            "text": "will just type in joke then what are you",
+            "timestamp": "5:26"
+        },
+        {
+            "text": "putting down after is what's going to be",
+            "timestamp": "5:28"
+        },
+        {
+            "text": "passed to arguments so I here can say AI",
+            "timestamp": "5:30"
+        },
+        {
+            "text": "coding and then you will see that I",
+            "timestamp": "5:34"
+        },
+        {
+            "text": "generate a prompt about AI coding and",
+            "timestamp": "5:35"
+        },
+        {
+            "text": "with the specific instruction that we",
+            "timestamp": "5:38"
+        },
+        {
+            "text": "give inside here if from cloud code's",
+            "timestamp": "5:40"
+        },
+        {
+            "text": "official doc it can even do something",
+            "timestamp": "5:41"
+        },
+        {
+            "text": "like you can literally just natural",
+            "timestamp": "5:43"
+        },
+        {
+            "text": "language putting some commands that you",
+            "timestamp": "5:45"
+        },
+        {
+            "text": "wanted to run it will actually execute",
+            "timestamp": "5:46"
+        },
+        {
+            "text": "those command line before I do the task",
+            "timestamp": "5:48"
+        },
+        {
+            "text": "for example you can actually create a",
+            "timestamp": "5:50"
+        },
+        {
+            "text": "command like this where it will do those",
+            "timestamp": "5:52"
+        },
+        {
+            "text": "command line to check get status first",
+            "timestamp": "5:54"
+        },
+        {
+            "text": "before you execute a task so if I try",
+            "timestamp": "5:56"
+        },
+        {
+            "text": "this and do the joke now it is actually",
+            "timestamp": "5:58"
+        },
+        {
+            "text": "running those command line to check the",
+            "timestamp": "6:00"
+        },
+        {
+            "text": "get status because I didn't set up yet",
+            "timestamp": "6:02"
+        },
+        {
+            "text": "it's just a not a get repository but if",
+            "timestamp": "6:04"
+        },
+        {
+            "text": "I initiate the git here and run cloud",
+            "timestamp": "6:07"
+        },
+        {
+            "text": "again it will give you a different joke",
+            "timestamp": "6:09"
+        },
+        {
+            "text": "about main branch because now I set up",
+            "timestamp": "6:11"
+        },
+        {
+            "text": "the git so to me this is like a mystery",
+            "timestamp": "6:12"
+        },
+        {
+            "text": "but super super powerful feature and",
+            "timestamp": "6:14"
+        },
+        {
+            "text": "what I want to show you is how do I use",
+            "timestamp": "6:16"
+        },
+        {
+            "text": "this to create some sort of UI flow so",
+            "timestamp": "6:18"
+        },
+        {
+            "text": "I'll create another folder inside let's",
+            "timestamp": "6:20"
+        },
+        {
+            "text": "say UI and create a one called extracted",
+            "timestamp": "6:22"
+        },
+        {
+            "text": "system and putting this prompt basically",
+            "timestamp": "6:24"
+        },
+        {
+            "text": "it will have the task of the UI it",
+            "timestamp": "6:26"
+        },
+        {
+            "text": "should analyze which we're passing",
+            "timestamp": "6:28"
+        },
+        {
+            "text": "through a image URL and the goal here is",
+            "timestamp": "6:30"
+        },
+        {
+            "text": "to extract like color pattern typography",
+            "timestamp": "6:32"
+        },
+        {
+            "text": "stuff like that and also save the design",
+            "timestamp": "6:34"
+        },
+        {
+            "text": "system JSON into a folder called prd so",
+            "timestamp": "6:36"
+        },
+        {
+            "text": "this will allow us to give cloud code a",
+            "timestamp": "6:38"
+        },
+        {
+            "text": "kind of UI mock and it will just",
+            "timestamp": "6:40"
+        },
+        {
+            "text": "generate the design system from that i",
+            "timestamp": "6:42"
+        },
+        {
+            "text": "found that this works much better than",
+            "timestamp": "6:44"
+        },
+        {
+            "text": "you just give the UI reference ask to do",
+            "timestamp": "6:46"
+        },
+        {
+            "text": "right away and second command I also use",
+            "timestamp": "6:48"
+        },
+        {
+            "text": "is this iterate design MD so this is the",
+            "timestamp": "6:50"
+        },
+        {
+            "text": "one that I want cloud to spin up three",
+            "timestamp": "6:53"
+        },
+        {
+            "text": "or five sub aents to concurrently",
+            "timestamp": "6:55"
+        },
+        {
+            "text": "implement the same UI in different style",
+            "timestamp": "6:57"
+        },
+        {
+            "text": "so I will ask it to analyze a design",
+            "timestamp": "6:59"
+        },
+        {
+            "text": "system JSON file we created and then",
+            "timestamp": "7:01"
+        },
+        {
+            "text": "build one single HTML page and output",
+            "timestamp": "7:03"
+        },
+        {
+            "text": "the HTML in the UI iteration folder",
+            "timestamp": "7:05"
+        },
+        {
+            "text": "called UI 1 UI2 UI3 so with these two",
+            "timestamp": "7:07"
+        },
+        {
+            "text": "things I'm going to show you a very",
+            "timestamp": "7:10"
+        },
+        {
+            "text": "interesting workflow first I will go to",
+            "timestamp": "7:11"
+        },
+        {
+            "text": "website like moen or dribble to just get",
+            "timestamp": "7:13"
+        },
+        {
+            "text": "some UI inspiration and let's say I",
+            "timestamp": "7:15"
+        },
+        {
+            "text": "quite like this one i can save this",
+            "timestamp": "7:17"
+        },
+        {
+            "text": "image zui/ extract design system and I",
+            "timestamp": "7:19"
+        },
+        {
+            "text": "will drag this image here and then it",
+            "timestamp": "7:22"
+        },
+        {
+            "text": "will create this design system.json this",
+            "timestamp": "7:24"
+        },
+        {
+            "text": "prd folder as I instructed which have",
+            "timestamp": "7:26"
+        },
+        {
+            "text": "those kind of more detailed style next I",
+            "timestamp": "7:28"
+        },
+        {
+            "text": "can call second command iterate design",
+            "timestamp": "7:31"
+        },
+        {
+            "text": "give a prompt a modern phone to-do app",
+            "timestamp": "7:33"
+        },
+        {
+            "text": "using this design style as reference",
+            "timestamp": "7:35"
+        },
+        {
+            "text": "which I'm referring to this design",
+            "timestamp": "7:37"
+        },
+        {
+            "text": "system file we created earlier then it",
+            "timestamp": "7:39"
+        },
+        {
+            "text": "will set up three different tasks you",
+            "timestamp": "7:40"
+        },
+        {
+            "text": "can see for each task it actually has a",
+            "timestamp": "7:42"
+        },
+        {
+            "text": "very detailed task about UI reference",
+            "timestamp": "7:44"
+        },
+        {
+            "text": "design directions like that by the way",
+            "timestamp": "7:46"
+        },
+        {
+            "text": "you can use control R to expand and then",
+            "timestamp": "7:49"
+        },
+        {
+            "text": "Ctrl E to see those details and of",
+            "timestamp": "7:50"
+        },
+        {
+            "text": "course you can like always toggle",
+            "timestamp": "7:53"
+        },
+        {
+            "text": "between but honestly there's still some",
+            "timestamp": "7:54"
+        },
+        {
+            "text": "bugs so I'm just going to let it run",
+            "timestamp": "7:56"
+        },
+        {
+            "text": "like this and now it output three",
+            "timestamp": "7:58"
+        },
+        {
+            "text": "different UI in the UI iterations if I",
+            "timestamp": "8:00"
+        },
+        {
+            "text": "open them they all looks somewhat",
+            "timestamp": "8:02"
+        },
+        {
+            "text": "different in terms of style and",
+            "timestamp": "8:04"
+        },
+        {
+            "text": "animations and what's really cool is",
+            "timestamp": "8:06"
+        },
+        {
+            "text": "that let's assume I like this UI2",
+            "timestamp": "8:07"
+        },
+        {
+            "text": "version but I want to iterate a bit",
+            "timestamp": "8:10"
+        },
+        {
+            "text": "further based on this version because I",
+            "timestamp": "8:12"
+        },
+        {
+            "text": "want to build a kind of dark mode and",
+            "timestamp": "8:14"
+        },
+        {
+            "text": "then I can do the same thing again this",
+            "timestamp": "8:16"
+        },
+        {
+            "text": "iterate UI2 HTML version which is best",
+            "timestamp": "8:18"
+        },
+        {
+            "text": "one so far and try dark mode then you",
+            "timestamp": "8:20"
+        },
+        {
+            "text": "will see this time it will analyze the",
+            "timestamp": "8:23"
+        },
+        {
+            "text": "current UI2 design and try to spin up",
+            "timestamp": "8:24"
+        },
+        {
+            "text": "three parallel tasks and the more I use",
+            "timestamp": "8:27"
+        },
+        {
+            "text": "it I realized that the way this command",
+            "timestamp": "8:29"
+        },
+        {
+            "text": "line works it's basically sending a",
+            "timestamp": "8:32"
+        },
+        {
+            "text": "prompt template to the cloud and along",
+            "timestamp": "8:34"
+        },
+        {
+            "text": "with this prompt you put in here and",
+            "timestamp": "8:36"
+        },
+        {
+            "text": "this is really interesting right because",
+            "timestamp": "8:38"
+        },
+        {
+            "text": "traditionally if you design software you",
+            "timestamp": "8:39"
+        },
+        {
+            "text": "probably were uh designing a way that",
+            "timestamp": "8:41"
+        },
+        {
+            "text": "you have to define what type of",
+            "timestamp": "8:43"
+        },
+        {
+            "text": "arguments are and user have to give",
+            "timestamp": "8:44"
+        },
+        {
+            "text": "those arguments but they basically keep",
+            "timestamp": "8:46"
+        },
+        {
+            "text": "it super free uh you just give a free",
+            "timestamp": "8:48"
+        },
+        {
+            "text": "text agent just magically figure out",
+            "timestamp": "8:50"
+        },
+        {
+            "text": "this is just such interesting kind of",
+            "timestamp": "8:53"
+        },
+        {
+            "text": "design pattern I found so after 200",
+            "timestamp": "8:54"
+        },
+        {
+            "text": "seconds I got three versions of",
+            "timestamp": "8:56"
+        },
+        {
+            "text": "different UI based on the previous",
+            "timestamp": "8:58"
+        },
+        {
+            "text": "version two I like but some sort of",
+            "timestamp": "9:00"
+        },
+        {
+            "text": "variation between each one of them like",
+            "timestamp": "9:01"
+        },
+        {
+            "text": "this one has some kind of glowy uh style",
+            "timestamp": "9:03"
+        },
+        {
+            "text": "which is pretty cool but this is kind of",
+            "timestamp": "9:06"
+        },
+        {
+            "text": "the workflow i can choose the version I",
+            "timestamp": "9:08"
+        },
+        {
+            "text": "like and then ask to iterate a few",
+            "timestamp": "9:10"
+        },
+        {
+            "text": "different versions i can even probably",
+            "timestamp": "9:11"
+        },
+        {
+            "text": "grab the glowy style from this version",
+            "timestamp": "9:13"
+        },
+        {
+            "text": "as well as a pure dark background from",
+            "timestamp": "9:15"
+        },
+        {
+            "text": "this style ask it to iterate i'm pretty",
+            "timestamp": "9:17"
+        },
+        {
+            "text": "sure it can figure out and once you done",
+            "timestamp": "9:19"
+        },
+        {
+            "text": "you can get a HTML that has a style you",
+            "timestamp": "9:21"
+        },
+        {
+            "text": "want then just start prompting cursor to",
+            "timestamp": "9:24"
+        },
+        {
+            "text": "actually break down into components and",
+            "timestamp": "9:26"
+        },
+        {
+            "text": "build a proper UI in nextJS project but",
+            "timestamp": "9:28"
+        },
+        {
+            "text": "this workflow of iterating UI is",
+            "timestamp": "9:30"
+        },
+        {
+            "text": "something that I've been trying a lot",
+            "timestamp": "9:32"
+        },
+        {
+            "text": "and it has been really really helpful",
+            "timestamp": "9:34"
+        },
+        {
+            "text": "but this workflow can only allow you to",
+            "timestamp": "9:35"
+        },
+        {
+            "text": "build like single HTML page what if you",
+            "timestamp": "9:37"
+        },
+        {
+            "text": "want to set up parallel agent to work on",
+            "timestamp": "9:39"
+        },
+        {
+            "text": "different UI iteration on your actual",
+            "timestamp": "9:41"
+        },
+        {
+            "text": "production NexJS app and this is where",
+            "timestamp": "9:42"
+        },
+        {
+            "text": "the fourth concept comes in Git work",
+            "timestamp": "9:44"
+        },
+        {
+            "text": "tree so if you're familiar with g most",
+            "timestamp": "9:46"
+        },
+        {
+            "text": "of the time you can only have one branch",
+            "timestamp": "9:48"
+        },
+        {
+            "text": "running on your computer at the same",
+            "timestamp": "9:50"
+        },
+        {
+            "text": "time and g work tree is a feature they",
+            "timestamp": "9:51"
+        },
+        {
+            "text": "have that allow you to set up multiple",
+            "timestamp": "9:53"
+        },
+        {
+            "text": "different sandbox environment of your",
+            "timestamp": "9:55"
+        },
+        {
+            "text": "specific report so you can get a",
+            "timestamp": "9:57"
+        },
+        {
+            "text": "multiple cloud code each working on a",
+            "timestamp": "9:58"
+        },
+        {
+            "text": "individual work tree without impact each",
+            "timestamp": "10:00"
+        },
+        {
+            "text": "other's work and in the end you can just",
+            "timestamp": "10:02"
+        },
+        {
+            "text": "pick up the version you like and merge",
+            "timestamp": "10:03"
+        },
+        {
+            "text": "them together and all you need to do",
+            "timestamp": "10:05"
+        },
+        {
+            "text": "just run this command get work tree",
+            "timestamp": "10:06"
+        },
+        {
+            "text": "add-b with a branch name and then pass",
+            "timestamp": "10:08"
+        },
+        {
+            "text": "where do you want to copy and create a",
+            "timestamp": "10:10"
+        },
+        {
+            "text": "sandbox of your current rip for example",
+            "timestamp": "10:12"
+        },
+        {
+            "text": "here I have a basic to-do app that I",
+            "timestamp": "10:14"
+        },
+        {
+            "text": "built with nextjs and chass in it has",
+            "timestamp": "10:16"
+        },
+        {
+            "text": "multiple different components it is much",
+            "timestamp": "10:18"
+        },
+        {
+            "text": "more complicated than a single HTML page",
+            "timestamp": "10:20"
+        },
+        {
+            "text": "what I can do is open terminal and do",
+            "timestamp": "10:22"
+        },
+        {
+            "text": "get work tree add b which is branch name",
+            "timestamp": "10:24"
+        },
+        {
+            "text": "and I'll call it like demo branch then",
+            "timestamp": "10:27"
+        },
+        {
+            "text": "I'll remove that into a specific folder",
+            "timestamp": "10:29"
+        },
+        {
+            "text": "um what I going to do is I will just",
+            "timestamp": "10:31"
+        },
+        {
+            "text": "create a trees folder with the same",
+            "timestamp": "10:33"
+        },
+        {
+            "text": "branch name so it's easier for us to",
+            "timestamp": "10:35"
+        },
+        {
+            "text": "identify and understand what that is",
+            "timestamp": "10:37"
+        },
+        {
+            "text": "about if I do this you can see a new",
+            "timestamp": "10:39"
+        },
+        {
+            "text": "folder called trees created inside it",
+            "timestamp": "10:41"
+        },
+        {
+            "text": "has another folder called demo branch",
+            "timestamp": "10:43"
+        },
+        {
+            "text": "which has everything we have at root",
+            "timestamp": "10:45"
+        },
+        {
+            "text": "branch so this is how you can set up a",
+            "timestamp": "10:47"
+        },
+        {
+            "text": "work tree and now I can do cd trees demo",
+            "timestamp": "10:49"
+        },
+        {
+            "text": "branch and once I get inside I can do",
+            "timestamp": "10:51"
+        },
+        {
+            "text": "PNPM install and PMP dev and you will",
+            "timestamp": "10:54"
+        },
+        {
+            "text": "see the same application is running here",
+            "timestamp": "10:57"
+        },
+        {
+            "text": "in a different portal and the easiest",
+            "timestamp": "10:58"
+        },
+        {
+            "text": "way will be we can just set up a new",
+            "timestamp": "11:00"
+        },
+        {
+            "text": "cloud here and ask it to iterate UI and",
+            "timestamp": "11:02"
+        },
+        {
+            "text": "once you get one version you're pretty",
+            "timestamp": "11:04"
+        },
+        {
+            "text": "happy with you can set it up and do get",
+            "timestamp": "11:05"
+        },
+        {
+            "text": "merge demo branch so this how the work",
+            "timestamp": "11:07"
+        },
+        {
+            "text": "tree works theoretically you can already",
+            "timestamp": "11:10"
+        },
+        {
+            "text": "have a workflow to firstly create",
+            "timestamp": "11:11"
+        },
+        {
+            "text": "multiple different work trees and then",
+            "timestamp": "11:13"
+        },
+        {
+            "text": "set up parallel agents to work on each",
+            "timestamp": "11:14"
+        },
+        {
+            "text": "individual work tree folders but what I",
+            "timestamp": "11:16"
+        },
+        {
+            "text": "really experimented is I actually",
+            "timestamp": "11:18"
+        },
+        {
+            "text": "created one command called execute",
+            "timestamp": "11:20"
+        },
+        {
+            "text": "parallel agents and this is one command",
+            "timestamp": "11:21"
+        },
+        {
+            "text": "with the prompt template that I have it",
+            "timestamp": "11:23"
+        },
+        {
+            "text": "will have two steps first step will be",
+            "timestamp": "11:25"
+        },
+        {
+            "text": "set up multiple different g trees based",
+            "timestamp": "11:27"
+        },
+        {
+            "text": "on the user's request if a user asks for",
+            "timestamp": "11:29"
+        },
+        {
+            "text": "three different variations then create",
+            "timestamp": "11:31"
+        },
+        {
+            "text": "three different work trees and each one",
+            "timestamp": "11:33"
+        },
+        {
+            "text": "of them follow the naming convention we",
+            "timestamp": "11:34"
+        },
+        {
+            "text": "have and then do pmppm install setup",
+            "timestamp": "11:36"
+        },
+        {
+            "text": "then step two is set up parallel sub",
+            "timestamp": "11:39"
+        },
+        {
+            "text": "agents this is where the master cloud",
+            "timestamp": "11:41"
+        },
+        {
+            "text": "code agent will spin up multiple",
+            "timestamp": "11:43"
+        },
+        {
+            "text": "different sub agents each one work on a",
+            "timestamp": "11:45"
+        },
+        {
+            "text": "different branch and this command will",
+            "timestamp": "11:47"
+        },
+        {
+            "text": "basically do the whole workflow for us",
+            "timestamp": "11:48"
+        },
+        {
+            "text": "whenever I want multiple different",
+            "timestamp": "11:50"
+        },
+        {
+            "text": "agents to iterate this UI on existing",
+            "timestamp": "11:51"
+        },
+        {
+            "text": "production projects for the second",
+            "timestamp": "11:53"
+        },
+        {
+            "text": "prompt here I actually got some",
+            "timestamp": "11:55"
+        },
+        {
+            "text": "inspiration from another content creator",
+            "timestamp": "11:56"
+        },
+        {
+            "text": "called indie dam den who also talk about",
+            "timestamp": "11:57"
+        },
+        {
+            "text": "this parallel agent workflow so I highly",
+            "timestamp": "11:59"
+        },
+        {
+            "text": "recommend you check out if you want to",
+            "timestamp": "12:01"
+        },
+        {
+            "text": "learn more but let me quickly show you",
+            "timestamp": "12:02"
+        },
+        {
+            "text": "how does this work so I have this",
+            "timestamp": "12:04"
+        },
+        {
+            "text": "command that I showed you earlier and",
+            "timestamp": "12:05"
+        },
+        {
+            "text": "just do cloud then I can just slash to",
+            "timestamp": "12:07"
+        },
+        {
+            "text": "use execute parallel agent command and",
+            "timestamp": "12:09"
+        },
+        {
+            "text": "I'll just give a command try three",
+            "timestamp": "12:11"
+        },
+        {
+            "text": "versions of UI one nerdy style one kid",
+            "timestamp": "12:13"
+        },
+        {
+            "text": "style and one gaming style there we say",
+            "timestamp": "12:15"
+        },
+        {
+            "text": "I will help you create three parallel",
+            "timestamp": "12:17"
+        },
+        {
+            "text": "agents work on different things with",
+            "timestamp": "12:19"
+        },
+        {
+            "text": "three different to-dos firstly it will",
+            "timestamp": "12:20"
+        },
+        {
+            "text": "create three work trees for nerdy kit",
+            "timestamp": "12:22"
+        },
+        {
+            "text": "and gaming UI style install dependencies",
+            "timestamp": "12:24"
+        },
+        {
+            "text": "in each work tree and then launch three",
+            "timestamp": "12:26"
+        },
+        {
+            "text": "parallel agents to work on each one of",
+            "timestamp": "12:28"
+        },
+        {
+            "text": "them and now if I open trees you can see",
+            "timestamp": "12:29"
+        },
+        {
+            "text": "there are three different branch and",
+            "timestamp": "12:31"
+        },
+        {
+            "text": "work tree has been created and after",
+            "timestamp": "12:33"
+        },
+        {
+            "text": "that it will start setting up the",
+            "timestamp": "12:35"
+        },
+        {
+            "text": "project and after setup it's going to",
+            "timestamp": "12:36"
+        },
+        {
+            "text": "launch three parallel agent to implement",
+            "timestamp": "12:38"
+        },
+        {
+            "text": "different UI stuff and you can see three",
+            "timestamp": "12:39"
+        },
+        {
+            "text": "parallel task has been created each one",
+            "timestamp": "12:41"
+        },
+        {
+            "text": "of them going to be assigned to a",
+            "timestamp": "12:43"
+        },
+        {
+            "text": "individual sub agent and if we do",
+            "timestamp": "12:45"
+        },
+        {
+            "text": "control R you can see the detail of each",
+            "timestamp": "12:46"
+        },
+        {
+            "text": "task that sub agent is receiving it has",
+            "timestamp": "12:48"
+        },
+        {
+            "text": "the task the prompt the key files to",
+            "timestamp": "12:50"
+        },
+        {
+            "text": "modify and requirements and each task is",
+            "timestamp": "12:52"
+        },
+        {
+            "text": "slightly different to reflect style we",
+            "timestamp": "12:55"
+        },
+        {
+            "text": "want and this process is going to take",
+            "timestamp": "12:56"
+        },
+        {
+            "text": "some time i've actually found this is",
+            "timestamp": "12:58"
+        },
+        {
+            "text": "slower than I just call let's say three",
+            "timestamp": "12:59"
+        },
+        {
+            "text": "entropic call in parallel i assume",
+            "timestamp": "13:01"
+        },
+        {
+            "text": "entropy actually do some kind of re",
+            "timestamp": "13:03"
+        },
+        {
+            "text": "limiting management so it does take some",
+            "timestamp": "13:05"
+        },
+        {
+            "text": "time but the cool thing is that you get",
+            "timestamp": "13:07"
+        },
+        {
+            "text": "all those UI in one go so you don't have",
+            "timestamp": "13:08"
+        },
+        {
+            "text": "to follow that specific linear flow and",
+            "timestamp": "13:10"
+        },
+        {
+            "text": "each version will be inside its own",
+            "timestamp": "13:12"
+        },
+        {
+            "text": "folder so in the end I got three",
+            "timestamp": "13:13"
+        },
+        {
+            "text": "different versions each one of the",
+            "timestamp": "13:15"
+        },
+        {
+            "text": "version does look quite different based",
+            "timestamp": "13:16"
+        },
+        {
+            "text": "on the kind of style of prompt it",
+            "timestamp": "13:18"
+        },
+        {
+            "text": "explore like this nerdy dad version this",
+            "timestamp": "13:20"
+        },
+        {
+            "text": "kind of kids version and we also have",
+            "timestamp": "13:22"
+        },
+        {
+            "text": "this kind of gaming style as well and",
+            "timestamp": "13:24"
+        },
+        {
+            "text": "you can imagine I can even further doing",
+            "timestamp": "13:26"
+        },
+        {
+            "text": "this assuming I like this nerdy version",
+            "timestamp": "13:27"
+        },
+        {
+            "text": "then I can give another parallel task to",
+            "timestamp": "13:30"
+        },
+        {
+            "text": "set up three more new branches to",
+            "timestamp": "13:31"
+        },
+        {
+            "text": "iterate based on this so this is kind of",
+            "timestamp": "13:33"
+        },
+        {
+            "text": "the workflow I feel like going to be",
+            "timestamp": "13:35"
+        },
+        {
+            "text": "really developed for next few months",
+            "timestamp": "13:36"
+        },
+        {
+            "text": "especially for UI iteration tasks but in",
+            "timestamp": "13:39"
+        },
+        {
+            "text": "the end just making sure remember to",
+            "timestamp": "13:41"
+        },
+        {
+            "text": "delete the trees that you don't want",
+            "timestamp": "13:42"
+        },
+        {
+            "text": "because each branch actually can be",
+            "timestamp": "13:44"
+        },
+        {
+            "text": "pretty big because you need to install",
+            "timestamp": "13:45"
+        },
+        {
+            "text": "all the packages inside meanwhile I was",
+            "timestamp": "13:47"
+        },
+        {
+            "text": "imagined what if we have this kind of",
+            "timestamp": "13:49"
+        },
+        {
+            "text": "parallel task execution experience plus",
+            "timestamp": "13:50"
+        },
+        {
+            "text": "some sort of easy way for you to set up",
+            "timestamp": "13:53"
+        },
+        {
+            "text": "sandbox view the results iterate based",
+            "timestamp": "13:55"
+        },
+        {
+            "text": "on certain design and also delete the",
+            "timestamp": "13:57"
+        },
+        {
+            "text": "work tree when it's not needed",
+            "timestamp": "13:59"
+        },
+        {
+            "text": "especially now cloud code has its SDK",
+            "timestamp": "14:00"
+        },
+        {
+            "text": "where we can integrate a coding",
+            "timestamp": "14:02"
+        },
+        {
+            "text": "assistant very easily with custom prompt",
+            "timestamp": "14:03"
+        },
+        {
+            "text": "tools so during the weekend my friend",
+            "timestamp": "14:05"
+        },
+        {
+            "text": "Jack and I have been trying this weekend",
+            "timestamp": "14:07"
+        },
+        {
+            "text": "purchase we basically integrate to cloud",
+            "timestamp": "14:09"
+        },
+        {
+            "text": "AI SDK and build a cursor extension that",
+            "timestamp": "14:11"
+        },
+        {
+            "text": "you can inside your existing pure right",
+            "timestamp": "14:13"
+        },
+        {
+            "text": "away and ask it to start experimenting",
+            "timestamp": "14:15"
+        },
+        {
+            "text": "different UI you will have Canva on the",
+            "timestamp": "14:17"
+        },
+        {
+            "text": "right side to preview the UI generated",
+            "timestamp": "14:19"
+        },
+        {
+            "text": "then select certain version you like and",
+            "timestamp": "14:21"
+        },
+        {
+            "text": "ask it iterated further so you can visit",
+            "timestamp": "14:22"
+        },
+        {
+            "text": "superdesign.dev and click on install for",
+            "timestamp": "14:24"
+        },
+        {
+            "text": "free button this will allow you to just",
+            "timestamp": "14:26"
+        },
+        {
+            "text": "one click installing cursor when you",
+            "timestamp": "14:28"
+        },
+        {
+            "text": "serve or any other ID you're using it",
+            "timestamp": "14:30"
+        },
+        {
+            "text": "will open the superdesign extension and",
+            "timestamp": "14:32"
+        },
+        {
+            "text": "after install you can do command shiftp",
+            "timestamp": "14:34"
+        },
+        {
+            "text": "and this one option called configure",
+            "timestamp": "14:36"
+        },
+        {
+            "text": "entropy API key so you put your entropy",
+            "timestamp": "14:37"
+        },
+        {
+            "text": "API key here because we are using cloud",
+            "timestamp": "14:39"
+        },
+        {
+            "text": "code SDK behind the scenes and once that",
+            "timestamp": "14:41"
+        },
+        {
+            "text": "part is done click on super design this",
+            "timestamp": "14:43"
+        },
+        {
+            "text": "will open a chat on the left side and a",
+            "timestamp": "14:45"
+        },
+        {
+            "text": "camera view on the right side and you",
+            "timestamp": "14:47"
+        },
+        {
+            "text": "can give a prompt design me some",
+            "timestamp": "14:48"
+        },
+        {
+            "text": "wireframe of a calculator then you will",
+            "timestamp": "14:50"
+        },
+        {
+            "text": "see the agents start working and trigger",
+            "timestamp": "14:52"
+        },
+        {
+            "text": "multiple tasks each task with a slightly",
+            "timestamp": "14:54"
+        },
+        {
+            "text": "different uh brief about what type of",
+            "timestamp": "14:56"
+        },
+        {
+            "text": "design it is you're basically creating",
+            "timestamp": "14:58"
+        },
+        {
+            "text": "design inside the super design design",
+            "timestamp": "15:00"
+        },
+        {
+            "text": "iteration folder and at this point each",
+            "timestamp": "15:02"
+        },
+        {
+            "text": "design takes roughly 1 minute to",
+            "timestamp": "15:04"
+        },
+        {
+            "text": "generate they're very clear path for us",
+            "timestamp": "15:06"
+        },
+        {
+            "text": "to optimize and make it way faster uh",
+            "timestamp": "15:08"
+        },
+        {
+            "text": "but we just want to ship it as the first",
+            "timestamp": "15:10"
+        },
+        {
+            "text": "version for now and all the design",
+            "timestamp": "15:11"
+        },
+        {
+            "text": "generated will be showing up on the",
+            "timestamp": "15:12"
+        },
+        {
+            "text": "right side and now you can see generate",
+            "timestamp": "15:14"
+        },
+        {
+            "text": "a few different kind of wireframe",
+            "timestamp": "15:16"
+        },
+        {
+            "text": "options for the calculator and once I",
+            "timestamp": "15:17"
+        },
+        {
+            "text": "find the version I prefer I can click on",
+            "timestamp": "15:20"
+        },
+        {
+            "text": "this which will have a few different",
+            "timestamp": "15:21"
+        },
+        {
+            "text": "options either create a variations or",
+            "timestamp": "15:23"
+        },
+        {
+            "text": "iterate feedback as well as copy prompt",
+            "timestamp": "15:25"
+        },
+        {
+            "text": "for cursor we insert direct with so I",
+            "timestamp": "15:27"
+        },
+        {
+            "text": "can click on this iterator with feedback",
+            "timestamp": "15:29"
+        },
+        {
+            "text": "button then give a prompt this looks",
+            "timestamp": "15:31"
+        },
+        {
+            "text": "great now build a hi-fi mo based on this",
+            "timestamp": "15:33"
+        },
+        {
+            "text": "layout then you will see here it",
+            "timestamp": "15:37"
+        },
+        {
+            "text": "generate a few high fidelity mockups",
+            "timestamp": "15:39"
+        },
+        {
+            "text": "based on that specific layout and you",
+            "timestamp": "15:41"
+        },
+        {
+            "text": "can imagine we can keep iterating giving",
+            "timestamp": "15:43"
+        },
+        {
+            "text": "feedback and once I'm happy I can click",
+            "timestamp": "15:45"
+        },
+        {
+            "text": "on this copy prompt button this will",
+            "timestamp": "15:46"
+        },
+        {
+            "text": "copy the full style so you can pass to",
+            "timestamp": "15:48"
+        },
+        {
+            "text": "cursor or cloud code to do the actual",
+            "timestamp": "15:50"
+        },
+        {
+            "text": "implementation of the web app so this is",
+            "timestamp": "15:52"
+        },
+        {
+            "text": "the first version we spin up going to do",
+            "timestamp": "15:54"
+        },
+        {
+            "text": "a lot of improvements but super keen to",
+            "timestamp": "15:56"
+        },
+        {
+            "text": "just hear feedback is this something you",
+            "timestamp": "15:58"
+        },
+        {
+            "text": "find useful if so please give it a try",
+            "timestamp": "15:59"
+        },
+        {
+            "text": "this will be open source project you can",
+            "timestamp": "16:01"
+        },
+        {
+            "text": "just download and try out yourself so I",
+            "timestamp": "16:02"
+        },
+        {
+            "text": "will put the link in the description",
+            "timestamp": "16:04"
+        },
+        {
+            "text": "below so you can go and try out",
+            "timestamp": "16:06"
+        },
+        {
+            "text": "meanwhile I will put all the problems I",
+            "timestamp": "16:07"
+        },
+        {
+            "text": "shared in AI builder club which is a",
+            "timestamp": "16:08"
+        },
+        {
+            "text": "community I'm building that has top AI",
+            "timestamp": "16:10"
+        },
+        {
+            "text": "builders who are launching AI products",
+            "timestamp": "16:12"
+        },
+        {
+            "text": "myself and other people will share also",
+            "timestamp": "16:13"
+        },
+        {
+            "text": "tips and workflows that we found really",
+            "timestamp": "16:15"
+        },
+        {
+            "text": "useful for both AI coding and build",
+            "timestamp": "16:17"
+        },
+        {
+            "text": "large modelic software so I've also put",
+            "timestamp": "16:18"
+        },
+        {
+            "text": "a link in the description below for you",
+            "timestamp": "16:20"
+        },
+        {
+            "text": "to join as well if you want to learn",
+            "timestamp": "16:22"
+        },
+        {
+            "text": "more i'm really excited about this",
+            "timestamp": "16:23"
+        },
+        {
+            "text": "project and what kind of feedback you",
+            "timestamp": "16:24"
+        },
+        {
+            "text": "guys have this is just a v 0.01 version",
+            "timestamp": "16:26"
+        },
+        {
+            "text": "that only created one single HTML page",
+            "timestamp": "16:28"
+        },
+        {
+            "text": "the next version we're going to add the",
+            "timestamp": "16:30"
+        },
+        {
+            "text": "default work tree support so you can",
+            "timestamp": "16:31"
+        },
+        {
+            "text": "iterate UI of your existing production",
+            "timestamp": "16:32"
+        },
+        {
+            "text": "application i'll keep you updated thank",
+            "timestamp": "16:34"
+        },
+        {
+            "text": "you and I see you next time",
+            "timestamp": "16:36"
+        }
+    ]
+}

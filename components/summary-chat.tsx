@@ -8,6 +8,9 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Send, MessageCircle, Loader2 } from "lucide-react"
 import { useAuth } from "@/components/auth-context"
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import remarkBreaks from 'remark-breaks'
 
 interface ChatMessage {
   id: string
@@ -185,7 +188,25 @@ export function SummaryChat({ summary, videoId }: SummaryChatProps) {
                       ? 'bg-muted mr-12'
                       : 'bg-blue-50 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
                   }`}>
-                    <div className="text-sm whitespace-pre-wrap">{message.content}</div>
+                    {message.type === 'ai' ? (
+                      <div className="text-sm prose prose-sm max-w-none dark:prose-invert prose-p:mb-2 prose-ul:my-2 prose-ol:my-2 prose-li:mb-1 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-pre:bg-gray-100 prose-pre:p-2 prose-pre:rounded-md prose-pre:text-xs prose-a:text-blue-600 hover:prose-a:text-blue-800">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm, remarkBreaks]}
+                          components={{
+                            // External links
+                            a: ({ href, children, ...props }) => (
+                              <a href={href} target="_blank" rel="noopener noreferrer" {...props}>
+                                {children}
+                              </a>
+                            )
+                          }}
+                        >
+                          {message.content}
+                        </ReactMarkdown>
+                      </div>
+                    ) : (
+                      <div className="text-sm whitespace-pre-wrap">{message.content}</div>
+                    )}
                     <div className="text-xs opacity-70 mt-1">
                       {message.timestamp.toLocaleTimeString()}
                     </div>
