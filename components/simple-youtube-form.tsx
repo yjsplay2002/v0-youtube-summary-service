@@ -311,6 +311,13 @@ export function SimpleYoutubeForm() {
                       )}
                     </Button>
                   )}
+                  
+                  {/* Debug: Show button conditions */}
+                  {process.env.NODE_ENV === 'development' && (
+                    <div className="text-xs text-gray-500 mt-2">
+                      Debug: summaryExists={summaryExists.toString()}, isSpecialUser={isSpecialUser.toString()}, user.email={user?.email}
+                    </div>
+                  )}
                 </div>
 
                 {/* Video Info Display */}
