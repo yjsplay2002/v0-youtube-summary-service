@@ -314,8 +314,11 @@ export function SimpleYoutubeForm() {
                   
                   {/* Debug: Show button conditions */}
                   {process.env.NODE_ENV === 'development' && (
-                    <div className="text-xs text-gray-500 mt-2">
-                      Debug: summaryExists={summaryExists.toString()}, isSpecialUser={isSpecialUser.toString()}, user.email={user?.email}
+                    <div className="text-xs text-gray-500 mt-2 space-y-1">
+                      <div>Debug: summaryExists={summaryExists.toString()}, isSpecialUser={isSpecialUser.toString()}</div>
+                      <div>User email: {user?.email}</div>
+                      <div>User role: {user?.user_metadata?.role}</div>
+                      <div>Available models: {availableModels.join(', ')}</div>
                     </div>
                   )}
                 </div>
