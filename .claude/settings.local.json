@@ -27,7 +27,8 @@
       "Bash(/Users/yujeongsang/.nvm/versions/node/v22.15.1/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg -n \"opts\" -g \"youtube-form.tsx\" -A 15)",
       "Bash(/Users/yujeongsang/.nvm/versions/node/v22.15.1/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/arm64-darwin/rg -n \"opts\" -g \"summary-display.tsx\" -A 15)",
       "Bash(grep:*)",
-      "WebFetch(domain:supabase.com)"
+      "WebFetch(domain:supabase.com)",
+      "Bash(mv:*)"
     ],
     "deny": []
   }

@@ -410,15 +410,35 @@ export async function resummarizeYoutubeVideo(
       title = userSummary.video_title;
       thumbnail_url = userSummary.video_thumbnail || "";
       duration = userSummary.video_duration || "";
+      channel_title = userSummary.channel_title || "";
+      
+      // 새 DB 구조에서 dialog 필드에서 트랜스크립트 추출
+      if (userSummary.dialog) {
+        try {
+          const dialogData = typeof userSummary.dialog === 'string' 
+            ? JSON.parse(userSummary.dialog) 
+            : userSummary.dialog;
+          
+          if (dialogData && Array.isArray(dialogData)) {
+            transcript = dialogData.map((item: any) => item.text || '').join(' ');
+            console.log(`[resummarizeYoutubeVideo] 사용자 DB에서 트랜스크립트 추출 완료: ${videoId}`);
+          }
+        } catch (error) {
+          console.error(`[resummarizeYoutubeVideo] dialog 파싱 오류:`, error);
+        }
+      }
     }
     
-    // 3-2. 레거시 DB에서 트랜스크립트 확인
-    const legacySummary = await getYoutubeSummaryFromDB(videoId);
-    if (legacySummary && legacySummary.transcript) {
-      transcript = legacySummary.transcript;
-      if (!title) title = legacySummary.title;
-      if (!thumbnail_url) thumbnail_url = legacySummary.thumbnail_url;
-      channel_title = legacySummary.channel_title;
+    // 3-2. 레거시 DB에서 트랜스크립트 확인 (새 DB에서 트랜스크립트를 찾지 못한 경우)
+    if (!transcript) {
+      const legacySummary = await getYoutubeSummaryFromDB(videoId);
+      if (legacySummary && legacySummary.transcript) {
+        transcript = legacySummary.transcript;
+        if (!title) title = legacySummary.title;
+        if (!thumbnail_url) thumbnail_url = legacySummary.thumbnail_url;
+        if (!channel_title) channel_title = legacySummary.channel_title;
+        console.log(`[resummarizeYoutubeVideo] 레거시 DB에서 트랜스크립트 추출 완료: ${videoId}`);
+      }
     }
     
     // 3-3. 트랜스크립트가 없으면 오류 반환

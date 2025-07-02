@@ -1,264 +1,208 @@
 "use client"
-import { useSearchParams } from "next/navigation";
-import { useEffect, useState, useCallback, useRef, useContext } from "react";
-import { SummaryDisplayClient } from "@/components/summary-display-client";
-import { getSummary, fetchVideoDetailsServer } from "@/app/actions";
-import { LoadingContext } from "@/components/youtube-form";
-import YouTube, { YouTubePlayer } from "react-youtube";
-import { useResetContext } from "@/components/reset-context";
-import { useAuth } from "@/components/auth-context";
-import { Skeleton } from "@/components/ui/skeleton";
-import { generateVideoSummaryStructuredData, injectStructuredData } from "@/app/lib/structured-data";
 
-export default function SummaryDisplay() {
-  const searchParams = useSearchParams();
-  const videoId = searchParams.get("videoId");
-  const [summary, setSummary] = useState<string | null>(null);
-  const [videoInfo, setVideoInfo] = useState<any | null>(null);
-  const [playerRef, setPlayerRef] = useState<YouTubePlayer | null>(null);
-  const [isRetrying, setIsRetrying] = useState(false);
-  const { user } = useAuth();
-  
-  // Refs to track state without triggering re-renders
-  const retryCountRef = useRef(0);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Get the reset context
-  const { registerResetCallback } = useResetContext();
-  
-  // Memoize the fetch function to prevent unnecessary re-creations
-  const fetchVideoDetails = useCallback(async (id: string) => {
-    try {
-      console.log(`[SummaryDisplay] Fetching video details for: ${id}`);
-      const videoDetails = await fetchVideoDetailsServer(id);
-      const videoInfo = videoDetails.items[0];
-      setVideoInfo(videoInfo);
+import { useState } from "react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Copy, Check } from "lucide-react"
+import { SummaryChat } from "@/components/summary-chat"
+
+export function SummaryDisplayClient({ summary, seekTo, videoId }: { summary: string; seekTo: (seconds: number) => void; videoId?: string }) {
+  const [copied, setCopied] = useState(false)
+
+  // Convert summary to interview format with timestamp support
+  const convertToInterview = (content: string): string => {
+    // Split content into sections
+    const sections = content.split('\n\n').filter(section => section.trim() !== '');
+    
+    let interview = '';
+    let currentSpeaker = 'Q';
+    
+    for (const section of sections) {
+      // Skip timestamps and section headers
+      if (section.startsWith('🕒') || section.startsWith('📝') || section.startsWith('---')) {
+        continue;
+      }
       
-      // Inject structured data for SEO
-      if (videoInfo) {
-        const structuredData = generateVideoSummaryStructuredData(videoInfo);
-        injectStructuredData(structuredData);
-      }
-    } catch (error) {
-      console.error("[SummaryDisplay] Failed to fetch video details:", error);
-    }
-  }, []);
-  
-  // Fetch summary with retry logic
-  const fetchSummaryWithRetry = useCallback(async () => {
-    if (!videoId) {
-      setSummary(null);
-      setVideoInfo(null);
-      return;
-    }
-    
-    try {
-      const result = await getSummary(videoId, user?.id);
-      setSummary(result);
+      // Skip empty sections
+      if (section.trim() === '') continue;
       
-      // Only fetch video details if we have a valid summary
-      if (result && result.trim() !== "") {
-        setIsRetrying(false);
-        await fetchVideoDetails(videoId);
-      } else if (retryCountRef.current < 5) { // 게스트 사용자를 위해 재시도 횟수 증가
-        // Retry logic - 게스트 사용자의 경우 DB 저장 시간이 더 걸릴 수 있음
-        retryCountRef.current++;
-        setIsRetrying(true);
-        const retryDelay = Math.min(1000 * retryCountRef.current, 3000); // 점진적 지연 (최대 3초)
-        timeoutRef.current = setTimeout(fetchSummaryWithRetry, retryDelay);
-      } else {
-        // 최종적으로 실패한 경우에도 비디오 정보는 가져오기
-        setIsRetrying(false);
-        await fetchVideoDetails(videoId);
-      }
-    } catch (error) {
-      console.error("[SummaryDisplay] Error in fetchSummaryWithRetry:", error);
-      // Even if summary fetch failed, try to get video details
-      if (videoId) {
-        await fetchVideoDetails(videoId);
-      }
-    }
-  }, [videoId, user?.id, fetchVideoDetails]);
-  
-  // Register a callback to reset the summary and video info
-  useEffect(() => {
-    const resetHandler = () => {
-      setSummary(null);
-      setVideoInfo(null);
-      setIsRetrying(false);
-      retryCountRef.current = 0;
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-    };
-    
-    registerResetCallback(resetHandler);
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-    };
-  }, [registerResetCallback]);
-  
-  // Fetch data when videoId changes
-  useEffect(() => {
-    if (videoId) {
-      retryCountRef.current = 0;
-      setIsRetrying(false);
-      fetchSummaryWithRetry();
-    } else {
-      setSummary(null);
-      setVideoInfo(null);
-      setIsRetrying(false);
+      // Process section content with timestamps
+      const processedSection = renderMarkdownWithTimestamps(section);
+      
+      // Add speaker label
+      interview += `<div class="mb-4">
+        <div class="font-semibold text-blue-600">${currentSpeaker}.</div>
+        <div class="ml-4">${processedSection}</div>
+      </div>`;
+      
+      // Toggle between Q and A
+      currentSpeaker = currentSpeaker === 'Q' ? 'A' : 'Q';
     }
     
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-    };
-  }, [videoId, user?.id]); // fetchSummaryWithRetry 의존성 제거
-  
-  // Function to handle seeking in the video directly in this component
-  const handleSeek = (seconds: number) => {
-    console.log(`[SummaryDisplay] 비디오 플레이어 시크: ${seconds}초`);
-    if (playerRef) {
-      try {
-        playerRef.seekTo(seconds, true);
-        playerRef.playVideo();
-        console.log(`[SummaryDisplay] 비디오 플레이어 시크 성공: ${seconds}초`);
-        
-        // 타임스탬프를 분:초 형식으로 표시
-        const minutes = Math.floor(seconds / 60);
-        const remainingSeconds = seconds % 60;
-        const timeStr = `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-        
-        // 간단한 토스트 메시지 (선택사항)
-        if (typeof window !== 'undefined') {
-          console.log(`[SummaryDisplay] ${timeStr}로 이동했습니다`);
-        }
-      } catch (error) {
-        console.error(`[SummaryDisplay] 비디오 플레이어 시크 실패:`, error);
-      }
-    } else {
-      console.warn(`[SummaryDisplay] 비디오 플레이어가 준비되지 않았습니다`);
+    return interview || '<div class="text-muted-foreground">대화 형식으로 변환할 내용이 없습니다.</div>';
+  };
+
+  // Handle timestamp button clicks
+  const handleTimestampClick = (seconds: number) => {
+    console.log(`[SummaryDisplayClient] 타임스탬프 클릭: ${seconds}초로 이동`);
+    seekTo(seconds);
+    
+    // 사용자에게 시각적 피드백 제공
+    const button = document.activeElement as HTMLElement;
+    if (button && button.classList.contains('timestamp-btn')) {
+      const originalBg = button.style.backgroundColor;
+      button.style.backgroundColor = '#22c55e'; // green-500
+      button.style.transform = 'scale(0.95)';
+      setTimeout(() => {
+        button.style.backgroundColor = originalBg;
+        button.style.transform = 'scale(1)';
+      }, 200);
     }
   };
 
-  const loading = useContext(LoadingContext);
+  // 마크다운 내 다양한 타임스탬프 형식을 버튼으로 변환
+  function renderMarkdownWithTimestamps(markdown: string): string {
+    // 1. [hh:mm:ss](링크) → simple link (시:분:초 형식)
+    markdown = markdown.replace(/\[(\d{1,2}):(\d{2}):(\d{2})\]\([^\)]+\)/g, (_, h, m, s) => {
+      const seconds = parseInt(h, 10) * 3600 + parseInt(m, 10) * 60 + parseInt(s, 10);
+      return `<span class='text-sky-500 hover:text-sky-600 underline cursor-pointer timestamp-btn transition-colors' data-seconds='${seconds}'>${h}:${m}:${s}</span>`;
+    });
+    
+    // 2. [mm:ss](링크) → simple link (분:초 형식)
+    markdown = markdown.replace(/\[(\d{1,2}):(\d{2})\]\([^\)]+\)/g, (_, m, s) => {
+      const seconds = parseInt(m, 10) * 60 + parseInt(s, 10);
+      return `<span class='text-sky-500 hover:text-sky-600 underline cursor-pointer timestamp-btn transition-colors' data-seconds='${seconds}'>${m}:${s}</span>`;
+    });
+    
+    // 3. [hh:mm:ss] 단독 → simple link (시:분:초 형식)
+    markdown = markdown.replace(/\[(\d{1,2}):(\d{2}):(\d{2})\]/g, (_, h, m, s) => {
+      const seconds = parseInt(h, 10) * 3600 + parseInt(m, 10) * 60 + parseInt(s, 10);
+      return `<span class='text-sky-500 hover:text-sky-600 underline cursor-pointer timestamp-btn transition-colors' data-seconds='${seconds}'>[${h}:${m}:${s}]</span>`;
+    });
+    
+    // 4. [mm:ss] 단독 → simple link (분:초 형식)
+    markdown = markdown.replace(/\[(\d{1,2}):(\d{2})\]/g, (_, m, s) => {
+      const seconds = parseInt(m, 10) * 60 + parseInt(s, 10);
+      return `<span class='text-sky-500 hover:text-sky-600 underline cursor-pointer timestamp-btn transition-colors' data-seconds='${seconds}'>[${m}:${s}]</span>`;
+    });
+    
+    // 5. 괄호 없는 타임스탬프도 지원 (hh:mm:ss, mm:ss)
+    // 단어 경계를 사용하여 실제 시간 형식만 매칭
+    markdown = markdown.replace(/\b(\d{1,2}):(\d{2}):(\d{2})\b/g, (_, h, m, s) => {
+      const seconds = parseInt(h, 10) * 3600 + parseInt(m, 10) * 60 + parseInt(s, 10);
+      return `<span class='text-blue-500 hover:text-blue-600 underline cursor-pointer timestamp-btn transition-colors' data-seconds='${seconds}'>${h}:${m}:${s}</span>`;
+    });
+    
+    markdown = markdown.replace(/\b(\d{1,2}):(\d{2})\b/g, (_, m, s) => {
+      const minutes = parseInt(m, 10);
+      const secs = parseInt(s, 10);
+      // 유효한 시간 형식인지 확인 (분은 60미만, 초는 60미만)
+      if (secs >= 60) return `${m}:${s}`;
+      const totalSeconds = minutes * 60 + secs;
+      return `<span class='text-blue-500 hover:text-blue-600 underline cursor-pointer timestamp-btn transition-colors' data-seconds='${totalSeconds}'>${m}:${s}</span>`;
+    });
+    
+    return renderMarkdown(markdown);
+  }
 
-  // Loading state
-  if (loading) {
-    return (
-      <div className="space-y-4">
-        <Skeleton className="h-8 w-3/4" />
-        <Skeleton className="h-4 w-1/2" />
-        <Skeleton className="aspect-video w-full rounded-md" />
-      </div>
-    );
+  const handleCopy = () => {
+    if (summary) {
+      navigator.clipboard.writeText(summary)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
   }
-  
-  if (!videoId) return null;
-  
-  // 재시도 중이거나 summary가 null인 경우 로딩 표시
-  if (summary === null || isRetrying) {
-    return (
-      <div className="space-y-4">
-        <div className="text-center py-8">
-          <div className="flex flex-col items-center space-y-4">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-            <p className="text-muted-foreground">
-              {isRetrying ? `요약을 불러오는 중... (${retryCountRef.current}/5)` : "요약을 준비하고 있습니다..."}
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-  if (typeof summary === "string" && summary.trim() === "") {
-    return (
-      <div className="space-y-4">
-        {videoInfo ? (
-          <>
-            <h1 className="text-2xl font-bold">{videoInfo.snippet.title}</h1>
-            <p className="text-muted-foreground">{videoInfo.snippet.channelTitle}</p>
-            <div className="aspect-video w-full">
-              <YouTube
-                videoId={videoId}
-                className="w-full h-full rounded"
-                iframeClassName="w-full h-full rounded"
-                opts={{
-                  width: '100%',
-                  height: '100%',
-                  playerVars: {
-                    rel: 0,
-                    modestbranding: 1,
-                    enablejsapi: 1,
-                    origin: typeof window !== 'undefined' ? window.location.origin : undefined,
-                  },
-                }}
-                onReady={(e: { target: YouTubePlayer }) => {
-                  try {
-                    setPlayerRef(e.target);
-                  } catch (error) {
-                    console.debug('YouTube player ready - CORS error ignored:', error);
-                  }
-                }}
-                onError={(error) => {
-                  console.debug('YouTube player error ignored:', error);
-                }}
-              />
-            </div>
-          </>
-        ) : null}
-        <div className="text-center text-muted-foreground py-8">
-          이 비디오에 대한 요약이 없습니다.
-        </div>
-      </div>
-    );
-  }
-  
+
   return (
-    <div className="space-y-6">
-      {/* Video Player and Info */}
-      {videoInfo && (
-        <div className="w-full border rounded p-3 bg-muted/40">
-          <div className="font-semibold mb-1">{videoInfo.snippet.title}</div>
-          <div className="mb-2 text-xs text-muted-foreground">{videoInfo.snippet.channelTitle}</div>
-          <div className="w-full aspect-video rounded overflow-hidden">
-            <YouTube
-              videoId={videoInfo.id}
-              className="w-full h-full rounded"
-              iframeClassName="w-full h-full rounded"
-              opts={{
-                width: '100%',
-                height: '100%',
-                playerVars: {
-                  rel: 0,
-                  modestbranding: 1,
-                  enablejsapi: 1,
-                  origin: typeof window !== 'undefined' ? window.location.origin : undefined,
-                },
-              }}
-              onReady={(e: { target: YouTubePlayer }) => {
-                try {
-                  setPlayerRef(e.target);
-                } catch (error) {
-                  console.debug('YouTube player ready - CORS error ignored:', error);
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle>Video Summary</CardTitle>
+        <Button variant="outline" size="sm" onClick={handleCopy} className="flex items-center gap-1">
+          {copied ? (
+            <>
+              <Check className="h-4 w-4" />
+              Copied
+            </>
+          ) : (
+            <>
+              <Copy className="h-4 w-4" />
+              Copy Markdown
+            </>
+          )}
+        </Button>
+      </CardHeader>
+      <CardContent>
+        <Tabs defaultValue="preview">
+          <TabsList className="mb-4">
+            <TabsTrigger value="preview">Preview</TabsTrigger>
+            <TabsTrigger value="interview">Interview</TabsTrigger>
+            <TabsTrigger value="markdown">Markdown</TabsTrigger>
+          </TabsList>
+          <TabsContent value="preview" className="prose max-w-none dark:prose-invert">
+            <div
+              dangerouslySetInnerHTML={{ __html: renderMarkdownWithTimestamps(summary) }}
+              onClick={e => {
+                // 타임스탬프 버튼 클릭 시
+                const target = e.target as HTMLElement;
+                if (target.classList.contains('timestamp-btn')) {
+                  e.preventDefault(); // 링크 이동 차단
+                  const seconds = Number(target.getAttribute('data-seconds'));
+                  if (!isNaN(seconds)) handleTimestampClick(seconds);
                 }
               }}
-              onError={(error) => {
-                console.debug('YouTube player error ignored:', error);
+            />
+          </TabsContent>
+          <TabsContent value="interview" className="prose max-w-none dark:prose-invert">
+            <div
+              dangerouslySetInnerHTML={{ __html: convertToInterview(summary) }}
+              className="space-y-4"
+              onClick={e => {
+                // 타임스탬프 버튼 클릭 시 (Interview 탭)
+                const target = e.target as HTMLElement;
+                if (target.classList.contains('timestamp-btn')) {
+                  e.preventDefault();
+                  const seconds = Number(target.getAttribute('data-seconds'));
+                  if (!isNaN(seconds)) handleTimestampClick(seconds);
+                }
               }}
             />
-          </div>
+          </TabsContent>
+          <TabsContent value="markdown">
+            <pre className="p-4 bg-muted rounded-md overflow-auto whitespace-pre-wrap">{summary}</pre>
+          </TabsContent>
+        </Tabs>
+      </CardContent>
+      
+      {/* AI Chat Section */}
+      {videoId && (
+        <div className="mt-6">
+          <SummaryChat summary={summary} videoId={videoId} />
         </div>
       )}
-      
-      {/* Summary */}
-      <SummaryDisplayClient summary={summary} seekTo={handleSeek} />
-    </div>
+    </Card>
   );
+}
+
+// 기존 마크다운 렌더 함수 활용
+function renderMarkdown(markdown: string): string {
+  return markdown
+    .replace(/^# (.*$)/gm, "<h1>$1</h1>")
+    .replace(/^## (.*$)/gm, "<h2>$1</h2>")
+    .replace(/^### (.*$)/gm, "<h3>$1</h3>")
+    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.*?)\*/g, "<em>$1</em>")
+    .replace(/^- (.*$)/gm, "<li>$1</li>")
+    .replace(/^🔹 (.*$)/gm, "<strong>🔹 $1</strong>")
+    .replace(/^📍 (.*$)/gm, "<h3 class='text-blue-600'>📍 $1</h3>")
+    .replace(/^🕒 (.*$)/gm, "<p class='text-gray-500'>🕒 $1</p>")
+    .replace(/^📝 요약: (.*$)/gm, "<p class='bg-gray-100 p-2 rounded my-2'>📝 <strong>요약:</strong> $1</p>")
+    .replace(/---/g, "<hr class='my-4'>")
+    .replace(
+      /(#\w+)/g,
+      "<span class='inline-block bg-blue-100 text-blue-800 rounded-full px-2 py-1 text-xs font-semibold mr-1 mb-1'>$1</span>",
+    )
+    // 마크다운 링크 [텍스트](링크) → <a href="링크" target="_blank">텍스트</a>
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(/\n/g, "<br />");
 }

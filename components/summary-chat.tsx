@@ -1,0 +1,268 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
+import { Send, MessageCircle, Loader2 } from "lucide-react"
+import { useAuth } from "@/components/auth-context"
+
+interface ChatMessage {
+  id: string
+  type: 'user' | 'ai' | 'system'
+  content: string
+  timestamp: Date
+  suggested_questions?: string[]
+}
+
+interface SummaryChatProps {
+  summary: string
+  videoId: string
+}
+
+export function SummaryChat({ summary, videoId }: SummaryChatProps) {
+  const { user } = useAuth()
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [inputMessage, setInputMessage] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([])
+  const [isInitialized, setIsInitialized] = useState(false)
+
+  // Initialize chat with AI-generated questions
+  useEffect(() => {
+    if (summary && !isInitialized) {
+      initializeChat()
+    }
+  }, [summary, isInitialized])
+
+  const initializeChat = async () => {
+    if (!summary.trim()) return
+    
+    setIsLoading(true)
+    try {
+      const response = await fetch('/api/chat/initialize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          summary,
+          videoId,
+          userId: user?.id 
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setSuggestedQuestions(data.questions || [])
+        
+        // Add system welcome message
+        const welcomeMessage: ChatMessage = {
+          id: `system-${Date.now()}`,
+          type: 'system',
+          content: '비디오 요약을 바탕으로 질문해 주세요. 아래 추천 질문을 클릭하거나 직접 입력하실 수 있습니다.',
+          timestamp: new Date(),
+          suggested_questions: data.questions
+        }
+        setMessages([welcomeMessage])
+      }
+    } catch (error) {
+      console.error('Failed to initialize chat:', error)
+    } finally {
+      setIsLoading(false)
+      setIsInitialized(true)
+    }
+  }
+
+  const sendMessage = async (message: string) => {
+    if (!message.trim() || isLoading) return
+
+    // Add user message
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}`,
+      type: 'user',
+      content: message,
+      timestamp: new Date()
+    }
+    
+    setMessages(prev => [...prev, userMessage])
+    setInputMessage("")
+    setIsLoading(true)
+
+    try {
+      const response = await fetch('/api/chat/message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message,
+          summary,
+          videoId,
+          userId: user?.id,
+          conversationHistory: messages
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        
+        // Add AI response
+        const aiMessage: ChatMessage = {
+          id: `ai-${Date.now()}`,
+          type: 'ai',
+          content: data.response,
+          timestamp: new Date(),
+          suggested_questions: data.followUpQuestions
+        }
+        
+        setMessages(prev => [...prev, aiMessage])
+        setSuggestedQuestions(data.followUpQuestions || [])
+      } else {
+        throw new Error('Failed to send message')
+      }
+    } catch (error) {
+      console.error('Failed to send message:', error)
+      // Add error message
+      const errorMessage: ChatMessage = {
+        id: `error-${Date.now()}`,
+        type: 'system',
+        content: '죄송합니다. 메시지 전송에 실패했습니다. 다시 시도해 주세요.',
+        timestamp: new Date()
+      }
+      setMessages(prev => [...prev, errorMessage])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleSuggestedQuestion = (question: string) => {
+    sendMessage(question)
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    sendMessage(inputMessage)
+  }
+
+  if (!user) {
+    return (
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <MessageCircle className="h-5 w-5" />
+            AI와 대화하기
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-8 text-muted-foreground">
+            <MessageCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
+            <p>AI와 요약 내용에 대해 대화하시려면 로그인이 필요합니다.</p>
+            <p className="text-sm mt-2">대화 내용은 로그인한 사용자만 저장됩니다.</p>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card className="mt-6">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <MessageCircle className="h-5 w-5" />
+          AI와 대화하기
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Chat Messages */}
+        <ScrollArea className="h-96 w-full border rounded-md p-4">
+          <div className="space-y-4">
+            {messages.map((message) => (
+              <div key={message.id} className="space-y-2">
+                <div className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[80%] rounded-lg p-3 ${
+                    message.type === 'user' 
+                      ? 'bg-primary text-primary-foreground ml-12'
+                      : message.type === 'ai'
+                      ? 'bg-muted mr-12'
+                      : 'bg-blue-50 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                  }`}>
+                    <div className="text-sm whitespace-pre-wrap">{message.content}</div>
+                    <div className="text-xs opacity-70 mt-1">
+                      {message.timestamp.toLocaleTimeString()}
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Suggested Questions */}
+                {message.suggested_questions && message.suggested_questions.length > 0 && (
+                  <div className="flex flex-wrap gap-2 ml-4">
+                    {message.suggested_questions.map((question, index) => (
+                      <Button
+                        key={index}
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleSuggestedQuestion(question)}
+                        disabled={isLoading}
+                        className="text-xs h-8"
+                      >
+                        {question}
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+            
+            {/* Loading indicator */}
+            {isLoading && (
+              <div className="flex justify-start">
+                <div className="bg-muted rounded-lg p-3 mr-12">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                </div>
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+
+        <Separator />
+
+        {/* Suggested Questions (Current) */}
+        {suggestedQuestions.length > 0 && !isLoading && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium">추천 질문:</p>
+            <div className="flex flex-wrap gap-2">
+              {suggestedQuestions.map((question, index) => (
+                <Button
+                  key={index}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleSuggestedQuestion(question)}
+                  className="text-xs"
+                >
+                  {question}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Input Form */}
+        <form onSubmit={handleSubmit} className="flex gap-2">
+          <Input
+            value={inputMessage}
+            onChange={(e) => setInputMessage(e.target.value)}
+            placeholder="질문을 입력하세요..."
+            disabled={isLoading}
+            className="flex-1"
+          />
+          <Button type="submit" disabled={isLoading || !inputMessage.trim()}>
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  )
+}
