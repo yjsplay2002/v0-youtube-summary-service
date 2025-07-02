@@ -221,13 +221,71 @@ export function SimpleYoutubeForm() {
 
   // Handle re-summarization
   const handleResummarize = async () => {
+    console.log("[handleResummarize] 재요약 버튼 클릭됨")
+    console.log("[handleResummarize] videoInfo:", videoInfo)
+    console.log("[handleResummarize] user:", user)
+    
     if (!videoInfo?.id) {
+      console.error("[handleResummarize] 비디오 정보 없음")
       setError("비디오 정보가 없습니다.")
       return
     }
 
+    // Debug: Check if summary exists in DB before re-summarizing
+    try {
+      console.log("[handleResummarize] DB에서 기존 요약 확인 중...")
+      const { data: userSummary } = await supabase
+        .from('video_summaries')
+        .select('*')
+        .eq('video_id', videoInfo.id)
+        .eq('user_id', user?.id)
+        .maybeSingle()
+      
+      console.log("[handleResummarize] 사용자 요약:", userSummary)
+      console.log("[handleResummarize] dialog 필드:", {
+        hasDialog: !!userSummary?.dialog,
+        dialogType: typeof userSummary?.dialog,
+        dialogLength: userSummary?.dialog ? (typeof userSummary.dialog === 'string' ? userSummary.dialog.length : JSON.stringify(userSummary.dialog).length) : 0,
+        dialogPreview: userSummary?.dialog ? (typeof userSummary.dialog === 'string' ? userSummary.dialog.substring(0, 100) : JSON.stringify(userSummary.dialog).substring(0, 100)) : 'null'
+      })
+      
+      // Debug: dialog 파싱 테스트
+      if (userSummary?.dialog) {
+        try {
+          const dialogData = typeof userSummary.dialog === 'string' 
+            ? JSON.parse(userSummary.dialog) 
+            : userSummary.dialog;
+          console.log("[handleResummarize] dialog 파싱 성공:", {
+            isArray: Array.isArray(dialogData),
+            length: Array.isArray(dialogData) ? dialogData.length : 'Not array',
+            hasTextProperty: Array.isArray(dialogData) && dialogData.length > 0 && 'text' in dialogData[0],
+            firstItem: Array.isArray(dialogData) && dialogData.length > 0 ? dialogData[0] : 'No items'
+          })
+        } catch (parseError) {
+          console.error("[handleResummarize] dialog 파싱 실패:", parseError)
+        }
+      }
+      
+      if (!userSummary) {
+        const { data: legacySummary } = await supabase
+          .from('youtube_summaries')
+          .select('*')
+          .eq('video_id', videoInfo.id)
+          .maybeSingle()
+        console.log("[handleResummarize] 레거시 요약:", legacySummary)
+      }
+    } catch (dbError) {
+      console.error("[handleResummarize] DB 확인 오류:", dbError)
+    }
+
     setIsLoading(true)
     setError(null)
+    console.log("[handleResummarize] resummarizeYoutubeVideo 호출 시작", {
+      videoId: videoInfo.id,
+      userId: user?.id,
+      selectedModel,
+      selectedPromptType
+    })
 
     try {
       const result = await resummarizeYoutubeVideo(
@@ -236,11 +294,15 @@ export function SimpleYoutubeForm() {
         selectedModel,
         selectedPromptType
       )
+      
+      console.log("[handleResummarize] resummarizeYoutubeVideo 결과:", result)
 
       if (result.success) {
+        console.log("[handleResummarize] 재요약 성공, 페이지 새로고침")
         // Refresh the page to show new summary
         window.location.reload()
       } else {
+        console.error("[handleResummarize] 재요약 실패:", result.error)
         setError(result.error || "재요약에 실패했습니다.")
       }
     } catch (err) {
