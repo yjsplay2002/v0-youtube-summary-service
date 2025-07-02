@@ -37,23 +37,23 @@ export function getAvailableModels(user: User | null): string[] {
   switch (tier) {
     case 'admin':
       // Admin can use all models
-      return ['claude-3-5-haiku', 'claude-3-5-sonnet', 'claude-sonnet-4', 'openai-gpt4'];
+      return ['gemini-2.5-flash', 'claude-3-5-haiku', 'claude-3-5-sonnet', 'claude-sonnet-4', 'openai-gpt4'];
     case 'pro_plus':
       // Pro+ can use premium models
-      return ['claude-3-5-haiku', 'claude-3-5-sonnet', 'claude-sonnet-4'];
+      return ['gemini-2.5-flash', 'claude-3-5-haiku', 'claude-3-5-sonnet', 'claude-sonnet-4'];
     case 'pro':
       // Pro can use balanced models
-      return ['claude-3-5-haiku', 'claude-3-5-sonnet'];
+      return ['gemini-2.5-flash', 'claude-3-5-haiku', 'claude-3-5-sonnet'];
     case 'free':
     default:
-      // Free users can only use basic model
-      return ['claude-3-5-haiku'];
+      // Free users can use Gemini and basic Claude model
+      return ['gemini-2.5-flash', 'claude-3-5-haiku'];
   }
 }
 
 export function getDefaultModel(user: User | null): string {
-  // Everyone defaults to Haiku for cost efficiency
-  return 'claude-3-5-haiku';
+  // Everyone defaults to Gemini for cost efficiency
+  return 'gemini-2.5-flash';
 }
 
 export function getSubscriptionLimits(tier: SubscriptionTier) {
