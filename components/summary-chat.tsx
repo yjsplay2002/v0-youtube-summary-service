@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -32,13 +32,74 @@ export function SummaryChat({ summary, videoId }: SummaryChatProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([])
   const [isInitialized, setIsInitialized] = useState(false)
+  const scrollAreaRef = useRef<HTMLDivElement>(null)
 
-  // Initialize chat with AI-generated questions
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    if (scrollAreaRef.current) {
+      const scrollContainer = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]')
+      if (scrollContainer) {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight
+      }
+    }
+  }, [messages])
+
+  // Load existing chat history first, then initialize if no history exists
   useEffect(() => {
     if (summary && !isInitialized) {
-      initializeChat()
+      if (user) {
+        loadChatHistory()
+      } else {
+        // For non-logged users, just initialize without loading history
+        initializeChat()
+      }
     }
-  }, [summary, isInitialized])
+  }, [summary, user, isInitialized])
+
+  const loadChatHistory = async () => {
+    if (!user?.id || !videoId) return
+    
+    setIsLoading(true)
+    try {
+      // First, try to load existing chat history
+      const historyResponse = await fetch(`/api/chat/history?videoId=${videoId}&userId=${user.id}`)
+      
+      if (historyResponse.ok) {
+        const { messages: existingMessages } = await historyResponse.json()
+        
+        if (existingMessages && existingMessages.length > 0) {
+          // Convert timestamp strings back to Date objects
+          const formattedMessages = existingMessages.map((msg: any) => ({
+            ...msg,
+            timestamp: new Date(msg.timestamp)
+          }))
+          
+          setMessages(formattedMessages)
+          
+          // Extract suggested questions from the last AI message
+          const lastAiMessage = formattedMessages
+            .filter((msg: ChatMessage) => msg.type === 'ai')
+            .pop()
+          
+          if (lastAiMessage?.suggested_questions) {
+            setSuggestedQuestions(lastAiMessage.suggested_questions)
+          }
+          
+          setIsInitialized(true)
+          setIsLoading(false)
+          return
+        }
+      }
+      
+      // If no existing history, initialize new chat
+      await initializeChat()
+      
+    } catch (error) {
+      console.error('Error loading chat history:', error)
+      // Fallback to initialization if loading fails
+      await initializeChat()
+    }
+  }
 
   const initializeChat = async () => {
     if (!summary.trim()) return
@@ -146,25 +207,8 @@ export function SummaryChat({ summary, videoId }: SummaryChatProps) {
     sendMessage(inputMessage)
   }
 
-  if (!user) {
-    return (
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <MessageCircle className="h-5 w-5" />
-            AI와 대화하기
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-8 text-muted-foreground">
-            <MessageCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
-            <p>AI와 요약 내용에 대해 대화하시려면 로그인이 필요합니다.</p>
-            <p className="text-sm mt-2">대화 내용은 로그인한 사용자만 저장됩니다.</p>
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
+  // Allow non-logged users to chat, but show a notice about saving
+  const showSaveNotice = !user
 
   return (
     <Card className="mt-6">
@@ -173,10 +217,15 @@ export function SummaryChat({ summary, videoId }: SummaryChatProps) {
           <MessageCircle className="h-5 w-5" />
           AI와 대화하기
         </CardTitle>
+        {showSaveNotice && (
+          <div className="text-sm text-muted-foreground bg-muted p-2 rounded-md">
+            💡 로그인하시면 대화 기록이 저장됩니다.
+          </div>
+        )}
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Chat Messages */}
-        <ScrollArea className="h-96 w-full border rounded-md p-4">
+        <ScrollArea ref={scrollAreaRef} className="h-96 w-full border rounded-md p-4">
           <div className="space-y-4">
             {messages.map((message) => (
               <div key={message.id} className="space-y-2">
