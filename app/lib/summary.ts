@@ -107,97 +107,88 @@ const callClaudeAPI = async (systemPrompt: string, userMessage: string, model: C
 
   const config = CLAUDE_MODEL_CONFIG[model];
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model: config.model,
-      max_tokens: config.maxTokens,
-      temperature: config.temperature,
-      // 사용자의 언어 설정에 따라 응답 언어를 지정하는 프롬프트를 추가합니다.
-      system: systemPrompt + (language ? `\n\nPlease provide the answer in the following language: ${language}.` : ''),
-      messages: [
-        {
-          role: 'user',
-          content: userMessage
-        }
-      ]
-    })
-  });
+  try {
+    console.log(`[callClaudeAPI] Claude API 호출 시작`);
+    
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: config.model,
+        max_tokens: config.maxTokens,
+        temperature: config.temperature,
+        // 사용자의 언어 설정에 따라 응답 언어를 지정하는 프롬프트를 추가합니다.
+        system: systemPrompt + (language ? `\n\nPlease provide the answer in the following language: ${language}.` : ''),
+        messages: [
+          {
+            role: 'user',
+            content: userMessage
+          }
+        ]
+      })
+    });
 
-  if (!response.ok) {
-    if (response.status === 529) {
-      console.warn('[callClaudeAPI] Claude API is overloaded (529).');
-      throw new Error('Claude API server is busy now (529 overloaded)');
+    if (!response.ok) {
+      if (response.status === 529) {
+        console.warn(`[callClaudeAPI] Claude API 과부하 상태 (529)`);
+        throw new Error('Claude AI 서버가 현재 과부하 상태입니다. 잠시 후 다시 시도해주세요. (서버 과부하 - 529)');
+      }
+      
+      if (response.status === 429) {
+        console.warn(`[callClaudeAPI] Claude API 요청 한도 초과 (429)`);
+        throw new Error('Claude AI API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요. (요청 한도 초과 - 429)');
+      }
+      
+      const errorText = await response.text();
+      console.error('[callClaudeAPI] Claude API 요청 중 오류 발생:', response.status, errorText);
+      throw new Error(`Claude AI 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요. (오류 코드: ${response.status})`);
     }
-    const errorText = await response.text();
-    console.error('[callClaudeAPI] Claude API 요청 중 오류 발생:', response.status, errorText);
-    throw new Error(`Claude API error: ${response.status} - ${errorText}`);
-  }
 
-  const data = await response.json();
-  return data.content[0]?.text || "요약을 생성할 수 없습니다.";
+    const data = await response.json();
+    const result = data.content[0]?.text;
+    
+    if (!result) {
+      throw new Error('Claude AI에서 유효한 응답을 받지 못했습니다. 다시 시도해주세요.');
+    }
+    
+    console.log(`[callClaudeAPI] API 호출 성공 - 응답 길이: ${result.length}자`);
+    return result;
+    
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Claude')) {
+      // 이미 사용자 친화적인 메시지인 경우 그대로 throw
+      throw error;
+    }
+    
+    console.error('[callClaudeAPI] 예상치 못한 오류:', error);
+    throw new Error('Claude AI 서비스에 연결할 수 없습니다. 네트워크 연결을 확인하고 다시 시도해주세요.');
+  }
 };
 
 // 데이터베이스에서 시스템 프롬프트를 가져오는 함수
 const getSystemPromptFromDB = async (promptType: PromptType = 'general_summary', language?: string): Promise<string> => {
   try {
-    console.log(`[getSystemPromptFromDB] 프롬프트 타입: ${promptType}, 언어: ${language || 'ko'}`);
+    console.log(`[getSystemPromptFromDB] 프롬프트 타입: ${promptType}`);
     
-    // 언어별 프롬프트 쿼리 로직
-    let query = supabase
+    // 간단한 쿼리 (language 컬럼 없이)
+    const { data, error } = await supabase
       .from('system_prompts')
       .select('prompt_content')
       .eq('prompt_type', promptType)
-      .eq('is_active', true);
-    
-    // 언어가 지정된 경우 해당 언어 프롬프트 우선 검색
-    if (language && language !== 'ko') {
-      query = query.eq('language', language);
-    } else {
-      // 한국어 또는 언어 미지정시 기본 한국어 프롬프트
-      query = query.or(`language.eq.ko,language.is.null`);
-    }
-    
-    const { data, error } = await query.single();
+      .eq('is_active', true)
+      .single();
     
     if (error) {
-      // 특정 언어 프롬프트가 없는 경우 한국어 fallback 시도
-      if (language && language !== 'ko' && error.code === 'PGRST116') {
-        console.log(`[getSystemPromptFromDB] ${language} 언어 프롬프트 없음, 한국어로 fallback`);
-        const fallbackQuery = supabase
-          .from('system_prompts')
-          .select('prompt_content')
-          .eq('prompt_type', promptType)
-          .eq('is_active', true)
-          .or(`language.eq.ko,language.is.null`);
-        
-        const { data: fallbackData, error: fallbackError } = await fallbackQuery.single();
-        
-        if (fallbackError) {
-          console.error('[getSystemPromptFromDB] Fallback DB 조회 오류:', fallbackError);
-          throw fallbackError;
-        }
-        
-        if (!fallbackData || !fallbackData.prompt_content) {
-          console.warn(`[getSystemPromptFromDB] Fallback 프롬프트 타입 '${promptType}'에 대한 데이터가 없음`);
-          throw new Error(`프롬프트 타입 '${promptType}'을 찾을 수 없습니다.`);
-        }
-        
-        console.log(`[getSystemPromptFromDB] Fallback 성공, 프롬프트 길이: ${fallbackData.prompt_content.length} 문자`);
-        return fallbackData.prompt_content;
-      }
-      
       console.error('[getSystemPromptFromDB] DB 조회 오류:', error);
       throw error;
     }
     
     if (!data || !data.prompt_content) {
-      console.warn(`[getSystemPromptFromDB] 프롬프트 타입 '${promptType}', 언어 '${language || 'ko'}'에 대한 데이터가 없음`);
+      console.warn(`[getSystemPromptFromDB] 프롬프트 타입 '${promptType}'에 대한 데이터가 없음`);
       throw new Error(`프롬프트 타입 '${promptType}'을 찾을 수 없습니다.`);
     }
     
@@ -210,7 +201,7 @@ const getSystemPromptFromDB = async (promptType: PromptType = 'general_summary',
 };
 
 // 통합 시스템 프롬프트 가져오기 함수 (DB 우선, 파일 fallback)
-const getSystemPrompt = async (promptType: PromptType = 'general_summary', language?: string): Promise<string> => {
+export const getSystemPrompt = async (promptType: PromptType = 'general_summary', language?: string): Promise<string> => {
   try {
     // 1. 데이터베이스에서 프롬프트 가져오기 시도
     console.log(`[getSystemPrompt] DB에서 프롬프트 가져오기 시도: ${promptType}`);

@@ -2,7 +2,7 @@
 
 import { extractVideoId, fetchTranscript, getVideoDetails, type VideoDetails, type ApifyTranscriptData } from "./lib/youtube";
 import { supabase, supabaseAdmin } from "@/app/lib/supabase";
-import { generateSummary, formatSummaryAsMarkdown, calculateTokenCount, estimateTokensAndCost, type AIModel, type PromptType } from "./lib/summary";
+import { generateSummary, formatSummaryAsMarkdown, calculateTokenCount, estimateTokensAndCost, getSystemPrompt, type AIModel, type PromptType } from "./lib/summary";
 import { isUserAdmin } from "./lib/auth-utils";
 import { extractVideoKeywords, extractVideoTopics } from "./lib/video-keywords";
 import { extractKeywordsFromHistory } from "./lib/curation-utils";
@@ -266,7 +266,7 @@ export async function summarizeYoutubeVideo(
     // 8. Supabase에 저장 (게스트 사용자 우선 처리)
     try {
       if (userId) {
-        // 로그인한 사용자는 개인 테이블에 저장 (dialog 필드에 Apify 전체 데이터 저장)
+        // 로그인한 사용자는 개인 테이블에 저장 (dialog 필드에 Apify 전체 데이터, transcript 필드에 원본 트랜스크립트 저장)
         await upsertUserVideoSummaryToDB({
           user_id: userId,
           video_id: videoId,
@@ -280,7 +280,7 @@ export async function summarizeYoutubeVideo(
           inferred_keywords: inferredKeywords,
           summary: markdown,
           summary_prompt: summaryPrompt,
-          dialog: JSON.stringify(apifyRawData)
+          dialog: JSON.stringify(apifyRawData)  // 원본 트랜스크립트는 dialog에 포함됨
         });
         console.log(`[summarizeYoutubeVideo] 사용자별 Supabase에 요약 결과 저장 완료: ${videoId}`);
       } else {
@@ -370,128 +370,248 @@ export async function fetchVideoDetailsServer(videoId: string): Promise<VideoDet
   }
 }
 
-// 기존 트랜스크립트를 사용하여 다시 요약하는 서버 액션
+// 기존 dialog 데이터를 사용하여 다시 요약하는 서버 액션 (dialog 기반 재작성)
 export async function resummarizeYoutubeVideo(
   videoId: string,
-  userId: string,
-  aiModel: AIModel = 'claude-3-5-haiku',
-  summaryPrompt?: string,
-  promptType: PromptType = 'general_summary',
-  language?: string
+  userId?: string,
+  aiModel: AIModel,
+  promptType: PromptType = 'general_summary'
 ): Promise<{ success: boolean; videoId?: string; error?: string; summary?: string }> {
-  console.log(`[resummarizeYoutubeVideo] 요청 videoId: ${videoId}, userId: ${userId}, AI 모델: ${aiModel}`);
+  console.log(`[resummarizeYoutubeVideo] 재요약 시작 - videoId: ${videoId}, userId: ${userId}, model: ${aiModel}`);
+  
   try {
-    // 1. 사용자 ID 확인
+    // 1. 사용자 권한 확인
     if (!userId) {
-      console.error(`[resummarizeYoutubeVideo] 로그인이 필요합니다.`);
+      console.log(`[resummarizeYoutubeVideo] 사용자 ID 없음`);
       return { success: false, error: "로그인이 필요합니다." };
     }
 
-    // 2. 사용자 권한 확인 및 모델 제한
-    const { data: { user } } = await supabaseAdmin.auth.admin.getUserById(userId);
-    const userIsAdmin = isUserAdmin(user);
-    
-    // 비관리자는 Sonnet 모델까지 사용 가능
-    if (!userIsAdmin && !['claude-3-5-haiku', 'claude-3-5-sonnet'].includes(aiModel)) {
-      console.log(`[resummarizeYoutubeVideo] 비관리자가 제한된 모델 사용 시도: ${aiModel}, Sonnet으로 변경`);
-      aiModel = 'claude-3-5-sonnet';
-    }
-    
-    // 3. 비디오 정보 및 기존 트랜스크립트 가져오기
+    // 2. 기존 dialog 데이터에서 트랜스크립트 추출
     let transcript = "";
-    let title = "";
-    let thumbnail_url = "";
-    let duration = "";
-    let channel_title = "";
+    let videoData = null;
     
-    // 3-1. 사용자별 DB에서 먼저 확인
-    const userSummary = await getUserVideoSummaryFromDB(videoId, userId);
-    if (userSummary) {
-      title = userSummary.video_title;
-      thumbnail_url = userSummary.video_thumbnail || "";
-      duration = userSummary.video_duration || "";
-      channel_title = userSummary.channel_title || "";
-      
-      // 새 DB 구조에서 dialog 필드에서 트랜스크립트 추출
-      if (userSummary.dialog) {
-        try {
-          const dialogData = typeof userSummary.dialog === 'string' 
-            ? JSON.parse(userSummary.dialog) 
-            : userSummary.dialog;
-          
-          if (dialogData && Array.isArray(dialogData)) {
-            transcript = dialogData.map((item: any) => item.text || '').join(' ');
-            console.log(`[resummarizeYoutubeVideo] 사용자 DB에서 트랜스크립트 추출 완료: ${videoId}`);
-          }
-        } catch (error) {
-          console.error(`[resummarizeYoutubeVideo] dialog 파싱 오류:`, error);
-        }
-      }
-    }
+    console.log(`[resummarizeYoutubeVideo] 기존 dialog 데이터 검색 중...`);
     
-    // 3-2. 레거시 DB에서 트랜스크립트 확인 (새 DB에서 트랜스크립트를 찾지 못한 경우)
-    if (!transcript) {
-      const legacySummary = await getYoutubeSummaryFromDB(videoId);
-      if (legacySummary && legacySummary.transcript) {
-        transcript = legacySummary.transcript;
-        if (!title) title = legacySummary.title;
-        if (!thumbnail_url) thumbnail_url = legacySummary.thumbnail_url;
-        if (!channel_title) channel_title = legacySummary.channel_title;
-        console.log(`[resummarizeYoutubeVideo] 레거시 DB에서 트랜스크립트 추출 완료: ${videoId}`);
-      }
-    }
+    // 2-1. 사용자별 요약에서 dialog 필드 확인
+    const { data: userSummary, error: userError } = await supabase
+      .from('video_summaries')
+      .select('*')
+      .eq('video_id', videoId)
+      .eq('user_id', userId)
+      .maybeSingle();
     
-    // 3-3. 트랜스크립트가 없으면 오류 반환
-    if (!transcript) {
-      console.error(`[resummarizeYoutubeVideo] 트랜스크립트를 찾을 수 없습니다: ${videoId}`);
-      return { success: false, error: "트랜스크립트를 찾을 수 없습니다." };
-    }
-    
-    // 3. 비디오 정보가 부족하면 YouTube API로 보완
-    if (!title || !thumbnail_url) {
-      try {
-        const apiKey = process.env.YOUTUBE_API_KEY;
-        if (!apiKey) throw new Error("YOUTUBE_API_KEY is missing");
-        
-        const videoData = await getVideoDetails(videoId);
-        title = title || videoData.items[0].snippet.title;
-        channel_title = channel_title || videoData.items[0].snippet.channelTitle;
-        thumbnail_url = thumbnail_url || videoData.items[0].snippet.thumbnails.high.url;
-        duration = duration || videoData.items[0].contentDetails?.duration;
-      } catch (error) {
-        console.error(`[resummarizeYoutubeVideo] 비디오 정보 보완 실패:`, error);
-        // 비디오 정보 보완 실패는 치명적 오류가 아님 - 계속 진행
-      }
-    }
-    
-    // 4. 요약 생성
-    console.log(`[resummarizeYoutubeVideo] 요약 생성 시작: ${videoId}, 프롬프트 타입: ${promptType}`);
-    const summary = await generateSummary(transcript, aiModel, summaryPrompt, promptType, language);
-    const markdown = formatSummaryAsMarkdown(summary, videoId);
-    
-    // 5. Supabase에 저장 (기존 dialog 데이터 유지)
-    let existingDialog = "";
-    if (userSummary && userSummary.dialog) {
-      existingDialog = userSummary.dialog;
-    }
-    
-    await upsertUserVideoSummaryToDB({
-      user_id: userId,
-      video_id: videoId,
-      video_title: title,
-      video_thumbnail: thumbnail_url,
-      video_duration: duration,
-      channel_title: channel_title,
-      summary: markdown,
-      summary_prompt: summaryPrompt,
-      dialog: existingDialog
+    console.log(`[resummarizeYoutubeVideo] 사용자 요약 조회:`, { 
+      found: !!userSummary, 
+      hasDialog: !!userSummary?.dialog
     });
-    console.log(`[resummarizeYoutubeVideo] Supabase에 요약 결과 저장 완료: ${videoId}`);
     
+    if (userSummary?.dialog) {
+      videoData = userSummary;
+      console.log(`[resummarizeYoutubeVideo] 사용자 요약에서 dialog 필드 발견`);
+      console.log(`[resummarizeYoutubeVideo] dialog 원본 데이터:`, {
+        type: typeof userSummary.dialog,
+        isString: typeof userSummary.dialog === 'string',
+        length: typeof userSummary.dialog === 'string' ? userSummary.dialog.length : 'Not string',
+        preview: typeof userSummary.dialog === 'string' ? userSummary.dialog.substring(0, 200) : JSON.stringify(userSummary.dialog).substring(0, 200)
+      });
+      
+      // dialog 필드에서 트랜스크립트 추출
+      try {
+        let dialogData;
+        if (typeof userSummary.dialog === 'string') {
+          // JSON 문자열인 경우 파싱
+          dialogData = JSON.parse(userSummary.dialog);
+          console.log(`[resummarizeYoutubeVideo] JSON 문자열 파싱 완료`);
+        } else {
+          // 이미 객체인 경우 그대로 사용
+          dialogData = userSummary.dialog;
+          console.log(`[resummarizeYoutubeVideo] 이미 객체 형태임`);
+        }
+        
+        console.log(`[resummarizeYoutubeVideo] dialog 파싱 결과:`, {
+          isArray: Array.isArray(dialogData),
+          length: Array.isArray(dialogData) ? dialogData.length : 'Not array',
+          firstItemKeys: Array.isArray(dialogData) && dialogData.length > 0 ? Object.keys(dialogData[0]) : 'No first item',
+          hasTextInFirstItem: Array.isArray(dialogData) && dialogData.length > 0 && 'text' in dialogData[0],
+          firstItemSample: Array.isArray(dialogData) && dialogData.length > 0 ? dialogData[0] : 'No first item'
+        });
+        
+        // dialog 데이터에서 트랜스크립트 추출 (다양한 형태 지원)
+        if (Array.isArray(dialogData) && dialogData.length > 0) {
+          // 배열 형태: [{text: "..."}, ...] 또는 ["text1", "text2", ...]
+          const textParts = dialogData
+            .map((item: any) => {
+              if (typeof item === 'string') return item;
+              if (item && typeof item === 'object' && 'text' in item) return item.text;
+              if (item && typeof item === 'object' && 'content' in item) return item.content;
+              return '';
+            })
+            .filter(text => text && text.trim().length > 0);
+          
+          transcript = textParts.join(' ');
+          console.log(`[resummarizeYoutubeVideo] 배열에서 트랜스크립트 추출:`, {
+            totalItems: dialogData.length,
+            validTextParts: textParts.length,
+            finalLength: transcript.length,
+            preview: transcript.substring(0, 200)
+          });
+        } else if (dialogData && typeof dialogData === 'object') {
+          // 객체 형태: dialog 필드에서 다양한 키 확인
+          console.log(`[resummarizeYoutubeVideo] 객체 형태 dialog 처리:`, {
+            keys: Object.keys(dialogData),
+            hasTranscript: 'transcript' in dialogData,
+            hasDialog: 'dialog' in dialogData,
+            hasItems: 'items' in dialogData,
+            hasContent: 'content' in dialogData
+          });
+          
+          // 가능한 트랜스크립트 필드들 확인
+          if (dialogData.transcript) {
+            if (Array.isArray(dialogData.transcript)) {
+              transcript = dialogData.transcript.map((item: any) => 
+                typeof item === 'string' ? item : (item?.text || item?.content || '')
+              ).join(' ');
+            } else if (typeof dialogData.transcript === 'string') {
+              transcript = dialogData.transcript;
+            }
+            console.log(`[resummarizeYoutubeVideo] transcript 필드에서 추출: ${transcript.length}자`);
+          } else if (dialogData.dialog && Array.isArray(dialogData.dialog)) {
+            transcript = dialogData.dialog.map((item: any) => 
+              typeof item === 'string' ? item : (item?.text || item?.content || '')
+            ).join(' ');
+            console.log(`[resummarizeYoutubeVideo] dialog 필드에서 추출: ${transcript.length}자`);
+          } else if (dialogData.items && Array.isArray(dialogData.items)) {
+            transcript = dialogData.items.map((item: any) => 
+              typeof item === 'string' ? item : (item?.text || item?.content || '')
+            ).join(' ');
+            console.log(`[resummarizeYoutubeVideo] items 필드에서 추출: ${transcript.length}자`);
+          } else if (dialogData.content) {
+            transcript = typeof dialogData.content === 'string' ? dialogData.content : '';
+            console.log(`[resummarizeYoutubeVideo] content 필드에서 추출: ${transcript.length}자`);
+          } else {
+            // 모든 값들을 문자열로 합치기 (최후의 수단)
+            const allValues = Object.values(dialogData)
+              .filter(val => typeof val === 'string' && val.trim().length > 10)
+              .join(' ');
+            if (allValues.length > 0) {
+              transcript = allValues;
+              console.log(`[resummarizeYoutubeVideo] 모든 문자열 값에서 추출: ${transcript.length}자`);
+            }
+          }
+          
+          if (transcript.trim().length === 0) {
+            console.warn(`[resummarizeYoutubeVideo] 객체에서 트랜스크립트 추출 실패, 원본:`, dialogData);
+          }
+        } else {
+          console.warn(`[resummarizeYoutubeVideo] dialog 데이터가 예상 형식이 아님:`, { 
+            type: typeof dialogData,
+            isArray: Array.isArray(dialogData),
+            keys: dialogData && typeof dialogData === 'object' ? Object.keys(dialogData).slice(0, 10) : 'No keys',
+            sample: dialogData
+          });
+        }
+      } catch (parseError) {
+        console.error(`[resummarizeYoutubeVideo] dialog 파싱 오류:`, parseError);
+        console.error(`[resummarizeYoutubeVideo] 원본 dialog 값:`, userSummary.dialog);
+      }
+    }
+    
+    // 2-2. 레거시 요약에서 찾기 (사용자 요약에서 트랜스크립트를 찾지 못한 경우)
+    if (!transcript) {
+      console.log(`[resummarizeYoutubeVideo] 사용자 요약에서 트랜스크립트 없음, 레거시 요약 확인 중...`);
+      
+      const { data: legacySummary, error: legacyError } = await supabase
+        .from('youtube_summaries')
+        .select('*')
+        .eq('video_id', videoId)
+        .maybeSingle();
+      
+      console.log(`[resummarizeYoutubeVideo] 레거시 요약 조회:`, { found: !!legacySummary, hasTranscript: !!legacySummary?.transcript });
+      
+      if (legacySummary?.transcript) {
+        if (!videoData) videoData = legacySummary;
+        transcript = legacySummary.transcript;
+        console.log(`[resummarizeYoutubeVideo] 레거시 요약에서 트랜스크립트 추출 성공: ${transcript.length}자`);
+      }
+    }
+    
+    // 2-3. 트랜스크립트가 없으면 API로 새로 가져오기
+    if (!transcript || transcript.trim().length === 0) {
+      console.log(`[resummarizeYoutubeVideo] DB에 트랜스크립트 없음, API로 새로 가져오기 시도: ${videoId}`);
+      
+      try {
+        // Apify API로 트랜스크립트 가져오기
+        const apifyRawData = await fetchTranscript(videoId);
+        
+        if (apifyRawData && Array.isArray(apifyRawData) && apifyRawData.length > 0) {
+          transcript = apifyRawData.map((item: any) => item.text || '').join(' ');
+          console.log(`[resummarizeYoutubeVideo] API에서 트랜스크립트 가져오기 성공: ${transcript.length}자`);
+          
+          // 가져온 트랜스크립트를 dialog 필드에 저장 (향후 재요약을 위해)
+          if (userSummary) {
+            await supabase
+              .from('video_summaries')
+              .update({ 
+                dialog: JSON.stringify(apifyRawData)
+              })
+              .eq('video_id', videoId)
+              .eq('user_id', userId);
+            console.log(`[resummarizeYoutubeVideo] 새로 가져온 트랜스크립트 dialog 필드에 저장 완료`);
+          }
+        } else {
+          console.error(`[resummarizeYoutubeVideo] API에서 유효한 트랜스크립트를 가져오지 못함: ${videoId}`);
+          return { success: false, error: "트랜스크립트를 가져올 수 없습니다." };
+        }
+      } catch (fetchError) {
+        console.error(`[resummarizeYoutubeVideo] 트랜스크립트 API 호출 실패:`, fetchError);
+        return { success: false, error: "트랜스크립트를 가져오는데 실패했습니다." };
+      }
+    }
+
+    // 3. 새로운 요약 생성
+    console.log(`[resummarizeYoutubeVideo] 새로운 요약 생성 시작 - 모델: ${aiModel}`);
+    
+    const systemPrompt = await getSystemPrompt(promptType);
+    const userPrompt = `다음은 YouTube 비디오의 전체 대화 내용입니다:\n\n${transcript}\n\n위 내용을 체계적으로 요약해주세요.`;
+    const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
+    
+    const newSummary = await generateSummary(fullPrompt, aiModel);
+    const markdown = formatSummaryAsMarkdown(newSummary, videoId);
+    console.log(`[resummarizeYoutubeVideo] 새로운 요약 생성 완료: ${newSummary.length}자`);
+
+    // 4. 요약 업데이트 (dialog는 그대로 유지)
+    const summaryData = {
+      summary: markdown,
+      updated_at: new Date().toISOString()
+    };
+
+    if (userSummary) {
+      // 기존 사용자 요약 업데이트
+      console.log(`[resummarizeYoutubeVideo] 기존 사용자 요약 업데이트 중...`);
+      
+      const { error: updateError } = await supabase
+        .from('video_summaries')
+        .update(summaryData)
+        .eq('video_id', videoId)
+        .eq('user_id', userId);
+      
+      if (updateError) {
+        console.error(`[resummarizeYoutubeVideo] 요약 업데이트 실패:`, updateError);
+        return { success: false, error: "요약 저장에 실패했습니다." };
+      }
+      
+      console.log(`[resummarizeYoutubeVideo] 요약 업데이트 완료`);
+    } else {
+      console.error(`[resummarizeYoutubeVideo] 사용자 요약을 찾을 수 없어 업데이트 불가: ${videoId}`);
+      return { success: false, error: "요약 데이터를 찾을 수 없습니다." };
+    }
+    
+    console.log(`[resummarizeYoutubeVideo] 재요약 완료: ${videoId}`);
     return { success: true, videoId, summary: markdown };
-  } catch (err) {
-    console.error(`[resummarizeYoutubeVideo] 오류 발생:`, err);
-    return { success: false, error: String(err) };
+    
+  } catch (error) {
+    console.error(`[resummarizeYoutubeVideo] 재요약 중 오류 발생:`, error);
+    return { success: false, error: "재요약 중 오류가 발생했습니다." };
   }
 }
 
