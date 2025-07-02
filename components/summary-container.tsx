@@ -44,7 +44,7 @@ export default function SummaryContainer() {
     }
   }, []);
   
-  // Fetch summary with retry logic
+  // Fetch summary with retry logic and timeout
   const fetchSummaryWithRetry = useCallback(async () => {
     if (!videoId) {
       setSummary(null);
@@ -59,20 +59,46 @@ export default function SummaryContainer() {
       // Only fetch video details if we have a valid summary
       if (result && result.trim() !== "") {
         setIsRetrying(false);
+        retryCountRef.current = 0; // Reset retry count on success
         await fetchVideoDetails(videoId);
-      } else if (retryCountRef.current < 5) { // 게스트 사용자를 위해 재시도 횟수 증가
+      } else if (retryCountRef.current < 3) { // Reduced retry count to prevent infinite loops
         // Retry logic - 게스트 사용자의 경우 DB 저장 시간이 더 걸릴 수 있음
         retryCountRef.current++;
         setIsRetrying(true);
-        const retryDelay = Math.min(1000 * retryCountRef.current, 3000); // 점진적 지연 (최대 3초)
-        timeoutRef.current = setTimeout(fetchSummaryWithRetry, retryDelay);
+        const retryDelay = Math.min(1000 * retryCountRef.current, 2000); // 점진적 지연 (최대 2초)
+        
+        // Add timeout to prevent infinite waiting
+        timeoutRef.current = setTimeout(() => {
+          fetchSummaryWithRetry();
+        }, retryDelay);
+        
+        // Set maximum total wait time (10 seconds)
+        if (retryCountRef.current === 1) {
+          setTimeout(() => {
+            if (retryCountRef.current > 0) {
+              console.warn("[SummaryDisplay] Maximum wait time exceeded, stopping retries");
+              setIsRetrying(false);
+              retryCountRef.current = 0;
+              if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+                timeoutRef.current = null;
+              }
+              // Still try to get video details even if summary failed
+              fetchVideoDetails(videoId);
+            }
+          }, 10000); // 10 second timeout
+        }
       } else {
         // 최종적으로 실패한 경우에도 비디오 정보는 가져오기
+        console.log("[SummaryDisplay] Max retries reached, stopping retry attempts");
         setIsRetrying(false);
+        retryCountRef.current = 0;
         await fetchVideoDetails(videoId);
       }
     } catch (error) {
       console.error("[SummaryDisplay] Error in fetchSummaryWithRetry:", error);
+      setIsRetrying(false);
+      retryCountRef.current = 0;
       // Even if summary fetch failed, try to get video details
       if (videoId) {
         await fetchVideoDetails(videoId);
@@ -103,14 +129,23 @@ export default function SummaryContainer() {
   
   // Fetch data when videoId changes
   useEffect(() => {
+    // Clear any existing timeouts when videoId changes
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    
     if (videoId) {
       retryCountRef.current = 0;
       setIsRetrying(false);
+      setSummary(null); // Clear previous summary immediately
+      setVideoInfo(null); // Clear previous video info immediately
       fetchSummaryWithRetry();
     } else {
       setSummary(null);
       setVideoInfo(null);
       setIsRetrying(false);
+      retryCountRef.current = 0;
     }
     
     return () => {
