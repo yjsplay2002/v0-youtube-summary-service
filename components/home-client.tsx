@@ -47,7 +47,7 @@ export default function HomeClient({ currentVideoId }: HomeClientProps) {
               </p>
             </div>
 
-            <YoutubeForm />
+            <SimpleYoutubeForm />
             
             {/* 큐레이션 섹션 추가 */}
             <div className="mt-16">
