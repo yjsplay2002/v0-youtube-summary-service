@@ -3,8 +3,8 @@ import { FeaturesSection } from "@/components/features-section"
 // import { PricingSection } from "@/components/pricing-section" - Temporarily commented out
 import { FAQSection } from "@/components/faq-section"
 import { Suspense } from "react"
-import { YoutubeForm } from "@/components/youtube-form"
-import SummaryContainer from "@/components/summary-container"
+import { SimpleYoutubeForm } from "@/components/simple-youtube-form"
+import SimpleSummaryContainer from "@/components/simple-summary-container"
 import type { Metadata } from "next"
 
 export const metadata: Metadata = {
@@ -41,10 +41,10 @@ export default function RandingPage() {
             </p>
           </div>
 
-          <YoutubeForm />
+          <SimpleYoutubeForm />
           <div className="mt-10">
             <Suspense fallback={<div className="text-center">Loading summary...</div>}>
-              <SummaryContainer />
+              <SimpleSummaryContainer />
             </Suspense>
           </div>
         </div>
