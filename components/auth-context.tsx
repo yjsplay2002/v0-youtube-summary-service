@@ -25,7 +25,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     supabase.auth.getSession().then(({ data: { session }, error }) => {
       if (error) {
         console.error('Error getting session:', error);
-        // Clear any invalid session data
+        // Clear any invalid session data and local storage
+        if (error.message?.includes('refresh token') || error.message?.includes('Invalid Refresh Token')) {
+          console.log('Clearing invalid refresh token from storage');
+          try {
+            // Clear all possible auth-related items from localStorage
+            const keysToRemove: string[] = [];
+            for (let i = 0; i < localStorage.length; i++) {
+              const key = localStorage.key(i);
+              if (key && key.startsWith('sb-') && key.includes('-auth-token')) {
+                keysToRemove.push(key);
+              }
+            }
+            keysToRemove.forEach(key => localStorage.removeItem(key));
+            
+            // Force sign out to clear any remaining auth state (non-async)
+            supabase.auth.signOut({ scope: 'local' });
+          } catch (clearError) {
+            console.error('Error clearing auth storage:', clearError);
+          }
+        }
         setSession(null);
         setUser(null);
       } else {
@@ -43,6 +62,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       if (event === 'TOKEN_REFRESHED') {
         console.log('Token refreshed successfully');
+        setSession(session);
+        setUser(session?.user ?? null);
       } else if (event === 'SIGNED_OUT') {
         console.log('User signed out');
         setSession(null);
@@ -51,10 +72,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.log('User signed in');
         setSession(session);
         setUser(session?.user ?? null);
+      } else if (event === 'USER_UPDATED') {
+        console.log('User updated');
+        setSession(session);
+        setUser(session?.user ?? null);
       }
       
-      setSession(session);
-      setUser(session?.user ?? null);
+      // Always ensure loading is false after any auth state change
       setLoading(false);
     });
 

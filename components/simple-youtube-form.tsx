@@ -37,8 +37,8 @@ export function SimpleYoutubeForm() {
   
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { user } = useAuth()
-  const { resetSummary } = useSummaryContext()
+  const { user, loading: authLoading } = useAuth()
+  const { refreshSummaries } = useSummaryContext()
   const { registerResetCallback } = useResetContext()
 
   // Initialize form with URL parameter if present
@@ -54,7 +54,8 @@ export function SimpleYoutubeForm() {
   // Handle URL input changes
   const handleUrlChange = async (url: string) => {
     setError(null)
-    resetSummary()
+    // Clear previous summary state instead of calling resetSummary
+    setSummaryExists(false)
     
     const videoId = extractYoutubeVideoId(url)
     if (videoId) {
@@ -94,26 +95,35 @@ export function SimpleYoutubeForm() {
   // Simple function to check if summary exists
   const checkSummaryExists = async (videoId: string, userId?: string): Promise<boolean> => {
     try {
+      console.log(`[checkSummaryExists] Checking for videoId: ${videoId}, userId: ${userId}`)
+      
       // Check user's personal summaries
       if (userId) {
-        const { data: userSummary } = await supabase
+        const { data: userSummary, error: userError } = await supabase
           .from('video_summaries')
           .select('id')
           .eq('video_id', videoId)
           .eq('user_id', userId)
           .maybeSingle()
         
-        if (userSummary) return true
+        console.log(`[checkSummaryExists] User summary result:`, { userSummary, userError })
+        if (userSummary) {
+          console.log(`[checkSummaryExists] Found user summary, returning true`)
+          return true
+        }
       }
       
       // Check legacy summaries
-      const { data: legacySummary } = await supabase
+      const { data: legacySummary, error: legacyError } = await supabase
         .from('youtube_summaries')
         .select('id')
         .eq('video_id', videoId)
         .maybeSingle()
       
-      return Boolean(legacySummary)
+      console.log(`[checkSummaryExists] Legacy summary result:`, { legacySummary, legacyError })
+      const result = Boolean(legacySummary)
+      console.log(`[checkSummaryExists] Final result: ${result}`)
+      return result
     } catch (error) {
       console.error("Error checking summary existence:", error)
       return false
@@ -123,6 +133,9 @@ export function SimpleYoutubeForm() {
   // Initialize user permissions and models
   useEffect(() => {
     const initializeUserSettings = async () => {
+      // Don't initialize if auth is still loading
+      if (authLoading) return
+      
       if (user) {
         try {
           const models = getAvailableModels(user)
@@ -132,6 +145,12 @@ export function SimpleYoutubeForm() {
           setAvailableModels(models)
           setSelectedModel(defaultModel)
           setIsSpecialUser(adminStatus || user.email === 'yjs@lnrgame.com')
+          console.log('User initialized:', { 
+            email: user.email, 
+            role: user.user_metadata?.role, 
+            adminStatus, 
+            models: models.length 
+          })
         } catch (error) {
           console.error('Error initializing user settings:', error)
         }
@@ -140,11 +159,12 @@ export function SimpleYoutubeForm() {
         setAvailableModels(['claude-3-5-haiku'])
         setSelectedModel('claude-3-5-haiku')
         setIsSpecialUser(false)
+        console.log('Guest user initialized')
       }
     }
 
     initializeUserSettings()
-  }, [user])
+  }, [user, authLoading])
 
   // Register reset callback
   useEffect(() => {
@@ -233,7 +253,7 @@ export function SimpleYoutubeForm() {
 
   return (
     <LoadingContext.Provider value={isLoading}>
-      <VideoPlayerProvider>
+      <VideoPlayerProvider value={{ seekTo: () => {} }}>
         <div className="w-full max-w-4xl mx-auto p-4 space-y-6">
           <Card>
             <CardContent className="pt-6">
