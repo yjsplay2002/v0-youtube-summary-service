@@ -24,6 +24,7 @@ import { useSummaryContext } from "@/components/summary-context";
 import { useResetContext } from "@/components/reset-context";
 import { useAuth } from "@/components/auth-context";
 import { getAvailableModels, getDefaultModel, isUserAdmin, getUserSubscriptionTier, getSubscriptionLimits } from "@/app/lib/auth-utils";
+import { supabase } from "@/app/lib/supabase";
 
 export const LoadingContext = createContext(false);
 
@@ -321,34 +322,44 @@ export function YoutubeForm() {
         setVideoLoading(true);
         const info = await fetchVideoDetailsServer(videoId);
         setVideoInfo(info.items[0]);
-        setVideoLoading(false);
         
-        // Check if summary exists, but don't update state immediately to prevent infinite loops
+        // Check if summary exists in database without actually calling getSummary
         try {
-          const summary = await getSummary(videoId, user?.id);
-          // Update summary existence state only after all other state updates are complete
-          // Use a slight delay to avoid synchronization issues
-          setTimeout(() => {
-            setSummaryExists(Boolean(summary && summary.trim() !== ""));
-          }, 100);
+          const { data } = await supabase
+            .from('video_summaries')
+            .select('id')
+            .eq('video_id', videoId)
+            .eq('user_id', user?.id || '')
+            .maybeSingle();
+          
+          const hasUserSummary = Boolean(data);
+          
+          // Also check legacy table for existing summaries
+          let hasLegacySummary = false;
+          if (!hasUserSummary) {
+            const { data: legacyData } = await supabase
+              .from('youtube_summaries')
+              .select('id')
+              .eq('video_id', videoId)
+              .maybeSingle();
+            hasLegacySummary = Boolean(legacyData);
+          }
+          
+          setSummaryExists(hasUserSummary || hasLegacySummary);
         } catch (summaryErr) {
           console.error("Error checking summary existence:", summaryErr);
-          setTimeout(() => {
-            setSummaryExists(false);
-          }, 100);
+          setSummaryExists(false);
         }
+        
+        setVideoLoading(false);
       } catch (err) {
         setVideoInfo(null);
         setVideoLoading(false);
-        setTimeout(() => {
-          setSummaryExists(false);
-        }, 100);
+        setSummaryExists(false);
       }
     } else {
       setVideoInfo(null);
-      setTimeout(() => {
-        setSummaryExists(false);
-      }, 100);
+      setSummaryExists(false);
     }
   }, 500);
 }}
