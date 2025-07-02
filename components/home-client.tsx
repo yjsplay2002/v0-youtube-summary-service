@@ -2,7 +2,7 @@
 
 import { useAuth } from "@/components/auth-context"
 import { YoutubeForm } from "@/components/youtube-form"
-import SummaryDisplay from "@/components/summary-display"
+import SummaryContainer from "@/components/summary-container"
 import { HeroSection } from "@/components/hero-section"
 import { FeaturesSection } from "@/components/features-section"
 import { PricingSection } from "@/components/pricing-section"
@@ -74,7 +74,7 @@ export default function HomeClient({ currentVideoId }: HomeClientProps) {
       <YoutubeForm />
       <div className="mt-10">
         <Suspense fallback={<div className="text-center">Loading summary...</div>}>
-          <SummaryDisplay />
+          <SummaryContainer />
         </Suspense>
       </div>
       
