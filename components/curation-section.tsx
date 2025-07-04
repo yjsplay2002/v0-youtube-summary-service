@@ -95,7 +95,7 @@ export default function CurationSection({ className }: CurationSectionProps) {
         keywordData = await getGuestKeywords();
       }
       
-      setKeywords(keywordData);
+      setKeywords(keywordData || []);
     } catch (err) {
       console.error('키워드 로딩 실패:', err);
       setError('키워드를 불러오는 중 오류가 발생했습니다.');

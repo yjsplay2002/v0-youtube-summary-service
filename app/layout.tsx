@@ -1,12 +1,13 @@
 import type React from "react"
 import type { Metadata } from "next"
 import "./globals.css"
-import { ThemeProvider } from "@/components/theme-provider"
+import { ThemeProvider } from "@/components/providers/theme-provider"
 import { LayoutWrapper } from "@/components/layout-wrapper"
 import { Suspense } from "react"
 import { SummaryProvider } from "@/components/summary-context"
 import { ResetProvider } from "@/components/reset-context"
 import { AuthProvider } from "@/components/auth-context"
+import { AuthErrorHandler } from "@/components/auth-error-handler"
 import { generateWebApplicationStructuredData } from "@/app/lib/structured-data"
 import { Toaster } from "@/components/ui/toaster"
 import { Toaster as SonnerToaster } from "@/components/ui/sonner"
@@ -84,8 +85,14 @@ export default function RootLayout({
             `,
           }}
         />
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          enableSystem={false}
+          disableTransitionOnChange
+        >
           <AuthProvider>
+            <AuthErrorHandler />
             <SummaryProvider>
               <ResetProvider>
                 <Suspense fallback={<div>Loading...</div>}>

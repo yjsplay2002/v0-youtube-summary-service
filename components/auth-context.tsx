@@ -9,6 +9,7 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  isAuthenticated: boolean;
   signInWithGoogle: (redirectPath?: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -148,13 +149,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user,
     session,
     loading,
+    isAuthenticated: !!user,
     signInWithGoogle,
     signOut,
   };
 
   return (
     <AuthContext.Provider value={value}>
-      <AuthErrorHandler />
       {children}
     </AuthContext.Provider>
   );

@@ -12,16 +12,22 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/components/auth-context';
 import { SubscriptionManager } from '@/components/subscription-manager';
+import { supabase } from '@/app/lib/supabase';
 import { LogIn, LogOut, User, Settings } from 'lucide-react';
 
 export function AuthButton() {
-  const { user, loading, signInWithGoogle, signOut } = useAuth();
+  const { user, loading, signOut } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSignIn = async () => {
     setIsLoading(true);
     try {
-      await signInWithGoogle();
+      await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`
+        }
+      });
     } catch (error) {
       console.error('Sign in failed:', error);
     } finally {

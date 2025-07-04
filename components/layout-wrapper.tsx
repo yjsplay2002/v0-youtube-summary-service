@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { SidebarNavigation } from "@/components/sidebar-navigation";
+import { SidebarSimple } from "@/components/sidebar-simple";
 import { SummaryProvider } from "@/components/summary-context";
 import { useState, useEffect } from "react";
 
@@ -27,7 +27,7 @@ export function LayoutWrapper({ children }: LayoutWrapperProps) {
   return (
     <SummaryProvider>
       <div className="flex min-h-screen bg-background">
-        <SidebarNavigation currentVideoId={currentVideoId} />
+        <SidebarSimple currentVideoId={currentVideoId} />
         <main className={`flex-1 ${isMobile ? 'w-full' : ''}`}>
           {children}
         </main>

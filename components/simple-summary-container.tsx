@@ -50,7 +50,7 @@ export default function SimpleSummaryContainer() {
         
         // 2. Get video details
         const videoDetails = await fetchVideoDetailsServer(videoId)
-        const videoInfo = videoDetails.items[0]
+        const videoInfo = videoDetails?.items?.[0]
         
         // 3. Set states
         setSummary(existingSummary || null)
@@ -71,6 +71,35 @@ export default function SimpleSummaryContainer() {
     }
 
     fetchData()
+  }, [videoId, user?.id])
+
+  // Listen for summary update events
+  useEffect(() => {
+    const handleSummaryUpdated = async (event: CustomEvent) => {
+      const { videoId: updatedVideoId } = event.detail
+      console.log("[SimpleSummaryContainer] Summary updated event received:", updatedVideoId)
+      
+      // Only refresh if it's for the current video
+      if (updatedVideoId === videoId) {
+        console.log("[SimpleSummaryContainer] Refreshing summary for current video")
+        setIsLoading(true)
+        try {
+          const existingSummary = await getSummary(videoId, user?.id)
+          setSummary(existingSummary || null)
+          console.log("[SimpleSummaryContainer] Summary refreshed successfully")
+        } catch (error) {
+          console.error("[SimpleSummaryContainer] Error refreshing summary:", error)
+        } finally {
+          setIsLoading(false)
+        }
+      }
+    }
+
+    window.addEventListener('summaryUpdated', handleSummaryUpdated as EventListener)
+    
+    return () => {
+      window.removeEventListener('summaryUpdated', handleSummaryUpdated as EventListener)
+    }
   }, [videoId, user?.id])
 
   // Loading state

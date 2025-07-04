@@ -334,18 +334,18 @@ export function YoutubeForm() {
           
           const hasUserSummary = Boolean(data);
           
-          // Also check legacy table for existing summaries
-          let hasLegacySummary = false;
+          // Also check for other public summaries
+          let hasPublicSummary = false;
           if (!hasUserSummary) {
-            const { data: legacyData } = await supabase
-              .from('youtube_summaries')
+            const { data: publicData } = await supabase
+              .from('video_summaries')
               .select('id')
               .eq('video_id', videoId)
               .maybeSingle();
-            hasLegacySummary = Boolean(legacyData);
+            hasPublicSummary = Boolean(publicData);
           }
           
-          setSummaryExists(hasUserSummary || hasLegacySummary);
+          setSummaryExists(hasUserSummary || hasPublicSummary);
         } catch (summaryErr) {
           console.error("Error checking summary existence:", summaryErr);
           setSummaryExists(false);
@@ -394,11 +394,9 @@ export function YoutubeForm() {
                       try {
                         const result = await resummarizeYoutubeVideo(
                           videoInfo.id,
-                          user.id,
                           selectedModel,
-                          undefined,
-                          selectedPromptType,
-                          userLanguage
+                          user.id,
+                          selectedPromptType
                         );
 
                         if (result.success && result.videoId) {

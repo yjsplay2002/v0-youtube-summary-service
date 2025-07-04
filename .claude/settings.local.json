@@ -32,7 +32,15 @@
       "Bash(cd:*)",
       "Bash(cd:*)",
       "Bash(cd:*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(cd:*)",
+      "Bash(cd:*)",
+      "Bash(cd:*)",
+      "Bash(node:*)",
+      "Bash(rm:*)",
+      "Bash(pkill:*)",
+      "Bash(true)",
+      "Bash(timeout 15 npm run dev)"
     ],
     "deny": []
   }

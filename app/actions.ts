@@ -373,8 +373,8 @@ export async function fetchVideoDetailsServer(videoId: string): Promise<VideoDet
 // 기존 dialog 데이터를 사용하여 다시 요약하는 서버 액션 (dialog 기반 재작성)
 export async function resummarizeYoutubeVideo(
   videoId: string,
-  userId?: string,
   aiModel: AIModel,
+  userId?: string,
   promptType: PromptType = 'general_summary'
 ): Promise<{ success: boolean; videoId?: string; error?: string; summary?: string }> {
   console.log(`[resummarizeYoutubeVideo] 재요약 시작 - videoId: ${videoId}, userId: ${userId}, model: ${aiModel}`);
@@ -618,50 +618,71 @@ export async function resummarizeYoutubeVideo(
 // 사용자별 요약 목록 가져오기 서버 액션
 export async function getAllSummaries(userId?: string) {
   try {
+    console.log(`[getAllSummaries] 시작 - userId: ${userId || 'anonymous'}`);
+    console.log(`[getAllSummaries] 환경 변수 확인:`, {
+      supabaseUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+      supabaseAnonKey: !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      supabaseServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      nodeEnv: process.env.NODE_ENV
+    });
+    
     if (userId) {
-      // 로그인한 사용자는 개인 요약 목록 조회 (모든 데이터)
+      // 로그인한 사용자는 개인 요약 목록 조회
       console.log(`[getAllSummaries] 로그인한 사용자 요약 조회: ${userId}`);
-      // 일반 클라이언트 사용 (RLS 정책에 의존)
-      const { data, error } = await supabase
+      
+      // 서버 액션에서는 supabaseAdmin 사용하여 RLS 우회
+      const { data, error } = await supabaseAdmin
         .from('video_summaries')
-        .select('video_id, video_title, video_thumbnail, channel_title, created_at')
+        .select('video_id, title:video_title, thumbnail_url:video_thumbnail, channel_title, created_at')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
       
       if (error) {
         console.error('[getAllSummaries] 사용자별 DB 조회 에러:', error);
+        console.error('[getAllSummaries] 에러 상세:', {
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint
+        });
         return [];
       }
       
       console.log(`[getAllSummaries] 로그인한 사용자(${userId}) 요약 조회 결과: ${data?.length || 0}개 레코드`);
+      console.log(`[getAllSummaries] 샘플 데이터:`, data?.slice(0, 2));
       
-      return data?.map(item => ({
-        video_id: item.video_id,
-        title: item.video_title,
-        channel_title: item.channel_title || '',
-        thumbnail_url: item.video_thumbnail || '',
-        created_at: item.created_at
-      })) || [];
+      return data || [];
     } else {
-      // 로그인하지 않은 사용자는 레거시 테이블에서 최신 20개만 조회
-      console.log('[getAllSummaries] 로그인하지 않은 사용자 - 레거시 테이블에서 최신 20개 조회');
-      const { data, error } = await supabase
-        .from('youtube_summaries')
-        .select('video_id, title, channel_title, thumbnail_url, created_at')
+      // 로그인하지 않은 사용자는 video_summaries에서 최신 20개만 조회 (공개 데이터)
+      console.log('[getAllSummaries] 로그인하지 않은 사용자 - video_summaries에서 최신 20개 조회');
+      
+      // 서버 액션에서는 supabaseAdmin 사용
+      const { data, error } = await supabaseAdmin
+        .from('video_summaries')
+        .select('video_id, title:video_title, thumbnail_url:video_thumbnail, channel_title, created_at')
         .order('created_at', { ascending: false })
         .limit(20);
       
       if (error) {
-        console.error('[getAllSummaries] 레거시 DB 조회 에러:', error);
+        console.error('[getAllSummaries] video_summaries 테이블 조회 에러:', error);
+        console.error('[getAllSummaries] 에러 상세:', {
+          message: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint
+        });
         return [];
       }
       
-      console.log(`[getAllSummaries] 비로그인 사용자 레거시 테이블 조회 결과: ${data?.length || 0}개 레코드`);
+      console.log(`[getAllSummaries] 비로그인 사용자 video_summaries 조회 결과: ${data?.length || 0}개 레코드`);
+      console.log(`[getAllSummaries] 샘플 데이터:`, data?.slice(0, 2));
       
       return data || [];
     }
   } catch (err) {
     console.error('[getAllSummaries] 오류 발생:', err);
+    console.error('[getAllSummaries] 오류 타입:', typeof err);
+    console.error('[getAllSummaries] 오류 스택:', err?.stack);
     return [];
   }
 }

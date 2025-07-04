@@ -113,15 +113,15 @@ export function SimpleYoutubeForm() {
         }
       }
       
-      // Check legacy summaries
-      const { data: legacySummary, error: legacyError } = await supabase
-        .from('youtube_summaries')
+      // Check all summaries (public access)
+      const { data: publicSummary, error: publicError } = await supabase
+        .from('video_summaries')
         .select('id')
         .eq('video_id', videoId)
         .maybeSingle()
       
-      console.log(`[checkSummaryExists] Legacy summary result:`, { legacySummary, legacyError })
-      const result = Boolean(legacySummary)
+      console.log(`[checkSummaryExists] Public summary result:`, { publicSummary, publicError })
+      const result = Boolean(publicSummary)
       console.log(`[checkSummaryExists] Final result: ${result}`)
       return result
     } catch (error) {
@@ -201,13 +201,20 @@ export function SimpleYoutubeForm() {
     try {
       const result = await summarizeYoutubeVideo(
         youtubeUrl,
-        user?.id,
         selectedModel,
+        undefined, // summaryPrompt
+        user?.id,
         selectedPromptType
       )
 
-      if (result.success) {
+      if (result.success && result.videoId) {
         setSummaryExists(true)
+        // Update URL parameter to trigger summary container refresh
+        const newUrl = new URL(window.location.href)
+        newUrl.searchParams.set('videoId', result.videoId)
+        router.replace(newUrl.pathname + newUrl.search, { scroll: false })
+        // Dispatch custom event to notify summary container
+        window.dispatchEvent(new CustomEvent('summaryUpdated', { detail: { videoId: result.videoId } }))
       } else {
         setError(result.error || "요약 생성에 실패했습니다.")
       }
@@ -290,17 +297,21 @@ export function SimpleYoutubeForm() {
     try {
       const result = await resummarizeYoutubeVideo(
         videoInfo.id,
-        user?.id,
         selectedModel,
+        user?.id,
         selectedPromptType
       )
       
       console.log("[handleResummarize] resummarizeYoutubeVideo 결과:", result)
 
-      if (result.success) {
-        console.log("[handleResummarize] 재요약 성공, 페이지 새로고침")
-        // Refresh the page to show new summary
-        window.location.reload()
+      if (result.success && result.videoId) {
+        console.log("[handleResummarize] 재요약 성공, URL 파라미터 업데이트")
+        // Update URL parameter to trigger summary container refresh
+        const newUrl = new URL(window.location.href)
+        newUrl.searchParams.set('videoId', result.videoId)
+        router.replace(newUrl.pathname + newUrl.search, { scroll: false })
+        // Dispatch custom event to notify summary container
+        window.dispatchEvent(new CustomEvent('summaryUpdated', { detail: { videoId: result.videoId } }))
       } else {
         console.error("[handleResummarize] 재요약 실패:", result.error)
         setError(result.error || "재요약에 실패했습니다.")
