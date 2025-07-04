@@ -13,8 +13,9 @@ const nextConfig = {
   compress: true,
   poweredByHeader: false,
   experimental: {
-    optimizeCss: true,
+    optimizeCss: true
   },
+  serverExternalPackages: ['next-themes'],
   headers: async () => [
     {
       source: '/(.*)',

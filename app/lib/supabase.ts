@@ -13,6 +13,34 @@ export interface VideoSummary {
   inferred_keywords?: string[];
   summary: string;
   summary_prompt?: string;
+  channel_title?: string;
+  dialog?: string;
+  summary_embedding?: number[];
+  description_embedding?: number[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TranscriptChunk {
+  id: string;
+  video_id: string;
+  chunk_index: number;
+  content: string;
+  start_time?: number;
+  end_time?: number;
+  embedding?: number[];
+  token_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  video_id: string;
+  user_id: string;
+  message_type: 'user' | 'ai' | 'system';
+  content: string;
+  suggested_questions?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -24,6 +52,16 @@ export interface Database {
         Row: VideoSummary;
         Insert: Omit<VideoSummary, 'id' | 'created_at' | 'updated_at'>;
         Update: Partial<Omit<VideoSummary, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      transcript_chunks: {
+        Row: TranscriptChunk;
+        Insert: Omit<TranscriptChunk, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<TranscriptChunk, 'id' | 'created_at' | 'updated_at'>>;
+      };
+      chat_messages: {
+        Row: ChatMessage;
+        Insert: Omit<ChatMessage, 'id' | 'created_at' | 'updated_at'>;
+        Update: Partial<Omit<ChatMessage, 'id' | 'created_at' | 'updated_at'>>;
       };
     };
   };

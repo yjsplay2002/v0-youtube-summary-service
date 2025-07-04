@@ -75,16 +75,51 @@ export function SidebarNavigation({ currentVideoId }: SidebarNavigationProps) {
     }
 
     console.log(`[Sidebar] fetchSummaries: 시작. 사용자: ${userIdToFetch}`);
+    console.log(`[Sidebar] 현재 인증 상태:`, { 
+      userId: user?.id, 
+      userEmail: user?.email,
+      hasSession: !!user,
+      loading: loading 
+    });
+    
+    // 인증 상태 확인 추가
+    if (user && !userIdToFetch) {
+      console.warn('[Sidebar] 사용자는 로그인했지만 userId가 없음');
+      setLoading(false);
+      return;
+    }
+    
     isLoadingRef.current = true;
     // setLoading(true)는 loadSummaries 또는 메인 useEffect에서 관리
 
     try {
-      const data = await getAllSummaries(userIdToFetch);
-      setSummaries(data);
+      console.log(`[Sidebar] getAllSummaries 호출 전. 전달할 userId: ${userIdToFetch}`);
+      const data = await getAllSummaries(userIdToFetch) || [];
+      console.log(`[Sidebar] getAllSummaries 응답:`, {
+        isArray: Array.isArray(data),
+        type: typeof data,
+        length: data?.length,
+        sample: data?.slice?.(0, 2),
+        rawData: data
+      });
+      const summariesArray = Array.isArray(data) ? data : [];
+      console.log(`[Sidebar] Setting summaries:`, {
+        originalLength: data?.length,
+        arrayLength: summariesArray.length,
+        firstItem: summariesArray[0]
+      });
+      setSummaries(summariesArray);
       console.log(`[Sidebar] fetchSummaries: 성공. ${data.length}개 항목. 사용자: ${userIdToFetch}`);
       initialLoadCompletedForCurrentUserRef.current = true; // 현재 사용자에 대한 로드 성공적 완료
     } catch (error) {
       console.error("[Sidebar] fetchSummaries: 오류.", error);
+      console.error("[Sidebar] 오류 상세 정보:", {
+        message: error?.message,
+        code: error?.code,
+        details: error?.details,
+        hint: error?.hint,
+        stack: error?.stack
+      });
       initialLoadCompletedForCurrentUserRef.current = false; // 오류 발생 시, 다음 시도 허용
     } finally {
       isLoadingRef.current = false;
@@ -240,6 +275,16 @@ export function SidebarNavigation({ currentVideoId }: SidebarNavigationProps) {
                 ? "아직 요약한 비디오가 없습니다. 새 비디오를 요약해보세요!"
                 : "최근 20개의 요약된 비디오가 없습니다."}
             </p>
+            <button 
+              onClick={() => {
+                console.log('[Debug] Current summaries state:', summaries);
+                console.log('[Debug] Loading state:', loading);
+                console.log('[Debug] User:', user?.id);
+              }}
+              className="mt-2 text-xs bg-gray-200 px-2 py-1 rounded"
+            >
+              디버그 정보 표시
+            </button>
           </div>
         )}
 

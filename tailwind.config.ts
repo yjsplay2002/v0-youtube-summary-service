@@ -60,6 +60,12 @@ const config: Config = {
   				'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
   				border: 'hsl(var(--sidebar-border))',
   				ring: 'hsl(var(--sidebar-ring))'
+  			},
+  			gradient: {
+  				'primary-start': 'hsl(var(--gradient-primary-start))',
+  				'primary-end': 'hsl(var(--gradient-primary-end))',
+  				'secondary-start': 'hsl(var(--gradient-secondary-start))',
+  				'secondary-end': 'hsl(var(--gradient-secondary-end))',
   			}
   		},
   		borderRadius: {

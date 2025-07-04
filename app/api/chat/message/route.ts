@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateSummary } from '@/app/lib/summary'
 import { supabase } from '@/app/lib/supabase'
+import { getEnhancedContext } from '@/app/lib/rag'
 
 interface ChatMessage {
   id: string
@@ -20,12 +21,19 @@ export async function POST(request: NextRequest) {
       conversationHistory 
     } = await request.json()
 
-    if (!message || !summary || !videoId) {
+    if (!message || !videoId) {
       return NextResponse.json(
-        { error: 'Message, summary, and videoId are required' },
+        { error: 'Message and videoId are required' },
         { status: 400 }
       )
     }
+
+    // Get enhanced context using RAG
+    const { context, source, metadata } = await getEnhancedContext(message, videoId, {
+      maxChunks: 3,
+      maxContextLength: 2000,
+      fallbackToSummary: true
+    })
 
     // Build conversation context
     const conversationContext = conversationHistory
@@ -33,19 +41,28 @@ export async function POST(request: NextRequest) {
       ?.map((msg: ChatMessage) => `${msg.type === 'user' ? '사용자' : 'AI'}: ${msg.content}`)
       ?.join('\n') || ''
 
-    // Generate AI response
-    const prompt = `다음은 YouTube 비디오 요약입니다:
+    // Generate enhanced prompt based on context source
+    let contextDescription = '';
+    if (source === 'rag') {
+      contextDescription = '다음은 YouTube 비디오의 관련 부분입니다:';
+    } else if (source === 'summary') {
+      contextDescription = '다음은 YouTube 비디오 요약입니다:';
+    } else {
+      contextDescription = '비디오 정보를 찾을 수 없어 일반적인 답변을 제공합니다:';
+    }
 
-${summary}
+    const prompt = `${contextDescription}
+
+${context || '관련 정보가 없습니다.'}
 
 ${conversationContext ? `이전 대화 내용:
 ${conversationContext}
 
 ` : ''}현재 사용자 질문: ${message}
 
-위 요약을 바탕으로 사용자의 질문에 대해 정확하고 도움이 되는 답변을 해주세요. 
+위 ${source === 'rag' ? '비디오 내용' : source === 'summary' ? '요약' : '정보'}을 바탕으로 사용자의 질문에 대해 정확하고 도움이 되는 답변을 해주세요. 
 답변은 다음 조건을 만족해야 합니다:
-1. 요약 내용을 기반으로 답변
+1. 제공된 컨텍스트를 기반으로 답변
 2. 구체적이고 실용적인 정보 제공
 3. 자연스럽고 친근한 톤 사용
 4. 200자 이내로 간결하게 작성
@@ -110,7 +127,11 @@ JSON 형식으로 응답해주세요:
 
     return NextResponse.json({
       response: parsedResponse.response,
-      followUpQuestions: parsedResponse.followUpQuestions?.slice(0, 3) || []
+      followUpQuestions: parsedResponse.followUpQuestions?.slice(0, 3) || [],
+      metadata: {
+        source,
+        ...(metadata || {})
+      }
     })
 
   } catch (error) {
