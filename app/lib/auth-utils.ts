@@ -5,8 +5,19 @@ export type SubscriptionTier = 'free' | 'pro' | 'pro_plus' | 'admin';
 export function isUserAdmin(user: User | null): boolean {
   if (!user) return false;
   
-  // Check user metadata for admin role
-  return user.user_metadata?.role === 'admin';
+  // Check multiple ways to determine admin status
+  
+  // 1. Check user metadata for admin role
+  if (user.user_metadata?.role === 'admin') return true;
+  
+  // 2. Check app metadata for admin role
+  if (user.app_metadata?.role === 'admin') return true;
+  
+  // 3. Check specific admin emails (fallback)
+  const adminEmails = ['yjs@lnrgame.com'];
+  if (user.email && adminEmails.includes(user.email)) return true;
+  
+  return false;
 }
 
 // Async version that accepts user ID (for backward compatibility)

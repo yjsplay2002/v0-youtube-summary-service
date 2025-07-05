@@ -30,10 +30,16 @@ export function SimpleYoutubeForm() {
   const [videoInfo, setVideoInfo] = useState<any | null>(null)
   const [videoLoading, setVideoLoading] = useState(false)
   const [summaryExists, setSummaryExists] = useState(false)
-  const [selectedModel, setSelectedModel] = useState<AIModel>('claude-3-5-haiku')
+  const [selectedModel, setSelectedModel] = useState<AIModel>('gemini-2.5-flash')
   const selectedPromptType: PromptType = 'general_summary' // Always use default summary style
   const [isSpecialUser, setIsSpecialUser] = useState(false)
   const [availableModels, setAvailableModels] = useState<AIModel[]>([])
+  
+  // 이전 상태를 추적하여 중복 호출 방지
+  const prevUserState = useRef<{user?: any, authLoading: boolean}>({
+    user: undefined,
+    authLoading: true
+  })
   
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -92,10 +98,16 @@ export function SimpleYoutubeForm() {
     }
   }
 
-  // Simple function to check if summary exists
+  // Simple function to check if summary exists (인증 완료 후 실행)
   const checkSummaryExists = async (videoId: string, userId?: string): Promise<boolean> => {
     try {
-      console.log(`[checkSummaryExists] Checking for videoId: ${videoId}, userId: ${userId}`)
+      console.log(`[checkSummaryExists] Checking for videoId: ${videoId}, userId: ${userId}, authLoading: ${authLoading}`)
+      
+      // 인증이 아직 로딩 중이면 false 반환 (데이터 요청 방지)
+      if (authLoading) {
+        console.log(`[checkSummaryExists] 인증 로딩 중 - false 반환`)
+        return false
+      }
       
       // Check user's personal summaries
       if (userId) {
@@ -113,15 +125,16 @@ export function SimpleYoutubeForm() {
         }
       }
       
-      // Check all summaries (public access)
-      const { data: publicSummary, error: publicError } = await supabase
+      // Check guest summaries (user_id is null)
+      const { data: guestSummary, error: guestError } = await supabase
         .from('video_summaries')
         .select('id')
         .eq('video_id', videoId)
+        .is('user_id', null)
         .maybeSingle()
       
-      console.log(`[checkSummaryExists] Public summary result:`, { publicSummary, publicError })
-      const result = Boolean(publicSummary)
+      console.log(`[checkSummaryExists] Guest summary result:`, { guestSummary, guestError })
+      const result = Boolean(guestSummary)
       console.log(`[checkSummaryExists] Final result: ${result}`)
       return result
     } catch (error) {
@@ -130,36 +143,66 @@ export function SimpleYoutubeForm() {
     }
   }
 
-  // Initialize user permissions and models
+  // Initialize user permissions and models (중복 호출 방지)
   useEffect(() => {
+    // 인증이 아직 로딩 중이면 대기
+    if (authLoading) {
+      console.log('[SimpleYoutubeForm] 인증 로딩 중 - 대기')
+      return
+    }
+    
+    const currentState = { user, authLoading }
+    const prevState = prevUserState.current
+    
+    // 상태가 실제로 변경되었는지 확인
+    const hasChanged = 
+      prevState.authLoading !== currentState.authLoading ||
+      prevState.user?.id !== currentState.user?.id ||
+      prevState.user?.email !== currentState.user?.email
+    
+    console.log('[SimpleYoutubeForm] useEffect 트리거:', {
+      current: { authLoading, userId: user?.id, email: user?.email },
+      previous: { authLoading: prevState.authLoading, userId: prevState.user?.id, email: prevState.user?.email },
+      hasChanged
+    })
+    
+    if (!hasChanged) {
+      console.log('[SimpleYoutubeForm] 상태 변경 없음 - 스킵')
+      return
+    }
+    
+    prevUserState.current = currentState
+    
     const initializeUserSettings = async () => {
-      // Don't initialize if auth is still loading
-      if (authLoading) return
+      console.log('[SimpleYoutubeForm] 인증 완료 후 사용자 설정 초기화 시작')
       
       if (user) {
         try {
-          const models = getAvailableModels(user)
-          const defaultModel = getDefaultModel(user)
+          const models = getAvailableModels(user) as AIModel[]
+          const defaultModel = getDefaultModel(user) as AIModel
           const adminStatus = isUserAdmin(user)
           
           setAvailableModels(models)
           setSelectedModel(defaultModel)
           setIsSpecialUser(adminStatus || user.email === 'yjs@lnrgame.com')
-          console.log('User initialized:', { 
+          console.log('[SimpleYoutubeForm] 로그인 사용자 초기화 완료:', { 
             email: user.email, 
-            role: user.user_metadata?.role, 
+            userMetadataRole: user.user_metadata?.role,
+            appMetadataRole: user.app_metadata?.role,
             adminStatus, 
-            models: models.length 
+            models: models.length,
+            hasUserMetadata: !!user.user_metadata,
+            hasAppMetadata: !!user.app_metadata
           })
         } catch (error) {
-          console.error('Error initializing user settings:', error)
+          console.error('[SimpleYoutubeForm] 사용자 설정 초기화 오류:', error)
         }
       } else {
         // Guest user settings
-        setAvailableModels(['claude-3-5-haiku'])
-        setSelectedModel('claude-3-5-haiku')
+        setAvailableModels(['gemini-2.5-flash'])
+        setSelectedModel('gemini-2.5-flash')
         setIsSpecialUser(false)
-        console.log('Guest user initialized')
+        console.log('[SimpleYoutubeForm] 게스트 사용자 초기화 완료')
       }
     }
 
@@ -179,6 +222,25 @@ export function SimpleYoutubeForm() {
     
     registerResetCallback(resetHandler)
   }, [registerResetCallback])
+
+  // 새로운 영상 요약하기 버튼 클릭 이벤트 리스너
+  useEffect(() => {
+    const handleClearVideoInput = () => {
+      console.log('[SimpleYoutubeForm] clearVideoInput 이벤트 수신 - input 초기화');
+      setYoutubeUrl("");
+      setVideoInfo(null);
+      setSummaryExists(false);
+      setError(null);
+      setIsLoading(false);
+      setVideoLoading(false);
+    };
+
+    window.addEventListener('clearVideoInput', handleClearVideoInput);
+    
+    return () => {
+      window.removeEventListener('clearVideoInput', handleClearVideoInput);
+    };
+  }, []);
 
   // Handle form submission for new summarization
   const handleSubmit = async (e: React.FormEvent) => {
@@ -204,7 +266,10 @@ export function SimpleYoutubeForm() {
         selectedModel,
         undefined, // summaryPrompt
         user?.id,
-        selectedPromptType
+        selectedPromptType,
+        undefined, // language
+        user?.email, // userEmail
+        isSpecialUser // isUserAdminFromClient
       )
 
       if (result.success && result.videoId) {
@@ -213,8 +278,17 @@ export function SimpleYoutubeForm() {
         const newUrl = new URL(window.location.href)
         newUrl.searchParams.set('videoId', result.videoId)
         router.replace(newUrl.pathname + newUrl.search, { scroll: false })
-        // Dispatch custom event to notify summary container
-        window.dispatchEvent(new CustomEvent('summaryUpdated', { detail: { videoId: result.videoId } }))
+        
+        // Dispatch events and refresh with slight delays to ensure proper sequencing
+        setTimeout(() => {
+          console.log('[SimpleYoutubeForm] Dispatching summaryUpdated event for:', result.videoId)
+          window.dispatchEvent(new CustomEvent('summaryUpdated', { detail: { videoId: result.videoId } }))
+        }, 200)
+        
+        setTimeout(() => {
+          console.log('[SimpleYoutubeForm] Refreshing sidebar summaries')
+          refreshSummaries()
+        }, 300)
       } else {
         setError(result.error || "요약 생성에 실패했습니다.")
       }
@@ -274,12 +348,13 @@ export function SimpleYoutubeForm() {
       }
       
       if (!userSummary) {
-        const { data: legacySummary } = await supabase
-          .from('youtube_summaries')
+        const { data: guestSummary } = await supabase
+          .from('video_summaries')
           .select('*')
           .eq('video_id', videoInfo.id)
+          .is('user_id', null)
           .maybeSingle()
-        console.log("[handleResummarize] 레거시 요약:", legacySummary)
+        console.log("[handleResummarize] 게스트 요약:", guestSummary)
       }
     } catch (dbError) {
       console.error("[handleResummarize] DB 확인 오류:", dbError)
@@ -299,7 +374,9 @@ export function SimpleYoutubeForm() {
         videoInfo.id,
         selectedModel,
         user?.id,
-        selectedPromptType
+        selectedPromptType,
+        user?.email, // userEmail
+        isSpecialUser // isUserAdminFromClient
       )
       
       console.log("[handleResummarize] resummarizeYoutubeVideo 결과:", result)
@@ -310,8 +387,17 @@ export function SimpleYoutubeForm() {
         const newUrl = new URL(window.location.href)
         newUrl.searchParams.set('videoId', result.videoId)
         router.replace(newUrl.pathname + newUrl.search, { scroll: false })
-        // Dispatch custom event to notify summary container
-        window.dispatchEvent(new CustomEvent('summaryUpdated', { detail: { videoId: result.videoId } }))
+        
+        // Dispatch events and refresh with slight delays to ensure proper sequencing
+        setTimeout(() => {
+          console.log('[handleResummarize] Dispatching summaryUpdated event for:', result.videoId)
+          window.dispatchEvent(new CustomEvent('summaryUpdated', { detail: { videoId: result.videoId } }))
+        }, 200)
+        
+        setTimeout(() => {
+          console.log('[handleResummarize] Refreshing sidebar summaries')
+          refreshSummaries()
+        }, 300)
       } else {
         console.error("[handleResummarize] 재요약 실패:", result.error)
         setError(result.error || "재요약에 실패했습니다.")

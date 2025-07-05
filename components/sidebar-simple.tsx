@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -12,7 +12,8 @@ import {
   User, 
   RefreshCw, 
   MessageSquare,
-  Loader2
+  Loader2,
+  Plus
 } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/components/auth-context";
@@ -20,6 +21,7 @@ import { AuthButton } from "@/components/auth-button";
 import { getUserSubscriptionTier } from "@/app/lib/auth-utils";
 import { UsageTracker } from "@/components/usage-tracker";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { useSummaryContext } from "@/components/summary-context";
 
 interface Summary {
   video_id: string;
@@ -40,8 +42,17 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
   const userTier = getUserSubscriptionTier(user);
+  const { registerRefreshCallback } = useSummaryContext();
+  
+  // 이전 상태를 추적하여 중복 호출 방지
+  const prevAuthState = useRef<{isAuthenticated: boolean, userId?: string}>({
+    isAuthenticated: false,
+    userId: undefined
+  });
+  const hasInitiallyLoaded = useRef(false);
+  const isRequestInProgress = useRef(false);
 
   // 모바일 체크
   useEffect(() => {
@@ -57,9 +68,22 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // 요약 데이터 불러오기
-  const fetchSummaries = async () => {
-    console.log('[SidebarSimple] fetchSummaries 시작');
+  // 요약 데이터 불러오기 (매개변수로 명시적으로 상태 전달)
+  const fetchSummaries = async (forceAuthState?: { isAuthenticated: boolean; userId?: string }) => {
+    // 중복 요청 방지
+    if (isRequestInProgress.current) {
+      console.log('[SidebarSimple] 이미 요청 진행 중 - 스킵');
+      return;
+    }
+    
+    const currentAuthState = forceAuthState || { isAuthenticated, userId: user?.id };
+    
+    console.log('[SidebarSimple] fetchSummaries 시작:', {
+      authState: currentAuthState,
+      isForced: !!forceAuthState
+    });
+    
+    isRequestInProgress.current = true;
     setLoading(true);
     setError(null);
     
@@ -70,8 +94,11 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
       });
 
       // 로그인한 사용자의 경우 userId 추가
-      if (isAuthenticated && user?.id) {
-        params.append('userId', user.id);
+      if (currentAuthState.isAuthenticated && currentAuthState.userId) {
+        params.append('userId', currentAuthState.userId);
+        console.log('[SidebarSimple] 로그인 사용자 요청:', currentAuthState.userId);
+      } else {
+        console.log('[SidebarSimple] 게스트 사용자 요청');
       }
 
       const url = `/api/summaries?${params}`;
@@ -94,24 +121,92 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
       setError(err instanceof Error ? err.message : '요약 데이터를 불러오는데 실패했습니다.');
     } finally {
       setLoading(false);
+      isRequestInProgress.current = false;
     }
   };
 
-  // 컴포넌트 마운트 시 데이터 로딩
+  // 컴포넌트 마운트 및 사용자 변경 시 데이터 로딩 (인증 완료 후)
   useEffect(() => {
-    console.log('[SidebarSimple] 컴포넌트 마운트, 데이터 로딩 시작');
-    fetchSummaries();
-  }, []); // 빈 배열로 마운트 시 한 번만 실행
+    // 인증이 아직 로딩 중이면 대기
+    if (authLoading) {
+      console.log('[SidebarSimple] 인증 로딩 중 - 대기');
+      return;
+    }
+    
+    const currentState = { isAuthenticated, userId: user?.id };
+    const prevState = prevAuthState.current;
+    
+    // 상태가 실제로 변경되었는지 확인 (또는 초기 로딩이 필요한 경우)
+    const hasChanged = 
+      !hasInitiallyLoaded.current ||
+      prevState.isAuthenticated !== currentState.isAuthenticated ||
+      prevState.userId !== currentState.userId;
+    
+    console.log('[SidebarSimple] useEffect 트리거:', {
+      current: currentState,
+      previous: prevState,
+      hasChanged,
+      hasInitiallyLoaded: hasInitiallyLoaded.current,
+      authLoading
+    });
+    
+    if (hasChanged) {
+      console.log('[SidebarSimple] 인증 완료 후 상태 변경 감지 - 데이터 로딩 시작');
+      prevAuthState.current = currentState;
+      hasInitiallyLoaded.current = true;
+      // 명시적으로 현재 상태를 전달
+      fetchSummaries(currentState);
+    } else {
+      console.log('[SidebarSimple] 상태 변경 없음 - 스킵');
+    }
+  }, [isAuthenticated, user?.id, authLoading]);
 
-  // 사용자 변경 시 데이터 다시 로딩
+  // 요약 완료 이벤트 리스너 (새 요약이 생성되었을 때 자동 갱신)
   useEffect(() => {
-    console.log('[SidebarSimple] 사용자 변경 감지:', { isAuthenticated, userId: user?.id });
-    fetchSummaries();
+    const handleSummaryUpdated = (event: CustomEvent) => {
+      console.log('[SidebarSimple] summaryUpdated 이벤트 수신:', event.detail);
+      // 현재 인증 상태를 명시적으로 전달
+      const currentAuthState = { isAuthenticated, userId: user?.id };
+      console.log('[SidebarSimple] summaryUpdated 이벤트에서 현재 인증 상태 사용:', currentAuthState);
+      fetchSummaries(currentAuthState);
+    };
+
+    window.addEventListener('summaryUpdated', handleSummaryUpdated as EventListener);
+    
+    return () => {
+      window.removeEventListener('summaryUpdated', handleSummaryUpdated as EventListener);
+    };
   }, [isAuthenticated, user?.id]);
+
+  // SummaryContext의 refresh 콜백 등록
+  useEffect(() => {
+    const refreshHandler = () => {
+      console.log('[SidebarSimple] SummaryContext refresh 콜백 호출');
+      // 현재 인증 상태를 명시적으로 전달
+      const currentAuthState = { isAuthenticated, userId: user?.id };
+      console.log('[SidebarSimple] SummaryContext refresh에서 현재 인증 상태 사용:', currentAuthState);
+      fetchSummaries(currentAuthState);
+    };
+    
+    registerRefreshCallback(refreshHandler);
+  }, [registerRefreshCallback, isAuthenticated, user?.id]);
 
   const handleRefresh = () => {
     console.log('[SidebarSimple] 새로고침 버튼 클릭');
-    fetchSummaries();
+    // 현재 인증 상태를 명시적으로 전달
+    const currentAuthState = { isAuthenticated, userId: user?.id };
+    console.log('[SidebarSimple] 새로고침 버튼에서 현재 인증 상태 사용:', currentAuthState);
+    fetchSummaries(currentAuthState);
+  };
+
+  const handleNewSummary = () => {
+    console.log('[SidebarSimple] 새로운 영상 요약하기 버튼 클릭');
+    // 메인 페이지의 input field 초기화를 위한 이벤트 발생
+    window.dispatchEvent(new CustomEvent('clearVideoInput'));
+    // URL에서 videoId 파라미터 제거
+    const newUrl = new URL(window.location.href);
+    newUrl.searchParams.delete('videoId');
+    window.history.replaceState({}, '', newUrl.pathname + newUrl.search);
   };
 
   const toggleSidebar = () => {
@@ -173,21 +268,48 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
         </div>
         
         {/* 인증 & 컨트롤 */}
-        <div className="px-4 mb-2 flex items-center justify-between">
-          {!isCollapsed && <AuthButton />}
-          <div className="flex items-center gap-1">
-            {isCollapsed && <ThemeToggle />}
-            <Button 
-              variant="ghost" 
-              size={isCollapsed ? "icon" : "default"} 
-              onClick={handleRefresh} 
-              disabled={loading}
-              className="text-sidebar-muted-foreground"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-              {!isCollapsed && <span className="ml-2">새로고침</span>}
-            </Button>
+        <div className="px-4 mb-2 space-y-2">
+          <div className="flex items-center justify-between">
+            {!isCollapsed && <AuthButton />}
+            <div className="flex items-center gap-1">
+              {isCollapsed && <ThemeToggle />}
+              <Button 
+                variant="ghost" 
+                size={isCollapsed ? "icon" : "default"} 
+                onClick={handleRefresh} 
+                disabled={loading}
+                className="text-sidebar-muted-foreground"
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                {!isCollapsed && <span className="ml-2">새로고침</span>}
+              </Button>
+            </div>
           </div>
+          
+          {/* 새로운 영상 요약하기 버튼 */}
+          {!isCollapsed && (
+            <Button 
+              onClick={handleNewSummary}
+              className="w-full justify-start gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <Plus className="h-4 w-4" />
+              새로운 영상 요약하기
+            </Button>
+          )}
+          
+          {isCollapsed && (
+            <div className="flex justify-center">
+              <Button 
+                variant="default"
+                size="icon"
+                onClick={handleNewSummary}
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
+                title="새로운 영상 요약하기"
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* 사용량 추적 */}

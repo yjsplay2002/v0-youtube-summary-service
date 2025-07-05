@@ -40,7 +40,16 @@
       "Bash(rm:*)",
       "Bash(pkill:*)",
       "Bash(true)",
-      "Bash(timeout 15 npm run dev)"
+      "Bash(timeout 15 npm run dev)",
+      "mcp__ide__getDiagnostics",
+      "Bash(npx supabase:*)",
+      "Bash(supabase:*)",
+      "Bash(brew install:*)",
+      "Bash(ls:*)",
+      "Bash(brew list:*)",
+      "Bash(echo $PATH)",
+      "Bash(export PATH=\"$HOME/.local/bin:$PATH\")",
+      "Bash(~/.local/bin/supabase:*)"
     ],
     "deny": []
   }

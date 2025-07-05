@@ -76,17 +76,30 @@ JSON 형식으로 응답해주세요:
   "followUpQuestions": ["후속질문1", "후속질문2", "후속질문3"]
 }`
 
-    const aiResponse = await generateSummary(prompt, 'claude-3-5-haiku')
+    const aiResponse = await generateSummary(prompt, 'gemini-2.5-flash')
+    
+    console.log('[chat/message] AI Response:', aiResponse)
     
     let parsedResponse: { response: string; followUpQuestions: string[] }
 
     try {
-      // Try to parse as JSON
-      parsedResponse = JSON.parse(aiResponse)
+      // Try to parse as JSON - first attempt with full response
+      let jsonText = aiResponse.trim()
+      
+      // If response contains markdown code blocks, extract JSON from them
+      const jsonMatch = jsonText.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/)
+      if (jsonMatch) {
+        jsonText = jsonMatch[1]
+      }
+      
+      parsedResponse = JSON.parse(jsonText)
       if (!parsedResponse.response) {
         throw new Error('Invalid JSON structure')
       }
+      console.log('[chat/message] Successfully parsed JSON response')
     } catch (parseError) {
+      console.log('[chat/message] JSON parsing failed, using fallback:', parseError)
+      
       // If JSON parsing fails, use the entire response as answer
       parsedResponse = {
         response: aiResponse,

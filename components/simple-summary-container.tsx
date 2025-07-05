@@ -16,7 +16,7 @@ export default function SimpleSummaryContainer() {
   const [videoInfo, setVideoInfo] = useState<any | null>(null)
   const [playerRef, setPlayerRef] = useState<YouTubePlayer | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
 
   // Simple function to handle seeking in the video
   const handleSeek = (seconds: number) => {
@@ -34,7 +34,7 @@ export default function SimpleSummaryContainer() {
     }
   }
 
-  // Fetch existing summary and video details - NO RETRY LOGIC
+  // Fetch existing summary and video details (인증 완료 후)
   useEffect(() => {
     if (!videoId) {
       setSummary(null)
@@ -42,15 +42,34 @@ export default function SimpleSummaryContainer() {
       return
     }
 
+    // 인증이 아직 로딩 중이면 대기
+    if (authLoading) {
+      console.log("[SimpleSummaryContainer] 인증 로딩 중 - 대기")
+      return
+    }
+
     const fetchData = async () => {
+      console.log("[SimpleSummaryContainer] 인증 완료 후 데이터 패칭 시작:", { 
+        videoId, 
+        userId: user?.id, 
+        authLoading 
+      })
       setIsLoading(true)
       try {
-        // 1. Get existing summary (no retries, just check once)
+        // 1. Get existing summary
         const existingSummary = await getSummary(videoId, user?.id)
+        console.log("[SimpleSummaryContainer] Summary fetched:", { 
+          hasExistingSummary: !!existingSummary,
+          summaryLength: existingSummary?.length 
+        })
         
         // 2. Get video details
         const videoDetails = await fetchVideoDetailsServer(videoId)
         const videoInfo = videoDetails?.items?.[0]
+        console.log("[SimpleSummaryContainer] Video details fetched:", { 
+          hasVideoInfo: !!videoInfo,
+          title: videoInfo?.snippet?.title 
+        })
         
         // 3. Set states
         setSummary(existingSummary || null)
@@ -70,34 +89,45 @@ export default function SimpleSummaryContainer() {
       }
     }
 
-    fetchData()
-  }, [videoId, user?.id])
+    // Add a small delay to allow URL changes to settle
+    const timeoutId = setTimeout(fetchData, 100)
+    return () => clearTimeout(timeoutId)
+  }, [videoId, user?.id, authLoading])
 
   // Listen for summary update events
   useEffect(() => {
     const handleSummaryUpdated = async (event: CustomEvent) => {
       const { videoId: updatedVideoId } = event.detail
-      console.log("[SimpleSummaryContainer] Summary updated event received:", updatedVideoId)
+      console.log("[SimpleSummaryContainer] Summary updated event received:", { 
+        updatedVideoId, 
+        currentVideoId: videoId,
+        isMatch: updatedVideoId === videoId 
+      })
       
-      // Only refresh if it's for the current video
-      if (updatedVideoId === videoId) {
-        console.log("[SimpleSummaryContainer] Refreshing summary for current video")
-        setIsLoading(true)
-        try {
-          const existingSummary = await getSummary(videoId, user?.id)
+      // Always refresh if event is received, regardless of videoId match
+      // This handles cases where the URL might be updating
+      console.log("[SimpleSummaryContainer] Refreshing summary after update event")
+      setIsLoading(true)
+      try {
+        // Use the updated videoId from the event if available, otherwise current videoId
+        const targetVideoId = updatedVideoId || videoId
+        if (targetVideoId) {
+          const existingSummary = await getSummary(targetVideoId, user?.id)
           setSummary(existingSummary || null)
-          console.log("[SimpleSummaryContainer] Summary refreshed successfully")
-        } catch (error) {
-          console.error("[SimpleSummaryContainer] Error refreshing summary:", error)
-        } finally {
-          setIsLoading(false)
+          console.log("[SimpleSummaryContainer] Summary refreshed successfully for:", targetVideoId)
         }
+      } catch (error) {
+        console.error("[SimpleSummaryContainer] Error refreshing summary:", error)
+      } finally {
+        setIsLoading(false)
       }
     }
 
+    console.log("[SimpleSummaryContainer] Setting up summaryUpdated event listener for videoId:", videoId)
     window.addEventListener('summaryUpdated', handleSummaryUpdated as EventListener)
     
     return () => {
+      console.log("[SimpleSummaryContainer] Removing summaryUpdated event listener")
       window.removeEventListener('summaryUpdated', handleSummaryUpdated as EventListener)
     }
   }, [videoId, user?.id])

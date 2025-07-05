@@ -33,7 +33,7 @@ export function YoutubeForm() {
   const [summaryExists, setSummaryExists] = useState(false);
   const [loadingStage, setLoadingStage] = useState<"none"|"transcript"|"summary">("none");
   const [youtubeUrl, setYoutubeUrl] = useState("")
-  const [selectedModel, setSelectedModel] = useState<AIModel>("claude-3-5-haiku")
+  const [selectedModel, setSelectedModel] = useState<AIModel>("gemini-2.5-flash")
   const [selectedPromptType, setSelectedPromptType] = useState<PromptType>("general_summary")
   const [availablePromptTypes, setAvailablePromptTypes] = useState<Array<{type: string, title: string, description: string}>>([])
   const [availableModels, setAvailableModels] = useState<Array<{value: string, label: string}>>([])
@@ -72,11 +72,12 @@ export function YoutubeForm() {
     const loadOptions = async () => {
       // 사용자 권한에 따른 사용 가능한 모델 설정
       const models = getAvailableModels(user);
-      setAvailableModels(models);
+      const modelOptions = models.map(model => ({ value: model, label: model }));
+      setAvailableModels(modelOptions);
       
       // 사용자가 현재 선택한 모델이 사용 불가능하면 기본 모델로 변경
       const defaultModel = getDefaultModel(user);
-      if (!models.some(m => m.value === selectedModel)) {
+      if (!models.includes(selectedModel)) {
         setSelectedModel(defaultModel as AIModel);
       }
 
@@ -137,7 +138,7 @@ export function YoutubeForm() {
                 })
                 .catch(() => setSummaryExists(false));
             })
-            .catch(err => {
+            .catch(() => {
               setVideoLoading(false);
               setError("비디오 정보를 불러올 수 없습니다.");
             });

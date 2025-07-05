@@ -1,8 +1,8 @@
 "use server";
 
-import { extractVideoId, fetchTranscript, getVideoDetails, type VideoDetails, type ApifyTranscriptData } from "./lib/youtube";
+import { extractVideoId, fetchTranscript, getVideoDetails, type VideoDetails } from "./lib/youtube";
 import { supabase, supabaseAdmin } from "@/app/lib/supabase";
-import { generateSummary, formatSummaryAsMarkdown, calculateTokenCount, estimateTokensAndCost, getSystemPrompt, type AIModel, type PromptType } from "./lib/summary";
+import { generateSummary, formatSummaryAsMarkdown, calculateTokenCount, getSystemPrompt, type AIModel, type PromptType } from "./lib/summary";
 import { isUserAdmin } from "./lib/auth-utils";
 import { extractVideoKeywords, extractVideoTopics } from "./lib/video-keywords";
 import { extractKeywordsFromHistory } from "./lib/curation-utils";
@@ -31,26 +31,27 @@ async function getUserVideoSummaryFromDB(videoId: string, userId: string) {
   return data;
 }
 
-// 기존 시스템 호환성을 위한 함수 (로그인하지 않은 사용자용)
-async function getYoutubeSummaryFromDB(videoId: string) {
-  console.log(`[게스트 DB 조회] video_id: ${videoId} - 레거시 테이블 조회 시작`);
+// 게스트 사용자용 요약 조회 (video_summaries 테이블에서 user_id가 null인 데이터)
+async function getGuestVideoSummaryFromDB(videoId: string) {
+  console.log(`[게스트 DB 조회] video_id: ${videoId} - video_summaries 테이블에서 게스트 데이터 조회`);
   const { data, error } = await supabase
-    .from('youtube_summaries')
+    .from('video_summaries')
     .select('*')
     .eq('video_id', videoId)
+    .is('user_id', null)
     .single();
 
   if (error) {
     if (error.code === 'PGRST116' && error.details && error.details.includes('0 rows')) {
-      console.log(`[게스트 DB 조회] video_id: ${videoId} - 레거시 테이블에 데이터 없음`); 
+      console.log(`[게스트 DB 조회] video_id: ${videoId} - 게스트 데이터 없음`); 
       return null; 
     } else {
-      console.error(`[게스트 DB 조회] video_id: ${videoId} - 레거시 테이블 조회 에러:`, error);
+      console.error(`[게스트 DB 조회] video_id: ${videoId} - 게스트 데이터 조회 에러:`, error);
       return null; 
     }
   }
   
-  console.log(`[게스트 DB 조회] video_id: ${videoId} - 레거시 테이블에서 데이터 발견`);
+  console.log(`[게스트 DB 조회] video_id: ${videoId} - 게스트 데이터 발견`);
   return data;
 }
 
@@ -136,28 +137,75 @@ async function upsertUserVideoSummaryToDB({
   }
 }
 
-// 기존 시스템 호환성을 위한 함수 (레거시)
-async function upsertYoutubeSummaryToDB({ video_id, transcript, summary, title, channel_title, thumbnail_url }: {
+// 게스트 사용자용 요약 저장 (video_summaries 테이블에 user_id null로 저장)
+async function upsertGuestVideoSummaryToDB({ 
+  video_id, 
+  summary, 
+  video_title, 
+  channel_title, 
+  video_thumbnail, 
+  video_duration,
+  video_tags,
+  video_description,
+  inferred_topics,
+  inferred_keywords,
+  dialog
+}: {
   video_id: string,
-  transcript: string,
   summary: string,
-  title: string,
-  channel_title: string,
-  thumbnail_url: string
+  video_title: string,
+  channel_title?: string,
+  video_thumbnail?: string,
+  video_duration?: string,
+  video_tags?: string[],
+  video_description?: string,
+  inferred_topics?: string[],
+  inferred_keywords?: string[],
+  dialog?: string
 }) {
-  await supabase.from('youtube_summaries').upsert([
-    { video_id, transcript, summary, title, channel_title, thumbnail_url }
-  ]);
+  console.log(`[upsertGuestVideoSummaryToDB] 게스트 요약 저장 시작: ${video_id}`);
+  
+  try {
+    const { data, error } = await supabaseAdmin.from('video_summaries').upsert([
+      { 
+        user_id: null, // 게스트 사용자는 user_id를 null로 설정
+        video_id, 
+        video_title,
+        video_thumbnail,
+        video_duration,
+        channel_title,
+        video_tags,
+        video_description,
+        inferred_topics,
+        inferred_keywords,
+        summary,
+        dialog
+      }
+    ]).select();
+    
+    if (error) {
+      console.error('[게스트 요약 저장 에러]', error);
+      throw error;
+    }
+    
+    console.log(`[upsertGuestVideoSummaryToDB] 게스트 요약 저장 완료: ${video_id}`);
+    return data;
+  } catch (err) {
+    console.error('[upsertGuestVideoSummaryToDB] 예외 발생:', err);
+    throw err;
+  }
 }
 
 // 서버 액션: 유튜브 URL을 받아 자막을 가져오고 요약을 생성
 export async function summarizeYoutubeVideo(
   youtubeUrl: string, 
-  aiModel: AIModel = 'claude-3-5-haiku',
+  aiModel: AIModel = 'gemini-2.5-flash',
   summaryPrompt?: string,
   userId?: string,
   promptType: PromptType = 'general_summary',
-  language?: string
+  language?: string,
+  userEmail?: string,
+  isUserAdminFromClient?: boolean
 ): Promise<{ success: boolean; videoId?: string; error?: string; summary?: string }> {
   console.log(`[summarizeYoutubeVideo] 요청 URL: ${youtubeUrl}, AI 모델: ${aiModel}, userId: ${userId || 'anonymous'}`);
   try {
@@ -171,19 +219,33 @@ export async function summarizeYoutubeVideo(
 
     // 2. 사용자 권한 확인 및 모델 제한
     if (userId) {
-      const { data: { user } } = await supabaseAdmin.auth.admin.getUserById(userId);
-      const userIsAdmin = isUserAdmin(user);
+      console.log(`[summarizeYoutubeVideo] 사용자 정보:`, {
+        userId,
+        userEmail,
+        isUserAdminFromClient
+      });
       
-      // 비관리자는 Sonnet 모델까지 사용 가능
-      if (!userIsAdmin && !['claude-3-5-haiku', 'claude-3-5-sonnet'].includes(aiModel)) {
+      // 클라이언트에서 전달받은 관리자 여부 사용
+      // 추가 보안을 위해 이메일도 다시 한번 확인
+      let userIsAdmin = isUserAdminFromClient || false;
+      if (!userIsAdmin && userEmail) {
+        const adminEmails = ['yjs@lnrgame.com'];
+        userIsAdmin = adminEmails.includes(userEmail);
+        console.log(`[summarizeYoutubeVideo] 이메일 기반 관리자 재확인: ${userEmail} -> ${userIsAdmin}`);
+      }
+      
+      console.log(`[summarizeYoutubeVideo] 최종 관리자 체크 결과: ${userIsAdmin}`);
+      
+      // 비관리자는 Haiku, Sonnet, Gemini 모델 사용 가능
+      if (!userIsAdmin && !['claude-3-5-haiku', 'claude-3-5-sonnet', 'gemini-2.5-flash'].includes(aiModel)) {
         console.log(`[summarizeYoutubeVideo] 비관리자가 제한된 모델 사용 시도: ${aiModel}, Sonnet으로 변경`);
         aiModel = 'claude-3-5-sonnet';
       }
     } else {
-      // 게스트 사용자는 Haiku 모델만 사용 가능
-      if (aiModel !== 'claude-3-5-haiku') {
-        console.log(`[summarizeYoutubeVideo] 게스트가 제한된 모델 사용 시도: ${aiModel}, Haiku로 변경`);
-        aiModel = 'claude-3-5-haiku';
+      // 게스트 사용자는 Gemini 모델만 사용 가능
+      if (aiModel !== 'gemini-2.5-flash') {
+        console.log(`[summarizeYoutubeVideo] 게스트가 제한된 모델 사용 시도: ${aiModel}, Gemini로 변경`);
+        aiModel = 'gemini-2.5-flash';
       }
     }
 
@@ -196,10 +258,10 @@ export async function summarizeYoutubeVideo(
         return { success: true, videoId, summary: dbResult.summary };
       }
     } else {
-      // 로그인하지 않은 사용자는 레거시 테이블에서 조회
-      dbResult = await getYoutubeSummaryFromDB(videoId);
+      // 로그인하지 않은 사용자는 게스트 요약 조회
+      dbResult = await getGuestVideoSummaryFromDB(videoId);
       if (dbResult && dbResult.summary) {
-        console.log(`[summarizeYoutubeVideo] 레거시 DB에서 기존 요약 반환 (videoId: ${videoId})`);
+        console.log(`[summarizeYoutubeVideo] 게스트 DB에서 기존 요약 반환 (videoId: ${videoId})`);
         return { success: true, videoId, summary: dbResult.summary };
       }
     }
@@ -284,17 +346,22 @@ export async function summarizeYoutubeVideo(
         });
         console.log(`[summarizeYoutubeVideo] 사용자별 Supabase에 요약 결과 저장 완료: ${videoId}`);
       } else {
-        // 게스트 사용자는 레거시 테이블에 즉시 저장
-        console.log(`[summarizeYoutubeVideo] 게스트 사용자 - 레거시 테이블에 저장 시작: ${videoId}`);
-        await upsertYoutubeSummaryToDB({
+        // 게스트 사용자는 video_summaries 테이블에 user_id null로 저장
+        console.log(`[summarizeYoutubeVideo] 게스트 사용자 - video_summaries 테이블에 저장 시작: ${videoId}`);
+        await upsertGuestVideoSummaryToDB({
           video_id: videoId,
-          transcript: transcript, // rawData JSON 전체
           summary: markdown,
-          title,
-          channel_title,
-          thumbnail_url
+          video_title: title,
+          channel_title: channel_title,
+          video_thumbnail: thumbnail_url,
+          video_duration: duration,
+          video_tags: tags,
+          video_description: description,
+          inferred_topics: inferredTopics,
+          inferred_keywords: inferredKeywords,
+          dialog: JSON.stringify(apifyRawData)
         });
-        console.log(`[summarizeYoutubeVideo] 게스트 사용자 - 레거시 Supabase에 요약 결과 저장 완료: ${videoId}`);
+        console.log(`[summarizeYoutubeVideo] 게스트 사용자 - video_summaries 테이블에 저장 완료: ${videoId}`);
       }
     } catch (saveError) {
       console.error(`[summarizeYoutubeVideo] DB 저장 오류:`, saveError);
@@ -321,22 +388,22 @@ export async function getSummary(videoId: string, userId?: string): Promise<stri
         return userSummary.summary;
       }
       
-      // 개인 테이블에 없으면 레거시 테이블도 확인 (하위 호환성)
-      console.log(`[getSummary] 개인 테이블에 없음, 레거시 테이블 확인: ${videoId}`);
-      const legacyResult = await getYoutubeSummaryFromDB(videoId);
-      if (legacyResult && legacyResult.summary) {
-        console.log(`[getSummary] 레거시 테이블에서 요약 반환: ${videoId}`);
-        return legacyResult.summary;
+      // 개인 테이블에 없으면 게스트 요약도 확인 (하위 호환성)
+      console.log(`[getSummary] 개인 테이블에 없음, 게스트 요약 확인: ${videoId}`);
+      const guestResult = await getGuestVideoSummaryFromDB(videoId);
+      if (guestResult && guestResult.summary) {
+        console.log(`[getSummary] 게스트 요약에서 요약 반환: ${videoId}`);
+        return guestResult.summary;
       }
     } else {
-      // 로그인하지 않은 사용자: 레거시 테이블에서만 조회
-      console.log(`[getSummary] 게스트 사용자 - 레거시 테이블에서 조회 시작: ${videoId}`);
-      const legacyResult = await getYoutubeSummaryFromDB(videoId);
-      if (legacyResult && legacyResult.summary) {
-        console.log(`[getSummary] 게스트 사용자 - 레거시 테이블에서 요약 반환 성공: ${videoId}`);
-        return legacyResult.summary;
+      // 로그인하지 않은 사용자: 게스트 요약에서만 조회
+      console.log(`[getSummary] 게스트 사용자 - 게스트 요약에서 조회 시작: ${videoId}`);
+      const guestResult = await getGuestVideoSummaryFromDB(videoId);
+      if (guestResult && guestResult.summary) {
+        console.log(`[getSummary] 게스트 사용자 - 게스트 요약에서 요약 반환 성공: ${videoId}`);
+        return guestResult.summary;
       } else {
-        console.warn(`[getSummary] 게스트 사용자 - 레거시 테이블에서 요약을 찾을 수 없음: ${videoId}`);
+        console.warn(`[getSummary] 게스트 사용자 - 게스트 요약에서 요약을 찾을 수 없음: ${videoId}`);
       }
     }
     
@@ -375,7 +442,9 @@ export async function resummarizeYoutubeVideo(
   videoId: string,
   aiModel: AIModel,
   userId?: string,
-  promptType: PromptType = 'general_summary'
+  promptType: PromptType = 'general_summary',
+  userEmail?: string,
+  isUserAdminFromClient?: boolean
 ): Promise<{ success: boolean; videoId?: string; error?: string; summary?: string }> {
   console.log(`[resummarizeYoutubeVideo] 재요약 시작 - videoId: ${videoId}, userId: ${userId}, model: ${aiModel}`);
   
@@ -393,7 +462,7 @@ export async function resummarizeYoutubeVideo(
     console.log(`[resummarizeYoutubeVideo] 기존 dialog 데이터 검색 중...`);
     
     // 2-1. 사용자별 요약에서 dialog 필드 확인
-    const { data: userSummary, error: userError } = await supabase
+    const { data: userSummary } = await supabase
       .from('video_summaries')
       .select('*')
       .eq('video_id', videoId)
@@ -516,22 +585,43 @@ export async function resummarizeYoutubeVideo(
       }
     }
     
-    // 2-2. 레거시 요약에서 찾기 (사용자 요약에서 트랜스크립트를 찾지 못한 경우)
+    // 2-2. 게스트 요약에서 찾기 (사용자 요약에서 트랜스크립트를 찾지 못한 경우)
     if (!transcript) {
-      console.log(`[resummarizeYoutubeVideo] 사용자 요약에서 트랜스크립트 없음, 레거시 요약 확인 중...`);
+      console.log(`[resummarizeYoutubeVideo] 사용자 요약에서 트랜스크립트 없음, 게스트 요약 확인 중...`);
       
-      const { data: legacySummary, error: legacyError } = await supabase
-        .from('youtube_summaries')
+      const { data: guestSummary } = await supabase
+        .from('video_summaries')
         .select('*')
         .eq('video_id', videoId)
+        .is('user_id', null)
         .maybeSingle();
       
-      console.log(`[resummarizeYoutubeVideo] 레거시 요약 조회:`, { found: !!legacySummary, hasTranscript: !!legacySummary?.transcript });
+      console.log(`[resummarizeYoutubeVideo] 게스트 요약 조회:`, { found: !!guestSummary, hasDialog: !!guestSummary?.dialog });
       
-      if (legacySummary?.transcript) {
-        if (!videoData) videoData = legacySummary;
-        transcript = legacySummary.transcript;
-        console.log(`[resummarizeYoutubeVideo] 레거시 요약에서 트랜스크립트 추출 성공: ${transcript.length}자`);
+      if (guestSummary?.dialog) {
+        if (!videoData) videoData = guestSummary;
+        
+        // 게스트 요약의 dialog 필드에서 트랜스크립트 추출
+        try {
+          let dialogData;
+          if (typeof guestSummary.dialog === 'string') {
+            dialogData = JSON.parse(guestSummary.dialog);
+          } else {
+            dialogData = guestSummary.dialog;
+          }
+          
+          if (Array.isArray(dialogData)) {
+            transcript = dialogData.map((item: any) => 
+              typeof item === 'string' ? item : (item?.text || item?.content || '')
+            ).join(' ');
+          } else if (dialogData && typeof dialogData === 'object') {
+            transcript = JSON.stringify(dialogData);
+          }
+          
+          console.log(`[resummarizeYoutubeVideo] 게스트 요약에서 트랜스크립트 추출 성공: ${transcript.length}자`);
+        } catch (parseError) {
+          console.error(`[resummarizeYoutubeVideo] 게스트 요약 dialog 파싱 오류:`, parseError);
+        }
       }
     }
     
@@ -682,7 +772,7 @@ export async function getAllSummaries(userId?: string) {
   } catch (err) {
     console.error('[getAllSummaries] 오류 발생:', err);
     console.error('[getAllSummaries] 오류 타입:', typeof err);
-    console.error('[getAllSummaries] 오류 스택:', err?.stack);
+    console.error('[getAllSummaries] 오류 스택:', (err as Error)?.stack);
     return [];
   }
 }
@@ -892,11 +982,11 @@ export async function getGuestKeywords(): Promise<Array<{keyword: string, freque
   try {
     console.log(`[getGuestKeywords] 게스트 키워드 추출 시작`);
     
-    // 게스트 사용자 요약 데이터 가져오기 (user_id가 null이거나 'guest'인 데이터)
+    // 게스트 사용자 요약 데이터 가져오기 (user_id가 null인 데이터)
     const { data: summaries, error } = await supabase
       .from('video_summaries')
       .select('video_id, video_title, channel_title, video_thumbnail, created_at, inferred_keywords, inferred_topics')
-      .or('user_id.is.null,user_id.eq.guest')
+      .is('user_id', null)
       .not('video_title', 'is', null)
       .order('created_at', { ascending: false })
       .limit(50); // 최근 50개 게스트 요약만 사용
@@ -967,12 +1057,12 @@ export async function checkVideoSummaryExists(videoId: string, userId?: string):
       }
     }
     
-    // 게스트 요약 또는 레거시 요약 확인
+    // 게스트 요약 확인
     const { data: guestSummary, error: guestError } = await supabase
       .from('video_summaries')
       .select('id')
       .eq('video_id', videoId)
-      .or('user_id.is.null,user_id.eq.guest')
+      .is('user_id', null)
       .single();
     
     if (guestError && guestError.code !== 'PGRST116') {

@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     };
   }
 
-  // Test with admin client
+  // Test with admin client - all data
   try {
     const { data: adminData, error: adminError } = await supabaseAdmin
       .from('video_summaries')
@@ -56,6 +56,52 @@ export async function GET(request: NextRequest) {
       success: false,
       error: err.message,
       recordCount: 0
+    };
+  }
+
+  // Test guest data specifically (user_id IS NULL)
+  try {
+    const { data: guestData, error: guestError } = await supabaseAdmin
+      .from('video_summaries')
+      .select('video_id, video_title, user_id, created_at')
+      .is('user_id', null)
+      .limit(5);
+    
+    debug.tests.guestData = {
+      success: !guestError,
+      error: guestError?.message,
+      recordCount: guestData?.length || 0,
+      sampleData: guestData || []
+    };
+  } catch (err) {
+    debug.tests.guestData = {
+      success: false,
+      error: err.message,
+      recordCount: 0,
+      sampleData: []
+    };
+  }
+
+  // Test user data specifically (user_id IS NOT NULL)
+  try {
+    const { data: userData, error: userError } = await supabaseAdmin
+      .from('video_summaries')
+      .select('video_id, video_title, user_id, created_at')
+      .not('user_id', 'is', null)
+      .limit(5);
+    
+    debug.tests.userData = {
+      success: !userError,
+      error: userError?.message,
+      recordCount: userData?.length || 0,
+      sampleData: userData || []
+    };
+  } catch (err) {
+    debug.tests.userData = {
+      success: false,
+      error: err.message,
+      recordCount: 0,
+      sampleData: []
     };
   }
 
