@@ -28,17 +28,30 @@ JSON 형식으로 응답해주세요:
   "questions": ["질문1", "질문2", "질문3"]
 }`
 
-    const aiResponse = await generateSummary(prompt, 'claude-3-5-haiku')
+    const aiResponse = await generateSummary(prompt, 'gemini-2.5-flash')
+    
+    console.log('[chat/initialize] AI Response:', aiResponse)
     
     try {
-      // Try to parse as JSON
-      const parsedResponse = JSON.parse(aiResponse)
+      // Try to parse as JSON - first attempt with full response
+      let jsonText = aiResponse.trim()
+      
+      // If response contains markdown code blocks, extract JSON from them
+      const jsonMatch = jsonText.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/)
+      if (jsonMatch) {
+        jsonText = jsonMatch[1]
+      }
+      
+      const parsedResponse = JSON.parse(jsonText)
       if (parsedResponse.questions && Array.isArray(parsedResponse.questions)) {
+        console.log('[chat/initialize] Successfully parsed JSON questions:', parsedResponse.questions)
         return NextResponse.json({
           questions: parsedResponse.questions.slice(0, 3) // Ensure max 3 questions
         })
       }
     } catch (parseError) {
+      console.log('[chat/initialize] JSON parsing failed, attempting text extraction:', parseError)
+      
       // If JSON parsing fails, extract questions from text
       const questionLines = aiResponse
         .split('\n')
@@ -47,9 +60,26 @@ JSON 형식으로 응답해주세요:
         .slice(0, 3)
 
       if (questionLines.length > 0) {
+        console.log('[chat/initialize] Extracted questions from text:', questionLines)
         return NextResponse.json({
           questions: questionLines
         })
+      }
+      
+      // Try to extract any questions with quotes
+      const quotedQuestions = aiResponse.match(/"([^"]{5,25})"/g)
+      if (quotedQuestions && quotedQuestions.length > 0) {
+        const cleanQuestions = quotedQuestions
+          .map(q => q.replace(/"/g, '').trim())
+          .filter(q => q.length >= 5 && q.length <= 25)
+          .slice(0, 3)
+        
+        if (cleanQuestions.length > 0) {
+          console.log('[chat/initialize] Extracted quoted questions:', cleanQuestions)
+          return NextResponse.json({
+            questions: cleanQuestions
+          })
+        }
       }
     }
 

@@ -10,6 +10,14 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || PAGE_SIZE.toString());
     
+    console.log('[API /summaries] 요청 수신:', {
+      userId,
+      page,
+      limit,
+      isGuestUser: !userId,
+      url: request.url
+    });
+    
     // Validate pagination parameters
     if (page < 1 || limit < 1 || limit > 100) {
       return NextResponse.json(
@@ -33,7 +41,11 @@ export async function GET(request: NextRequest) {
 
     // Apply user filter if provided (for authenticated users)
     if (userId) {
+      console.log('[API /summaries] 로그인 유저 쿼리:', { userId });
       query = query.eq('user_id', userId);
+    } else {
+      console.log('[API /summaries] 게스트 유저 쿼리 (user_id IS NULL)');
+      query = query.is('user_id', null);
     }
 
     // Execute query with pagination
@@ -42,12 +54,18 @@ export async function GET(request: NextRequest) {
       .range(offset, offset + limit - 1);
 
     if (error) {
-      console.error('Error fetching summaries:', error);
+      console.error('[API /summaries] DB 쿼리 에러:', error);
       return NextResponse.json(
         { error: 'Failed to fetch summaries' },
         { status: 500 }
       );
     }
+    
+    console.log('[API /summaries] DB 쿼리 결과:', {
+      resultCount: data?.length || 0,
+      isGuestQuery: !userId,
+      sampleData: data?.slice(0, 2)
+    });
 
     // Get total count for pagination info
     let countQuery = supabaseAdmin
@@ -57,6 +75,9 @@ export async function GET(request: NextRequest) {
     // Apply user filter if provided (for authenticated users)
     if (userId) {
       countQuery = countQuery.eq('user_id', userId);
+    } else {
+      // For unauthenticated users, count guest summaries (user_id is null)
+      countQuery = countQuery.is('user_id', null);
     }
     
     const { count: totalCount } = await countQuery;
