@@ -6,12 +6,37 @@ import { SummaryDisplayClient } from "@/components/summary-display"
 import { getSummary, fetchVideoDetailsServer } from "@/app/actions"
 import { useAuth } from "@/components/auth-context"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import YouTube, { YouTubePlayer } from "react-youtube"
 import { generateVideoSummaryStructuredData, injectStructuredData } from "@/app/lib/structured-data"
+
+interface SummaryData {
+  summary: string;
+  created_at: string;
+  isMine: boolean;
+  isGuest?: boolean;
+  order?: number;
+}
+
+interface AllSummariesData {
+  videoId: string;
+  mySummary?: SummaryData;
+  otherSummaries: SummaryData[];
+  totalSummaries: number;
+  meta: {
+    hasMultipleSummaries: boolean;
+    canUseExistingSummary: boolean;
+    userSpecific: boolean;
+    timestamp: string;
+  };
+}
 
 export default function SimpleSummaryContainer() {
   const searchParams = useSearchParams()
   const videoId = searchParams.get("videoId")
+  const [allSummaries, setAllSummaries] = useState<AllSummariesData | null>(null)
   const [summary, setSummary] = useState<string | null>(null)
   const [videoInfo, setVideoInfo] = useState<any | null>(null)
   const [playerRef, setPlayerRef] = useState<YouTubePlayer | null>(null)
@@ -31,6 +56,25 @@ export default function SimpleSummaryContainer() {
       }
     } else {
       console.warn(`[SimpleSummaryContainer] 비디오 플레이어가 준비되지 않았습니다`)
+    }
+  }
+
+  // Fetch all summaries for a video
+  const fetchAllSummaries = async (videoId: string, userId?: string): Promise<AllSummariesData | null> => {
+    try {
+      const url = `/api/video-summaries?videoId=${encodeURIComponent(videoId)}${userId ? `&userId=${encodeURIComponent(userId)}` : ''}`
+      const response = await fetch(url)
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+      
+      const data = await response.json()
+      console.log(`[SimpleSummaryContainer] 모든 요약 조회 결과:`, data)
+      return data
+    } catch (error) {
+      console.error(`[SimpleSummaryContainer] 모든 요약 조회 실패:`, error)
+      return null
     }
   }
 
@@ -56,12 +100,9 @@ export default function SimpleSummaryContainer() {
       })
       setIsLoading(true)
       try {
-        // 1. Get existing summary
-        const existingSummary = await getSummary(videoId, user?.id)
-        console.log("[SimpleSummaryContainer] Summary fetched:", { 
-          hasExistingSummary: !!existingSummary,
-          summaryLength: existingSummary?.length 
-        })
+        // 1. Get all summaries (including mine and others)
+        const allSummariesData = await fetchAllSummaries(videoId, user?.id)
+        console.log("[SimpleSummaryContainer] All summaries fetched:", allSummariesData)
         
         // 2. Get video details
         const videoDetails = await fetchVideoDetailsServer(videoId)
@@ -72,8 +113,17 @@ export default function SimpleSummaryContainer() {
         })
         
         // 3. Set states
-        setSummary(existingSummary || null)
+        setAllSummaries(allSummariesData)
         setVideoInfo(videoInfo)
+        
+        // Set primary summary (mine if available, otherwise the latest other summary)
+        if (allSummariesData?.mySummary) {
+          setSummary(allSummariesData.mySummary.summary)
+        } else if (allSummariesData?.otherSummaries.length > 0) {
+          setSummary(allSummariesData.otherSummaries[0].summary)
+        } else {
+          setSummary(null)
+        }
         
         // 4. Inject structured data for SEO
         if (videoInfo) {
@@ -82,6 +132,7 @@ export default function SimpleSummaryContainer() {
         }
       } catch (error) {
         console.error("[SimpleSummaryContainer] Error fetching data:", error)
+        setAllSummaries(null)
         setSummary(null)
         setVideoInfo(null)
       } finally {
@@ -97,27 +148,52 @@ export default function SimpleSummaryContainer() {
   // Listen for summary update events
   useEffect(() => {
     const handleSummaryUpdated = async (event: CustomEvent) => {
-      const { videoId: updatedVideoId } = event.detail
+      const { videoId: updatedVideoId, action } = event.detail || {}
       console.log("[SimpleSummaryContainer] Summary updated event received:", { 
         updatedVideoId, 
         currentVideoId: videoId,
+        action,
         isMatch: updatedVideoId === videoId 
       })
       
       // Always refresh if event is received, regardless of videoId match
       // This handles cases where the URL might be updating
-      console.log("[SimpleSummaryContainer] Refreshing summary after update event")
+      console.log("[SimpleSummaryContainer] Refreshing all summaries after update event")
       setIsLoading(true)
+      
       try {
         // Use the updated videoId from the event if available, otherwise current videoId
         const targetVideoId = updatedVideoId || videoId
         if (targetVideoId) {
-          const existingSummary = await getSummary(targetVideoId, user?.id)
-          setSummary(existingSummary || null)
-          console.log("[SimpleSummaryContainer] Summary refreshed successfully for:", targetVideoId)
+          // Add a small delay to ensure database changes have been committed
+          await new Promise(resolve => setTimeout(resolve, 200))
+          
+          const allSummariesData = await fetchAllSummaries(targetVideoId, user?.id)
+          console.log("[SimpleSummaryContainer] Refreshed summaries data:", {
+            hasMySummary: !!allSummariesData?.mySummary,
+            otherSummariesCount: allSummariesData?.otherSummaries?.length || 0,
+            action
+          })
+          
+          setAllSummaries(allSummariesData)
+          
+          // Set primary summary with improved logic
+          if (allSummariesData?.mySummary) {
+            setSummary(allSummariesData.mySummary.summary)
+            console.log("[SimpleSummaryContainer] Set summary to user's own summary")
+          } else if (allSummariesData?.otherSummaries.length > 0) {
+            setSummary(allSummariesData.otherSummaries[0].summary)
+            console.log("[SimpleSummaryContainer] Set summary to latest other summary")
+          } else {
+            setSummary(null)
+            console.log("[SimpleSummaryContainer] No summaries found, cleared summary")
+          }
+          
+          console.log("[SimpleSummaryContainer] All summaries refreshed successfully for:", targetVideoId)
         }
       } catch (error) {
-        console.error("[SimpleSummaryContainer] Error refreshing summary:", error)
+        console.error("[SimpleSummaryContainer] Error refreshing summaries:", error)
+        // Don't clear existing data on error, just log it
       } finally {
         setIsLoading(false)
       }
@@ -190,7 +266,7 @@ export default function SimpleSummaryContainer() {
     )
   }
 
-  // Show summary
+  // Show summary with tabs for multiple summaries
   return (
     <div className="space-y-6">
       {/* Video Player and Info */}
@@ -228,8 +304,93 @@ export default function SimpleSummaryContainer() {
         </div>
       )}
       
-      {/* Summary Display */}
-      <SummaryDisplayClient summary={summary} seekTo={handleSeek} videoId={videoId} />
+      {/* Multiple Summaries Display */}
+      {allSummaries && allSummaries.totalSummaries > 1 ? (
+        <Tabs defaultValue="primary" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="primary">
+              {allSummaries.mySummary ? '내 요약' : '최신 요약'}
+            </TabsTrigger>
+            <TabsTrigger value="others">
+              다른 요약들 ({allSummaries.otherSummaries.length}개)
+            </TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="primary" className="mt-4">
+            {allSummaries.mySummary ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Badge variant="default">내 요약</Badge>
+                    <span className="text-sm font-normal text-muted-foreground">
+                      {new Date(allSummaries.mySummary.created_at).toLocaleDateString('ko-KR')}
+                    </span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <SummaryDisplayClient 
+                    summary={allSummaries.mySummary.summary} 
+                    seekTo={handleSeek} 
+                    videoId={videoId} 
+                  />
+                </CardContent>
+              </Card>
+            ) : allSummaries.otherSummaries.length > 0 ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Badge variant={allSummaries.otherSummaries[0].isGuest ? "secondary" : "outline"}>
+                      {allSummaries.otherSummaries[0].isGuest ? '게스트 요약' : '다른 사용자 요약'}
+                    </Badge>
+                    <span className="text-sm font-normal text-muted-foreground">
+                      {new Date(allSummaries.otherSummaries[0].created_at).toLocaleDateString('ko-KR')}
+                    </span>
+                  </CardTitle>
+                  <CardDescription>
+                    AI API를 다시 호출하지 않고 기존 요약 결과를 보여드립니다.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <SummaryDisplayClient 
+                    summary={allSummaries.otherSummaries[0].summary} 
+                    seekTo={handleSeek} 
+                    videoId={videoId} 
+                  />
+                </CardContent>
+              </Card>
+            ) : null}
+          </TabsContent>
+          
+          <TabsContent value="others" className="mt-4">
+            <div className="space-y-4">
+              {allSummaries.otherSummaries.map((summaryData, index) => (
+                <Card key={index}>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Badge variant={summaryData.isGuest ? "secondary" : "outline"}>
+                        {summaryData.isGuest ? '게스트 요약' : '다른 사용자 요약'} #{summaryData.order}
+                      </Badge>
+                      <span className="text-sm font-normal text-muted-foreground">
+                        {new Date(summaryData.created_at).toLocaleDateString('ko-KR')}
+                      </span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <SummaryDisplayClient 
+                      summary={summaryData.summary} 
+                      seekTo={handleSeek} 
+                      videoId={videoId} 
+                    />
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </TabsContent>
+        </Tabs>
+      ) : (
+        // Single summary display (existing behavior)
+        <SummaryDisplayClient summary={summary} seekTo={handleSeek} videoId={videoId} />
+      )}
     </div>
   )
 }

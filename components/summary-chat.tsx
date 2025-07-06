@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
@@ -226,19 +225,16 @@ export function SummaryChat({ summary, videoId }: SummaryChatProps) {
   const showSaveNotice = !user
 
   return (
-    <Card className="mt-6">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <MessageCircle className="h-5 w-5" />
-          AI와 대화하기
-        </CardTitle>
-        {showSaveNotice && (
-          <div className="text-sm text-muted-foreground bg-muted p-2 rounded-md">
-            💡 로그인하시면 대화 기록이 저장됩니다.
-          </div>
-        )}
-      </CardHeader>
-      <CardContent className="space-y-4">
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 mb-4">
+        <MessageCircle className="h-5 w-5" />
+        <h3 className="text-lg font-semibold">AI와 대화하기</h3>
+      </div>
+      {showSaveNotice && (
+        <div className="text-sm text-muted-foreground bg-muted p-2 rounded-md mb-4">
+          💡 로그인하시면 대화 기록이 저장됩니다.
+        </div>
+      )}
         {/* Chat Messages */}
         <ScrollArea ref={scrollAreaRef} className="h-96 w-full border rounded-md p-4">
           <div className="space-y-4">
@@ -347,7 +343,6 @@ export function SummaryChat({ summary, videoId }: SummaryChatProps) {
             )}
           </Button>
         </form>
-      </CardContent>
-    </Card>
+    </div>
   )
 }
