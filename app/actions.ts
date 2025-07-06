@@ -6,6 +6,7 @@ import { generateSummary, formatSummaryAsMarkdown, calculateTokenCount, getSyste
 import { isUserAdmin } from "./lib/auth-utils";
 import { extractVideoKeywords, extractVideoTopics } from "./lib/video-keywords";
 import { extractKeywordsFromHistory } from "./lib/curation-utils";
+import { processAndStoreVideoChunks } from "@/app/lib/rag";
 
 // Supabase에서 사용자별 요약 조회
 async function getUserVideoSummaryFromDB(videoId: string, userId: string) {
@@ -363,6 +364,28 @@ export async function summarizeYoutubeVideo(
         });
         console.log(`[summarizeYoutubeVideo] 게스트 사용자 - video_summaries 테이블에 저장 완료: ${videoId}`);
       }
+
+      // RAG용 transcript chunks 자동 생성
+      console.log(`[summarizeYoutubeVideo] RAG용 transcript chunks 생성 시작: ${videoId}`);
+      try {
+        const ragResult = await processAndStoreVideoChunks(
+          videoId,
+          JSON.stringify(apifyRawData),
+          {
+            maxTokensPerChunk: 500,
+            overwriteExisting: false // 기존 청크가 있으면 건너뛰기
+          }
+        );
+        
+        if (ragResult.success) {
+          console.log(`[summarizeYoutubeVideo] RAG 청크 생성 완료: ${ragResult.chunksStored}개 청크 저장`);
+        } else {
+          console.warn(`[summarizeYoutubeVideo] RAG 청크 생성 실패: ${ragResult.error}`);
+        }
+      } catch (ragError) {
+        console.error(`[summarizeYoutubeVideo] RAG 처리 중 오류:`, ragError);
+        // RAG 실패해도 요약 기능은 정상 작동하도록 함
+      }
     } catch (saveError) {
       console.error(`[summarizeYoutubeVideo] DB 저장 오류:`, saveError);
       // 저장 실패해도 요약 결과는 반환 (클라이언트에서 사용 가능)
@@ -691,6 +714,29 @@ export async function resummarizeYoutubeVideo(
       }
       
       console.log(`[resummarizeYoutubeVideo] 요약 업데이트 완료`);
+
+      // RAG용 transcript chunks 자동 생성/업데이트
+      console.log(`[resummarizeYoutubeVideo] RAG용 transcript chunks 생성 시작: ${videoId}`);
+      try {
+        // 재요약의 경우 기존 청크를 덮어쓰기
+        const ragResult = await processAndStoreVideoChunks(
+          videoId,
+          transcript,
+          {
+            maxTokensPerChunk: 500,
+            overwriteExisting: true // 재요약이므로 기존 청크를 새로 생성
+          }
+        );
+        
+        if (ragResult.success) {
+          console.log(`[resummarizeYoutubeVideo] RAG 청크 생성 완료: ${ragResult.chunksStored}개 청크 저장`);
+        } else {
+          console.warn(`[resummarizeYoutubeVideo] RAG 청크 생성 실패: ${ragResult.error}`);
+        }
+      } catch (ragError) {
+        console.error(`[resummarizeYoutubeVideo] RAG 처리 중 오류:`, ragError);
+        // RAG 실패해도 재요약 기능은 정상 작동하도록 함
+      }
     } else {
       console.error(`[resummarizeYoutubeVideo] 사용자 요약을 찾을 수 없어 업데이트 불가: ${videoId}`);
       return { success: false, error: "요약 데이터를 찾을 수 없습니다." };

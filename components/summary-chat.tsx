@@ -18,6 +18,15 @@ interface ChatMessage {
   content: string
   timestamp: Date
   suggested_questions?: string[]
+  metadata?: {
+    source?: 'rag' | 'summary' | 'none'
+    contextUsed?: boolean
+    ragEnabled?: boolean
+    chunksUsed?: number
+    maxSimilarity?: number
+    avgSimilarity?: number
+    processingTime?: number
+  }
 }
 
 interface SummaryChatProps {
@@ -166,10 +175,26 @@ export function SummaryChat({ summary, videoId }: SummaryChatProps) {
           type: 'ai',
           content: data.response,
           timestamp: new Date(),
-          suggested_questions: data.followUpQuestions
+          suggested_questions: data.followUpQuestions,
+          metadata: data.metadata
         }
         
         setMessages(prev => [...prev, aiMessage])
+        
+        // Log RAG usage for debugging
+        if (data.metadata) {
+          console.log('[SummaryChat] RAG Debug Info:', {
+            source: data.metadata.source,
+            ragEnabled: data.metadata.ragEnabled,
+            contextUsed: data.metadata.contextUsed,
+            chunksUsed: data.metadata.chunksUsed,
+            similarity: {
+              max: data.metadata.maxSimilarity,
+              avg: data.metadata.avgSimilarity
+            },
+            processingTime: data.metadata.processingTime
+          });
+        }
       } else {
         throw new Error('Failed to send message')
       }
@@ -246,8 +271,27 @@ export function SummaryChat({ summary, videoId }: SummaryChatProps) {
                     ) : (
                       <div className="text-sm whitespace-pre-wrap">{message.content}</div>
                     )}
-                    <div className="text-xs opacity-70 mt-1">
-                      {message.timestamp.toLocaleTimeString()}
+                    <div className="text-xs opacity-70 mt-1 flex items-center gap-2">
+                      <span>{message.timestamp.toLocaleTimeString()}</span>
+                      {message.type === 'ai' && message.metadata && (
+                        <span className="flex items-center gap-1">
+                          {message.metadata.source === 'rag' && (
+                            <span className="bg-green-100 text-green-800 px-1.5 py-0.5 rounded text-xs font-medium dark:bg-green-900 dark:text-green-200">
+                              RAG ({message.metadata.chunksUsed}개 청크)
+                            </span>
+                          )}
+                          {message.metadata.source === 'summary' && (
+                            <span className="bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded text-xs font-medium dark:bg-yellow-900 dark:text-yellow-200">
+                              요약 사용
+                            </span>
+                          )}
+                          {message.metadata.source === 'none' && (
+                            <span className="bg-gray-100 text-gray-800 px-1.5 py-0.5 rounded text-xs font-medium dark:bg-gray-900 dark:text-gray-200">
+                              일반 응답
+                            </span>
+                          )}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

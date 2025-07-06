@@ -158,24 +158,114 @@ export function chunkDialogWithTime(
 }
 
 /**
+ * Extract text content from Apify data structure
+ */
+function extractTextFromApifyData(data: any): string {
+  console.log('[extractTextFromApifyData] Input data type:', typeof data);
+  console.log('[extractTextFromApifyData] Input data preview:', JSON.stringify(data).substring(0, 500));
+  
+  // If it's already a string, return it
+  if (typeof data === 'string') {
+    console.log('[extractTextFromApifyData] Input is string, length:', data.length);
+    return data;
+  }
+  
+  // If it's an object, try to extract transcript/text content
+  if (typeof data === 'object' && data !== null) {
+    // Try common transcript field names
+    const possibleFields = [
+      'transcript', 'text', 'content', 'subtitles', 
+      'captions', 'dialog', 'script', 'transcription'
+    ];
+    
+    for (const field of possibleFields) {
+      if (data[field]) {
+        console.log(`[extractTextFromApifyData] Found content in field: ${field}`);
+        
+        if (typeof data[field] === 'string') {
+          return data[field];
+        } else if (Array.isArray(data[field])) {
+          // Extract text from array of transcript items
+          const textArray = data[field]
+            .map((item: any) => {
+              if (typeof item === 'string') return item;
+              if (item && typeof item === 'object') {
+                return item.text || item.content || item.transcript || '';
+              }
+              return '';
+            })
+            .filter((text: string) => text.trim().length > 0);
+          
+          if (textArray.length > 0) {
+            console.log(`[extractTextFromApifyData] Extracted ${textArray.length} text items from array`);
+            return textArray.join(' ');
+          }
+        }
+      }
+    }
+    
+    // Try to extract from nested objects
+    const values = Object.values(data);
+    for (const value of values) {
+      if (typeof value === 'string' && value.length > 100) {
+        console.log('[extractTextFromApifyData] Found long string in object values');
+        return value;
+      }
+      if (Array.isArray(value) && value.length > 0) {
+        const extracted = extractTextFromApifyData(value);
+        if (extracted && extracted.length > 100) {
+          console.log('[extractTextFromApifyData] Found content in nested array');
+          return extracted;
+        }
+      }
+    }
+    
+    // Last resort: convert entire object to string
+    console.log('[extractTextFromApifyData] Using entire object as fallback');
+    return JSON.stringify(data);
+  }
+  
+  console.log('[extractTextFromApifyData] No text content found, returning empty string');
+  return '';
+}
+
+/**
  * Parse dialog from JSON string and chunk it
  */
 export function parseAndChunkDialog(
   dialogJson: string,
   maxTokensPerChunk: number = 500
 ): TranscriptChunk[] {
+  console.log('[parseAndChunkDialog] Input length:', dialogJson.length);
+  console.log('[parseAndChunkDialog] Input preview:', dialogJson.substring(0, 300));
+  
   try {
     const dialog = JSON.parse(dialogJson);
+    console.log('[parseAndChunkDialog] Parsed JSON type:', typeof dialog);
+    console.log('[parseAndChunkDialog] Is array:', Array.isArray(dialog));
     
-    if (Array.isArray(dialog)) {
+    // Extract text content from the data structure
+    const textContent = extractTextFromApifyData(dialog);
+    console.log('[parseAndChunkDialog] Extracted text length:', textContent.length);
+    
+    if (textContent.length === 0) {
+      console.warn('[parseAndChunkDialog] No text content extracted, returning empty array');
+      return [];
+    }
+    
+    // Check if we have structured dialog data with timestamps
+    if (Array.isArray(dialog) && dialog.length > 0 && 
+        dialog[0] && typeof dialog[0] === 'object' && 
+        (dialog[0].text || dialog[0].content)) {
+      console.log('[parseAndChunkDialog] Using structured dialog chunking');
       return chunkDialogWithTime(dialog, maxTokensPerChunk);
     } else {
-      // Fallback to simple text chunking if not in expected format
-      const text = typeof dialog === 'string' ? dialog : JSON.stringify(dialog);
-      return chunkTranscriptByTokens(text, maxTokensPerChunk);
+      console.log('[parseAndChunkDialog] Using simple text chunking');
+      return chunkTranscriptByTokens(textContent, maxTokensPerChunk);
     }
   } catch (error) {
-    console.error('Failed to parse dialog JSON:', error);
+    console.error('[parseAndChunkDialog] Failed to parse dialog JSON:', error);
+    console.log('[parseAndChunkDialog] Falling back to treating as plain text');
     // Fallback to treating as plain text
     return chunkTranscriptByTokens(dialogJson, maxTokensPerChunk);
   }
