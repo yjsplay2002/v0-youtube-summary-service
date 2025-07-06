@@ -49,7 +49,10 @@
       "Bash(brew list:*)",
       "Bash(echo $PATH)",
       "Bash(export PATH=\"$HOME/.local/bin:$PATH\")",
-      "Bash(~/.local/bin/supabase:*)"
+      "Bash(~/.local/bin/supabase:*)",
+      "Bash(curl:*)",
+      "Bash(tar:*)",
+      "Bash(chmod:*)"
     ],
     "deny": []
   }

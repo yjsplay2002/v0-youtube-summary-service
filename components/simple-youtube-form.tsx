@@ -12,7 +12,6 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useRouter, useSearchParams } from "next/navigation"
 import type { AIModel, PromptType } from "@/app/lib/summary"
 import { extractYoutubeVideoId } from "./youtube-form-utils"
-import YouTube, { YouTubePlayer, YouTubeEvent } from "react-youtube"
 import { VideoPlayerProvider } from "@/components/VideoPlayerContext"
 import { createContext } from "react"
 import { useSummaryContext } from "@/components/summary-context"
@@ -413,125 +412,124 @@ export function SimpleYoutubeForm() {
   return (
     <LoadingContext.Provider value={isLoading}>
       <VideoPlayerProvider value={{ seekTo: () => {} }}>
-        <div className="w-full max-w-4xl mx-auto p-4 space-y-6">
-          <Card>
-            <CardContent className="pt-6">
-              <form onSubmit={handleSubmit} className="space-y-4">
+        <Card>
+          <CardContent className="pt-6">
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="youtube-url">YouTube URL</Label>
+                <Input
+                  id="youtube-url"
+                  type="url"
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  value={youtubeUrl}
+                  onChange={(e) => {
+                    setYoutubeUrl(e.target.value)
+                    handleUrlChange(e.target.value)
+                  }}
+                  className="w-full"
+                  disabled={isLoading}
+                />
+              </div>
+
+              {/* Model Selection */}
+              {availableModels.length > 1 && (
                 <div className="space-y-2">
-                  <Label htmlFor="youtube-url">YouTube URL</Label>
-                  <Input
-                    id="youtube-url"
-                    type="url"
-                    placeholder="https://www.youtube.com/watch?v=..."
-                    value={youtubeUrl}
-                    onChange={(e) => {
-                      setYoutubeUrl(e.target.value)
-                      handleUrlChange(e.target.value)
-                    }}
-                    className="w-full"
+                  <Label htmlFor="model-select">AI Model</Label>
+                  <select
+                    id="model-select"
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value as AIModel)}
+                    className="w-full p-2 border rounded-md"
                     disabled={isLoading}
-                  />
+                  >
+                    {availableModels.map((model) => (
+                      <option key={model} value={model}>
+                        {model}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-
-                {/* Model Selection */}
-                {availableModels.length > 1 && (
-                  <div className="space-y-2">
-                    <Label htmlFor="model-select">AI Model</Label>
-                    <select
-                      id="model-select"
-                      value={selectedModel}
-                      onChange={(e) => setSelectedModel(e.target.value as AIModel)}
-                      className="w-full p-2 border rounded-md"
-                      disabled={isLoading}
-                    >
-                      {availableModels.map((model) => (
-                        <option key={model} value={model}>
-                          {model}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
+              )}
 
 
-                {/* Action Buttons */}
-                <div className="flex flex-col gap-2">
-                  <Button 
-                    type="submit" 
-                    className="shrink-0" 
-                    disabled={isLoading || summaryExists || videoLoading}
-                    style={{minWidth: 120}}
+              {/* Action Buttons */}
+              <div className="flex flex-col gap-2">
+                <Button 
+                  type="submit" 
+                  className="shrink-0" 
+                  disabled={isLoading || summaryExists || videoLoading}
+                  style={{minWidth: 120}}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      처리중...
+                    </>
+                  ) : (
+                    "Summarize"
+                  )}
+                </Button>
+                
+                {summaryExists && isSpecialUser && (
+                  <Button
+                    type="button"
+                    className="shrink-0"
+                    variant="outline"
+                    disabled={isLoading || videoLoading}
+                    onClick={handleResummarize}
                   >
                     {isLoading ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        처리중...
+                        재요약 중...
                       </>
                     ) : (
-                      "Summarize"
+                      "Re-Summarize"
                     )}
                   </Button>
-                  
-                  {summaryExists && isSpecialUser && (
-                    <Button
-                      type="button"
-                      className="shrink-0"
-                      variant="outline"
-                      disabled={isLoading || videoLoading}
-                      onClick={handleResummarize}
-                    >
-                      {isLoading ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          재요약 중...
-                        </>
-                      ) : (
-                        "Re-Summarize"
-                      )}
-                    </Button>
-                  )}
-                  
-                  {/* Debug: Show button conditions */}
-                  {process.env.NODE_ENV === 'development' && (
-                    <div className="text-xs text-gray-500 mt-2 space-y-1">
-                      <div>Debug: summaryExists={summaryExists.toString()}, isSpecialUser={isSpecialUser.toString()}</div>
-                      <div>User email: {user?.email}</div>
-                      <div>User role: {user?.user_metadata?.role}</div>
-                      <div>Available models: {availableModels.join(', ')}</div>
-                    </div>
+                )}
+                
+                {/* Debug: Show button conditions */}
+                {process.env.NODE_ENV === 'development' && (
+                  <div className="text-xs text-gray-500 mt-2 space-y-1">
+                    <div>Debug: summaryExists={summaryExists.toString()}, isSpecialUser={isSpecialUser.toString()}</div>
+                    <div>User email: {user?.email}</div>
+                    <div>User role: {user?.user_metadata?.role}</div>
+                    <div>Available models: {availableModels.join(', ')}</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Video Info Display */}
+              {videoLoading && (
+                <div className="flex items-center space-x-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span className="text-sm text-muted-foreground">비디오 정보를 불러오는 중...</span>
+                </div>
+              )}
+
+              {videoInfo && !videoLoading && (
+                <div className="border rounded-md p-3 bg-muted/50">
+                  <h3 className="font-medium">{videoInfo.snippet.title}</h3>
+                  <p className="text-sm text-muted-foreground">{videoInfo.snippet.channelTitle}</p>
+                  {summaryExists && (
+                    <p className="text-sm text-green-600 mt-1">✓ 요약이 이미 존재합니다</p>
                   )}
                 </div>
+              )}
 
-                {/* Video Info Display */}
-                {videoLoading && (
-                  <div className="flex items-center space-x-2">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span className="text-sm text-muted-foreground">비디오 정보를 불러오는 중...</span>
-                  </div>
-                )}
-
-                {videoInfo && !videoLoading && (
-                  <div className="border rounded-md p-3 bg-muted/50">
-                    <h3 className="font-medium">{videoInfo.snippet.title}</h3>
-                    <p className="text-sm text-muted-foreground">{videoInfo.snippet.channelTitle}</p>
-                    {summaryExists && (
-                      <p className="text-sm text-green-600 mt-1">✓ 요약이 이미 존재합니다</p>
-                    )}
-                  </div>
-                )}
-
-                {/* Error Display */}
-                {error && (
-                  <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertTitle>오류</AlertTitle>
-                    <AlertDescription>{error}</AlertDescription>
-                  </Alert>
-                )}
-              </form>
-            </CardContent>
-          </Card>
-        </div>
+              {/* Error Display */}
+              {error && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>오류</AlertTitle>
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+            </form>
+          </CardContent>
+        </Card>
+      
       </VideoPlayerProvider>
     </LoadingContext.Provider>
   )

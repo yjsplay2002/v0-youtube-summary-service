@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateSummary } from '@/app/lib/summary'
-import { supabase } from '@/app/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 import { getEnhancedContext } from '@/app/lib/rag'
 
 interface ChatMessage {
@@ -114,24 +114,53 @@ JSON 형식으로 응답해주세요:
     // Save conversation to database if user is logged in
     if (userId) {
       try {
+        console.log('[chat/message] Saving user message to database...', { videoId, userId, message })
+        
+        // Create supabase client with service role key for server-side operations
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+        const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+        
+        if (!supabaseServiceKey) {
+          throw new Error('SUPABASE_SERVICE_ROLE_KEY is not configured')
+        }
+        
+        const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false,
+          },
+        })
+        
         // Save user message
-        await supabase.from('chat_messages').insert({
+        const { error: userError } = await supabase.from('chat_messages').insert({
           video_id: videoId,
           user_id: userId,
           message_type: 'user',
-          content: message,
-          created_at: new Date().toISOString()
+          content: message
         })
+        
+        if (userError) {
+          console.error('[chat/message] Error saving user message:', userError)
+          throw userError
+        }
 
+        console.log('[chat/message] Saving AI response to database...', { videoId, userId, response: parsedResponse.response })
+        
         // Save AI response
-        await supabase.from('chat_messages').insert({
+        const { error: aiError } = await supabase.from('chat_messages').insert({
           video_id: videoId,
           user_id: userId,
           message_type: 'ai',
           content: parsedResponse.response,
-          suggested_questions: parsedResponse.followUpQuestions,
-          created_at: new Date().toISOString()
+          suggested_questions: parsedResponse.followUpQuestions
         })
+        
+        if (aiError) {
+          console.error('[chat/message] Error saving AI response:', aiError)
+          throw aiError
+        }
+        
+        console.log('[chat/message] Successfully saved both messages to database')
       } catch (dbError) {
         console.error('Failed to save chat messages to database:', dbError)
         // Continue without throwing error - chat functionality should work even if saving fails
