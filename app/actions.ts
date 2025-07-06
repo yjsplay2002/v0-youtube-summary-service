@@ -250,22 +250,55 @@ export async function summarizeYoutubeVideo(
       }
     }
 
-    // 3. DB에서 기존 요약 조회 (사용자별 또는 전체)
-    let dbResult = null;
-    if (userId) {
-      dbResult = await getUserVideoSummaryFromDB(videoId, userId);
-      if (dbResult && dbResult.summary) {
-        console.log(`[summarizeYoutubeVideo] 사용자별 DB에서 기존 요약 반환 (videoId: ${videoId})`);
-        return { success: true, videoId, summary: dbResult.summary };
-      }
-    } else {
-      // 로그인하지 않은 사용자는 게스트 요약 조회
-      dbResult = await getGuestVideoSummaryFromDB(videoId);
-      if (dbResult && dbResult.summary) {
-        console.log(`[summarizeYoutubeVideo] 게스트 DB에서 기존 요약 반환 (videoId: ${videoId})`);
-        return { success: true, videoId, summary: dbResult.summary };
+    // 3. DB에서 기존 요약 조회 (모든 요약 검색)
+    console.log(`[summarizeYoutubeVideo] 기존 요약 검색 중...`);
+    const summariesResult = await getAllVideoSummaries(videoId, userId);
+    
+    // 3-1. 내 요약이 있으면 바로 반환
+    if (summariesResult.mySummary) {
+      console.log(`[summarizeYoutubeVideo] 내 요약 발견, 바로 반환 (videoId: ${videoId})`);
+      return { success: true, videoId, summary: summariesResult.mySummary.summary };
+    }
+    
+    // 3-2. 내 요약이 없지만 다른 사용자의 요약이 있으면 복사해서 내 요약으로 저장
+    if (summariesResult.otherSummaries.length > 0) {
+      const latestOtherSummary = summariesResult.otherSummaries[0]; // 가장 최근 요약
+      console.log(`[summarizeYoutubeVideo] 다른 사용자의 요약 발견 (${latestOtherSummary.isGuest ? '게스트' : '다른 사용자'}), AI API 호출 없이 복사하여 저장`);
+      
+      try {
+        // 기존 요약을 내 계정에 연결 (AI API 호출 없이)
+        if (userId) {
+          // 기존 요약 찾기
+          const { data: existingSummary } = await supabaseAdmin
+            .from('video_summaries')
+            .select('id')
+            .eq('video_id', videoId)
+            .single();
+          
+          if (existingSummary) {
+            // user_summaries 테이블에 연결 추가
+            await supabaseAdmin
+              .from('user_summaries')
+              .insert({
+                user_id: userId,
+                summary_id: existingSummary.id
+              });
+            console.log(`[summarizeYoutubeVideo] 기존 요약을 내 계정에 연결 완료 (videoId: ${videoId})`);
+          }
+        }
+        
+        return { success: true, videoId, summary: latestOtherSummary.summary };
+      } catch (copyError) {
+        console.error(`[summarizeYoutubeVideo] 요약 복사 중 오류:`, copyError);
+        // 복사 실패 시 기존 요약 그대로 반환
+        return { success: true, videoId, summary: latestOtherSummary.summary };
       }
     }
+    
+    console.log(`[summarizeYoutubeVideo] 기존 요약 없음, 새로 생성 필요 (videoId: ${videoId})`);
+    
+    // 기존 코드는 제거 (위의 새로운 로직으로 대체됨)
+    let dbResult = null;
 
     // 4. 자막 가져오기
     console.log(`[summarizeYoutubeVideo] 자막 가져오기 시도 중...`);
@@ -326,12 +359,13 @@ export async function summarizeYoutubeVideo(
     console.log(`[summarizeYoutubeVideo] 추출된 키워드 (${inferredKeywords.length}개):`, inferredKeywords.slice(0, 5));
     console.log(`[summarizeYoutubeVideo] 추출된 주제 (${inferredTopics.length}개):`, inferredTopics);
 
-    // 8. Supabase에 저장 (게스트 사용자 우선 처리)
+    // 8. Supabase에 저장 (새로운 구조 사용)
     try {
-      if (userId) {
-        // 로그인한 사용자는 개인 테이블에 저장 (dialog 필드에 Apify 전체 데이터, transcript 필드에 원본 트랜스크립트 저장)
-        await upsertUserVideoSummaryToDB({
-          user_id: userId,
+      // 먼저 video_summaries 테이블에 요약 저장 (user_id는 원래 작성자 정보로 유지)
+      const { data: savedSummary } = await supabaseAdmin
+        .from('video_summaries')
+        .insert({
+          user_id: userId || null, // 원래 작성자 정보 유지 (게스트는 null)
           video_id: videoId,
           video_title: title,
           video_thumbnail: thumbnail_url,
@@ -343,26 +377,22 @@ export async function summarizeYoutubeVideo(
           inferred_keywords: inferredKeywords,
           summary: markdown,
           summary_prompt: summaryPrompt,
-          dialog: JSON.stringify(apifyRawData)  // 원본 트랜스크립트는 dialog에 포함됨
-        });
-        console.log(`[summarizeYoutubeVideo] 사용자별 Supabase에 요약 결과 저장 완료: ${videoId}`);
-      } else {
-        // 게스트 사용자는 video_summaries 테이블에 user_id null로 저장
-        console.log(`[summarizeYoutubeVideo] 게스트 사용자 - video_summaries 테이블에 저장 시작: ${videoId}`);
-        await upsertGuestVideoSummaryToDB({
-          video_id: videoId,
-          summary: markdown,
-          video_title: title,
-          channel_title: channel_title,
-          video_thumbnail: thumbnail_url,
-          video_duration: duration,
-          video_tags: tags,
-          video_description: description,
-          inferred_topics: inferredTopics,
-          inferred_keywords: inferredKeywords,
           dialog: JSON.stringify(apifyRawData)
-        });
-        console.log(`[summarizeYoutubeVideo] 게스트 사용자 - video_summaries 테이블에 저장 완료: ${videoId}`);
+        })
+        .select('id')
+        .single();
+
+      if (savedSummary && userId) {
+        // 로그인한 사용자의 경우 user_summaries 테이블에도 연결 추가
+        await supabaseAdmin
+          .from('user_summaries')
+          .insert({
+            user_id: userId,
+            summary_id: savedSummary.id
+          });
+        console.log(`[summarizeYoutubeVideo] 요약 저장 및 사용자 연결 완료: ${videoId}`);
+      } else {
+        console.log(`[summarizeYoutubeVideo] 게스트 요약 저장 완료: ${videoId}`);
       }
 
       // RAG용 transcript chunks 자동 생성
@@ -398,36 +428,98 @@ export async function summarizeYoutubeVideo(
   }
 }
 
-// 요약 가져오기 함수 (사용자별 또는 레거시)
+// 모든 요약 결과 조회 (새로운 함수) - 새로운 테이블 구조 사용
+export async function getAllVideoSummaries(videoId: string, currentUserId?: string): Promise<{
+  mySummary?: { summary: string; created_at: string; user_id?: string };
+  otherSummaries: Array<{ summary: string; created_at: string; user_id?: string; isGuest: boolean }>;
+  totalSummaries: number;
+}> {
+  console.log(`[getAllVideoSummaries] 모든 요약 조회 - videoId: ${videoId}, currentUserId: ${currentUserId || 'anonymous'}`);
+  
+  try {
+    // 해당 비디오의 요약이 있는지 확인
+    const { data: videoSummary, error: summaryError } = await supabaseAdmin
+      .from('video_summaries')
+      .select('id, summary, created_at, user_id')
+      .eq('video_id', videoId)
+      .single();
+
+    if (summaryError || !videoSummary) {
+      console.log(`[getAllVideoSummaries] 요약 없음: ${videoId}`);
+      return { otherSummaries: [], totalSummaries: 0 };
+    }
+
+    console.log(`[getAllVideoSummaries] 요약 발견: ${videoSummary.id}`);
+
+    let mySummary: { summary: string; created_at: string; user_id?: string } | undefined;
+    let hasMySummary = false;
+
+    // 현재 사용자가 이 요약을 가지고 있는지 확인
+    if (currentUserId) {
+      const { data: userSummaryConnection } = await supabaseAdmin
+        .from('user_summaries')
+        .select('created_at')
+        .eq('user_id', currentUserId)
+        .eq('summary_id', videoSummary.id)
+        .single();
+
+      if (userSummaryConnection) {
+        mySummary = {
+          summary: videoSummary.summary,
+          created_at: userSummaryConnection.created_at,
+          user_id: currentUserId
+        };
+        hasMySummary = true;
+        console.log(`[getAllVideoSummaries] 내 요약 발견: ${currentUserId}`);
+      }
+    }
+
+    // 다른 요약들 (현재는 하나의 요약만 있지만 구조상 배열로 반환)
+    const otherSummaries: Array<{ summary: string; created_at: string; user_id?: string; isGuest: boolean }> = [];
+    
+    if (!hasMySummary) {
+      // 현재 사용자가 이 요약을 갖고 있지 않으면 다른 요약으로 분류
+      otherSummaries.push({
+        summary: videoSummary.summary,
+        created_at: videoSummary.created_at,
+        user_id: videoSummary.user_id,
+        isGuest: videoSummary.user_id === null
+      });
+    }
+
+    console.log(`[getAllVideoSummaries] 결과 - 내 요약: ${mySummary ? '있음' : '없음'}, 다른 요약: ${otherSummaries.length}개`);
+
+    return {
+      mySummary,
+      otherSummaries,
+      totalSummaries: 1 // 현재는 비디오당 하나의 요약만 존재
+    };
+
+  } catch (err) {
+    console.error(`[getAllVideoSummaries] 오류 발생:`, err);
+    return { otherSummaries: [], totalSummaries: 0 };
+  }
+}
+
+// 요약 가져오기 함수 (기존 호환성 유지 + 개선)
 export async function getSummary(videoId: string, userId?: string): Promise<string | null> {
   console.log(`[getSummary] 요청 videoId: ${videoId}, userId: ${userId || 'anonymous'}`);
+  
   try {
-    if (userId) {
-      // 로그인한 사용자: 개인 테이블에서 우선 조회
-      console.log(`[getSummary] 로그인한 사용자 - 개인 테이블에서 조회: ${userId}`);
-      const userSummary = await getUserVideoSummaryFromDB(videoId, userId);
-      if (userSummary && userSummary.summary) {
-        console.log(`[getSummary] 개인 테이블에서 요약 반환: ${videoId}`);
-        return userSummary.summary;
-      }
-      
-      // 개인 테이블에 없으면 게스트 요약도 확인 (하위 호환성)
-      console.log(`[getSummary] 개인 테이블에 없음, 게스트 요약 확인: ${videoId}`);
-      const guestResult = await getGuestVideoSummaryFromDB(videoId);
-      if (guestResult && guestResult.summary) {
-        console.log(`[getSummary] 게스트 요약에서 요약 반환: ${videoId}`);
-        return guestResult.summary;
-      }
-    } else {
-      // 로그인하지 않은 사용자: 게스트 요약에서만 조회
-      console.log(`[getSummary] 게스트 사용자 - 게스트 요약에서 조회 시작: ${videoId}`);
-      const guestResult = await getGuestVideoSummaryFromDB(videoId);
-      if (guestResult && guestResult.summary) {
-        console.log(`[getSummary] 게스트 사용자 - 게스트 요약에서 요약 반환 성공: ${videoId}`);
-        return guestResult.summary;
-      } else {
-        console.warn(`[getSummary] 게스트 사용자 - 게스트 요약에서 요약을 찾을 수 없음: ${videoId}`);
-      }
+    // 새로운 getAllVideoSummaries 함수 사용
+    const summariesResult = await getAllVideoSummaries(videoId, userId);
+    
+    // 내 요약이 있으면 우선 반환
+    if (summariesResult.mySummary) {
+      console.log(`[getSummary] 내 요약 반환: ${videoId}`);
+      return summariesResult.mySummary.summary;
+    }
+    
+    // 내 요약이 없으면 다른 요약 중 가장 최근 것 반환
+    if (summariesResult.otherSummaries.length > 0) {
+      const latestOtherSummary = summariesResult.otherSummaries[0]; // 이미 created_at 기준으로 정렬됨
+      console.log(`[getSummary] 다른 사용자의 요약 반환: ${videoId} (${latestOtherSummary.isGuest ? '게스트' : '다른 사용자'})`);
+      return latestOtherSummary.summary;
     }
     
     // 결과 없음
@@ -751,7 +843,7 @@ export async function resummarizeYoutubeVideo(
   }
 }
 
-// 사용자별 요약 목록 가져오기 서버 액션
+// 사용자별 요약 목록 가져오기 서버 액션 (새로운 테이블 구조 사용)
 export async function getAllSummaries(userId?: string) {
   try {
     console.log(`[getAllSummaries] 시작 - userId: ${userId || 'anonymous'}`);
@@ -763,31 +855,63 @@ export async function getAllSummaries(userId?: string) {
     });
     
     if (userId) {
-      // 로그인한 사용자는 개인 요약 목록 조회
+      // 로그인한 사용자는 user_summaries를 통해 연결된 요약 목록 조회
       console.log(`[getAllSummaries] 로그인한 사용자 요약 조회: ${userId}`);
       
-      // 서버 액션에서는 supabaseAdmin 사용하여 RLS 우회
-      const { data, error } = await supabaseAdmin
-        .from('video_summaries')
-        .select('video_id, title:video_title, thumbnail_url:video_thumbnail, channel_title, created_at')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-      
-      if (error) {
-        console.error('[getAllSummaries] 사용자별 DB 조회 에러:', error);
-        console.error('[getAllSummaries] 에러 상세:', {
-          message: error.message,
-          code: error.code,
-          details: error.details,
-          hint: error.hint
-        });
-        return [];
+      try {
+        // user_summaries 테이블이 있는 경우 새로운 구조 사용
+        const { data, error } = await supabaseAdmin
+          .from('user_summaries')
+          .select(`
+            created_at,
+            video_summaries!inner(
+              video_id,
+              video_title,
+              video_thumbnail,
+              channel_title
+            )
+          `)
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false });
+        
+        if (error) {
+          console.error('[getAllSummaries] user_summaries 조회 에러:', error);
+          // 새로운 테이블이 없으면 기존 방식으로 폴백
+          throw error;
+        }
+        
+        // 새로운 구조에서 데이터 변환
+        const summaries = data?.map(item => ({
+          video_id: item.video_summaries.video_id,
+          title: item.video_summaries.video_title,
+          thumbnail_url: item.video_summaries.video_thumbnail,
+          channel_title: item.video_summaries.channel_title,
+          created_at: item.created_at
+        })) || [];
+        
+        console.log(`[getAllSummaries] 새로운 구조로 로그인한 사용자(${userId}) 요약 조회 결과: ${summaries.length}개 레코드`);
+        console.log(`[getAllSummaries] 샘플 데이터:`, summaries.slice(0, 2));
+        
+        return summaries;
+        
+      } catch (newStructureError) {
+        console.log('[getAllSummaries] 새로운 구조 실패, 기존 구조로 폴백');
+        
+        // 기존 구조로 폴백
+        const { data, error } = await supabaseAdmin
+          .from('video_summaries')
+          .select('video_id, title:video_title, thumbnail_url:video_thumbnail, channel_title, created_at')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false });
+        
+        if (error) {
+          console.error('[getAllSummaries] 사용자별 DB 조회 에러:', error);
+          return [];
+        }
+        
+        console.log(`[getAllSummaries] 기존 구조로 로그인한 사용자(${userId}) 요약 조회 결과: ${data?.length || 0}개 레코드`);
+        return data || [];
       }
-      
-      console.log(`[getAllSummaries] 로그인한 사용자(${userId}) 요약 조회 결과: ${data?.length || 0}개 레코드`);
-      console.log(`[getAllSummaries] 샘플 데이터:`, data?.slice(0, 2));
-      
-      return data || [];
     } else {
       // 로그인하지 않은 사용자는 video_summaries에서 최신 20개만 조회 (공개 데이터)
       console.log('[getAllSummaries] 로그인하지 않은 사용자 - video_summaries에서 최신 20개 조회');

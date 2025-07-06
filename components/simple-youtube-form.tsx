@@ -29,6 +29,14 @@ export function SimpleYoutubeForm() {
   const [videoInfo, setVideoInfo] = useState<any | null>(null)
   const [videoLoading, setVideoLoading] = useState(false)
   const [summaryExists, setSummaryExists] = useState(false)
+  const [summaryState, setSummaryState] = useState<{
+    hasMySummary: boolean;
+    hasOtherSummary: boolean;
+    otherSummaryInfo?: { isGuest: boolean; created_at: string; };
+  }>({
+    hasMySummary: false,
+    hasOtherSummary: false
+  })
   const [selectedModel, setSelectedModel] = useState<AIModel>('gemini-2.5-flash')
   const selectedPromptType: PromptType = 'general_summary' // Always use default summary style
   const [isSpecialUser, setIsSpecialUser] = useState(false)
@@ -61,6 +69,10 @@ export function SimpleYoutubeForm() {
     setError(null)
     // Clear previous summary state instead of calling resetSummary
     setSummaryExists(false)
+    setSummaryState({
+      hasMySummary: false,
+      hasOtherSummary: false
+    })
     
     const videoId = extractYoutubeVideoId(url)
     if (videoId) {
@@ -71,9 +83,10 @@ export function SimpleYoutubeForm() {
         const info = await fetchVideoDetailsServer(videoId)
         setVideoInfo(info.items[0])
         
-        // Check if summary exists (simple DB check, no getSummary call)
-        const hasUserSummary = await checkSummaryExists(videoId, user?.id)
-        setSummaryExists(hasUserSummary)
+        // Check detailed summary state
+        const summaryInfo = await checkDetailedSummaryState(videoId, user?.id)
+        setSummaryState(summaryInfo)
+        setSummaryExists(summaryInfo.hasMySummary)
         
         // Update URL parameter
         const newUrl = new URL(window.location.href)
@@ -90,6 +103,10 @@ export function SimpleYoutubeForm() {
     } else {
       setVideoInfo(null)
       setSummaryExists(false)
+      setSummaryState({
+        hasMySummary: false,
+        hasOtherSummary: false
+      })
       // Clear URL parameter if no valid video ID
       const newUrl = new URL(window.location.href)
       newUrl.searchParams.delete('videoId')
@@ -97,50 +114,71 @@ export function SimpleYoutubeForm() {
     }
   }
 
-  // Simple function to check if summary exists (인증 완료 후 실행)
-  const checkSummaryExists = async (videoId: string, userId?: string): Promise<boolean> => {
+  // Detailed function to check summary state (인증 완료 후 실행)
+  const checkDetailedSummaryState = async (videoId: string, userId?: string): Promise<{
+    hasMySummary: boolean;
+    hasOtherSummary: boolean;
+    otherSummaryInfo?: { isGuest: boolean; created_at: string; };
+  }> => {
     try {
-      console.log(`[checkSummaryExists] Checking for videoId: ${videoId}, userId: ${userId}, authLoading: ${authLoading}`)
+      console.log(`[checkDetailedSummaryState] Checking for videoId: ${videoId}, userId: ${userId}, authLoading: ${authLoading}`)
       
-      // 인증이 아직 로딩 중이면 false 반환 (데이터 요청 방지)
+      // 인증이 아직 로딩 중이면 기본값 반환 (데이터 요청 방지)
       if (authLoading) {
-        console.log(`[checkSummaryExists] 인증 로딩 중 - false 반환`)
-        return false
+        console.log(`[checkDetailedSummaryState] 인증 로딩 중 - 기본값 반환`)
+        return { hasMySummary: false, hasOtherSummary: false }
       }
       
-      // Check user's personal summaries
-      if (userId) {
-        const { data: userSummary, error: userError } = await supabase
-          .from('video_summaries')
-          .select('id')
-          .eq('video_id', videoId)
-          .eq('user_id', userId)
-          .maybeSingle()
+      let hasMySummary = false;
+      let hasOtherSummary = false;
+      let otherSummaryInfo: { isGuest: boolean; created_at: string; } | undefined;
+      
+      // Check if video summary exists
+      const { data: videoSummary, error: summaryError } = await supabase
+        .from('video_summaries')
+        .select('id, user_id, created_at')
+        .eq('video_id', videoId)
+        .maybeSingle()
+      
+      console.log(`[checkDetailedSummaryState] Video summary result:`, { videoSummary, summaryError })
+      
+      if (videoSummary) {
+        // Check if user has this summary in their list
+        if (userId) {
+          const { data: userSummaryConnection, error: userError } = await supabase
+            .from('user_summaries')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('summary_id', videoSummary.id)
+            .maybeSingle()
+          
+          console.log(`[checkDetailedSummaryState] User summary connection result:`, { userSummaryConnection, userError })
+          if (userSummaryConnection) {
+            console.log(`[checkDetailedSummaryState] Found user summary connection`)
+            hasMySummary = true
+          }
+        }
         
-        console.log(`[checkSummaryExists] User summary result:`, { userSummary, userError })
-        if (userSummary) {
-          console.log(`[checkSummaryExists] Found user summary, returning true`)
-          return true
+        // If user doesn't have this summary, mark as other summary
+        if (!hasMySummary) {
+          hasOtherSummary = true
+          otherSummaryInfo = {
+            isGuest: videoSummary.user_id === null,
+            created_at: videoSummary.created_at
+          }
+          console.log(`[checkDetailedSummaryState] Found other summary:`, otherSummaryInfo)
         }
       }
       
-      // Check guest summaries (user_id is null)
-      const { data: guestSummary, error: guestError } = await supabase
-        .from('video_summaries')
-        .select('id')
-        .eq('video_id', videoId)
-        .is('user_id', null)
-        .maybeSingle()
-      
-      console.log(`[checkSummaryExists] Guest summary result:`, { guestSummary, guestError })
-      const result = Boolean(guestSummary)
-      console.log(`[checkSummaryExists] Final result: ${result}`)
+      const result = { hasMySummary, hasOtherSummary, otherSummaryInfo }
+      console.log(`[checkDetailedSummaryState] Final result:`, result)
       return result
     } catch (error) {
-      console.error("Error checking summary existence:", error)
-      return false
+      console.error("Error checking detailed summary state:", error)
+      return { hasMySummary: false, hasOtherSummary: false }
     }
   }
+
 
   // Initialize user permissions and models (중복 호출 방지)
   useEffect(() => {
@@ -214,6 +252,10 @@ export function SimpleYoutubeForm() {
       setYoutubeUrl("")
       setVideoInfo(null)
       setSummaryExists(false)
+      setSummaryState({
+        hasMySummary: false,
+        hasOtherSummary: false
+      })
       setError(null)
       setIsLoading(false)
       setVideoLoading(false)
@@ -229,6 +271,10 @@ export function SimpleYoutubeForm() {
       setYoutubeUrl("");
       setVideoInfo(null);
       setSummaryExists(false);
+      setSummaryState({
+        hasMySummary: false,
+        hasOtherSummary: false
+      });
       setError(null);
       setIsLoading(false);
       setVideoLoading(false);
@@ -273,6 +319,10 @@ export function SimpleYoutubeForm() {
 
       if (result.success && result.videoId) {
         setSummaryExists(true)
+        setSummaryState(prev => ({
+          ...prev,
+          hasMySummary: true
+        }))
         // Update URL parameter to trigger summary container refresh
         const newUrl = new URL(window.location.href)
         newUrl.searchParams.set('videoId', result.videoId)
@@ -296,6 +346,78 @@ export function SimpleYoutubeForm() {
       setError("요약 생성 중 오류가 발생했습니다.")
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  // Handle adding summary to my list
+  const handleAddToMySummaries = async () => {
+    if (!videoInfo?.id || !user?.id) {
+      setError("로그인이 필요합니다.")
+      return
+    }
+
+    console.log('[handleAddToMySummaries] 요약 추가 시작:', { videoId: videoInfo.id, userId: user.id })
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const response = await fetch('/api/add-to-my-summaries', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          videoId: videoInfo.id,
+          userId: user.id
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      const result = await response.json()
+      console.log('[handleAddToMySummaries] API 응답:', result)
+
+      if (result.success) {
+        console.log('[handleAddToMySummaries] 요약 추가 성공, 상태 업데이트')
+        
+        // Update local state immediately
+        setSummaryState(prev => ({
+          ...prev,
+          hasMySummary: true,
+          hasOtherSummary: false // 이제 내 요약이 되었으므로 다른 요약이 아님
+        }))
+        setSummaryExists(true)
+        
+        // Update URL to ensure proper state
+        const newUrl = new URL(window.location.href)
+        newUrl.searchParams.set('videoId', videoInfo.id)
+        router.replace(newUrl.pathname + newUrl.search, { scroll: false })
+        
+        // Notify other components with proper sequencing
+        console.log('[handleAddToMySummaries] 이벤트 발송 및 데이터 새로고침')
+        
+        // Dispatch summary updated event
+        window.dispatchEvent(new CustomEvent('summaryUpdated', { 
+          detail: { videoId: videoInfo.id, action: 'added' } 
+        }))
+        
+        // Refresh sidebar summaries
+        setTimeout(() => {
+          refreshSummaries()
+        }, 100)
+        
+      } else {
+        console.error('[handleAddToMySummaries] API 오류:', result.error)
+        setError(result.error || "요약 추가에 실패했습니다.")
+      }
+    } catch (err) {
+      console.error("[handleAddToMySummaries] 요약 추가 중 오류:", err)
+      setError("요약 추가 중 오류가 발생했습니다.")
+    } finally {
+      setIsLoading(false)
+      console.log('[handleAddToMySummaries] 요약 추가 프로세스 완료')
     }
   }
 
@@ -454,21 +576,45 @@ export function SimpleYoutubeForm() {
 
               {/* Action Buttons */}
               <div className="flex flex-col gap-2">
-                <Button 
-                  type="submit" 
-                  className="shrink-0" 
-                  disabled={isLoading || summaryExists || videoLoading}
-                  style={{minWidth: 120}}
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      처리중...
-                    </>
-                  ) : (
-                    "Summarize"
-                  )}
-                </Button>
+                {/* Show Summarize button only if no existing summary or user already has their own */}
+                {(!summaryState.hasOtherSummary || summaryState.hasMySummary) && (
+                  <Button 
+                    type="submit" 
+                    className="shrink-0" 
+                    disabled={isLoading || summaryExists || videoLoading}
+                    style={{minWidth: 120}}
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        처리중...
+                      </>
+                    ) : (
+                      "Summarize"
+                    )}
+                  </Button>
+                )}
+
+                {/* Show "Add to My Summaries" button if other summary exists but user doesn't have their own */}
+                {summaryState.hasOtherSummary && !summaryState.hasMySummary && user && (
+                  <Button
+                    type="button"
+                    className="shrink-0"
+                    variant="default"
+                    disabled={isLoading || videoLoading}
+                    onClick={handleAddToMySummaries}
+                    style={{minWidth: 120}}
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        추가 중...
+                      </>
+                    ) : (
+                      "내 요약에 추가"
+                    )}
+                  </Button>
+                )}
                 
                 {summaryExists && isSpecialUser && (
                   <Button
@@ -492,9 +638,9 @@ export function SimpleYoutubeForm() {
                 {/* Debug: Show button conditions */}
                 {process.env.NODE_ENV === 'development' && (
                   <div className="text-xs text-gray-500 mt-2 space-y-1">
-                    <div>Debug: summaryExists={summaryExists.toString()}, isSpecialUser={isSpecialUser.toString()}</div>
-                    <div>User email: {user?.email}</div>
-                    <div>User role: {user?.user_metadata?.role}</div>
+                    <div>Debug: hasMySummary={summaryState.hasMySummary.toString()}, hasOtherSummary={summaryState.hasOtherSummary.toString()}</div>
+                    <div>isSpecialUser={isSpecialUser.toString()}, User: {user?.email || 'Guest'}</div>
+                    <div>Other summary: {summaryState.otherSummaryInfo?.isGuest ? 'Guest' : 'User'} ({summaryState.otherSummaryInfo?.created_at})</div>
                     <div>Available models: {availableModels.join(', ')}</div>
                   </div>
                 )}
@@ -512,8 +658,16 @@ export function SimpleYoutubeForm() {
                 <div className="border rounded-md p-3 bg-muted/50">
                   <h3 className="font-medium">{videoInfo.snippet.title}</h3>
                   <p className="text-sm text-muted-foreground">{videoInfo.snippet.channelTitle}</p>
-                  {summaryExists && (
-                    <p className="text-sm text-green-600 mt-1">✓ 요약이 이미 존재합니다</p>
+                  {summaryState.hasMySummary && (
+                    <p className="text-sm text-green-600 mt-1">✓ 내 요약이 이미 존재합니다</p>
+                  )}
+                  {summaryState.hasOtherSummary && !summaryState.hasMySummary && (
+                    <p className="text-sm text-blue-600 mt-1">
+                      ℹ️ {summaryState.otherSummaryInfo?.isGuest ? '게스트' : '다른 사용자'}의 요약이 존재합니다
+                      {summaryState.otherSummaryInfo?.created_at && (
+                        ` (${new Date(summaryState.otherSummaryInfo.created_at).toLocaleDateString('ko-KR')})`
+                      )}
+                    </p>
                   )}
                 </div>
               )}
