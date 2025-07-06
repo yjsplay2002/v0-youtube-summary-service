@@ -28,18 +28,54 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get enhanced context using RAG
+    console.log(`[chat/message] 🔍 Starting RAG context retrieval...`);
+    console.log(`[chat/message] User message: "${message}"`);
+    console.log(`[chat/message] Video ID: ${videoId}`);
+
+    // Get enhanced context using RAG + Web Search
+    const ragStartTime = Date.now();
     const { context, source, metadata } = await getEnhancedContext(message, videoId, {
       maxChunks: 3,
       maxContextLength: 2000,
-      fallbackToSummary: true
+      fallbackToSummary: true,
+      enableWebSearch: true
     })
+    const ragTotalTime = Date.now() - ragStartTime;
+
+    console.log(`[chat/message] 📊 RAG Results:`, {
+      source,
+      contextLength: context.length,
+      processingTime: ragTotalTime,
+      metadata
+    });
+
+    if (source === 'rag') {
+      console.log(`[chat/message] ✅ Using RAG context from ${metadata?.chunksUsed} chunks`);
+      console.log(`[chat/message] 📈 Similarity scores - Max: ${metadata?.maxSimilarity?.toFixed(3)}, Avg: ${metadata?.avgSimilarity?.toFixed(3)}`);
+    } else if (source === 'web+summary') {
+      console.log(`[chat/message] 🌐✨ Using enhanced web search + summary context`);
+      console.log(`[chat/message] 🔍 Web results: ${metadata?.webSearchResults}, Summary length: ${metadata?.summaryLength}`);
+      console.log(`[chat/message] 🔍 Search terms: "${metadata?.searchTerms}"`);
+    } else if (source === 'web') {
+      console.log(`[chat/message] 🌐 Using web search only context`);
+      console.log(`[chat/message] 🔍 Web results: ${metadata?.webSearchResults}`);
+      console.log(`[chat/message] 🔍 Search terms: "${metadata?.searchTerms}"`);
+    } else if (source === 'summary') {
+      console.log(`[chat/message] ⚠️  Fallback to summary only (length: ${metadata?.summaryLength || context.length})`);
+      if (metadata?.fallbackReason) {
+        console.log(`[chat/message] 🔄 Fallback reason: ${metadata.fallbackReason}`);
+      }
+    } else {
+      console.log(`[chat/message] ❌ No context available - using general response`);
+    }
 
     // Build conversation context
     const conversationContext = conversationHistory
       ?.filter((msg: ChatMessage) => msg.type !== 'system')
       ?.map((msg: ChatMessage) => `${msg.type === 'user' ? '사용자' : 'AI'}: ${msg.content}`)
       ?.join('\n') || ''
+
+    console.log(`[chat/message] 💬 Conversation history: ${conversationContext.length} characters`);
 
     // Generate enhanced prompt based on context source
     let contextDescription = '';
@@ -167,11 +203,18 @@ JSON 형식으로 응답해주세요:
       }
     }
 
+    console.log(`[chat/message] 🤖 AI Response generated successfully`);
+    console.log(`[chat/message] Response length: ${parsedResponse.response.length}`);
+    console.log(`[chat/message] Follow-up questions: ${parsedResponse.followUpQuestions?.length || 0}`);
+
     return NextResponse.json({
       response: parsedResponse.response,
       followUpQuestions: parsedResponse.followUpQuestions?.slice(0, 3) || [],
       metadata: {
         source,
+        contextUsed: source !== 'none',
+        ragEnabled: source === 'rag',
+        processingTime: ragTotalTime,
         ...(metadata || {})
       }
     })

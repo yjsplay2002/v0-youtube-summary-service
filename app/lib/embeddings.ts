@@ -23,19 +23,42 @@ export interface EmbeddingResult {
  */
 export async function generateEmbedding(text: string): Promise<EmbeddingResult> {
   try {
+    if (!text || text.trim().length === 0) {
+      throw new Error('Text input cannot be empty');
+    }
+
+    console.log(`[generateEmbedding] Generating embedding for text length: ${text.length}`);
+    
     const response = await openai.embeddings.create({
       model: EMBEDDING_MODEL,
       input: text.replace(/\n/g, ' '), // Normalize whitespace
       dimensions: EMBEDDING_DIMENSIONS,
     });
 
+    const embedding = response.data[0].embedding;
+    const tokenCount = response.usage?.total_tokens || 0;
+
+    // Validate embedding dimensions
+    if (!Array.isArray(embedding) || embedding.length !== EMBEDDING_DIMENSIONS) {
+      console.error(`[generateEmbedding] Invalid embedding dimensions: expected ${EMBEDDING_DIMENSIONS}, got ${embedding?.length}`);
+      throw new Error(`Invalid embedding dimensions: expected ${EMBEDDING_DIMENSIONS}, got ${embedding?.length}`);
+    }
+
+    // Validate embedding values
+    if (!embedding.every(val => typeof val === 'number' && !isNaN(val))) {
+      console.error(`[generateEmbedding] Invalid embedding values detected`);
+      throw new Error('Invalid embedding values detected');
+    }
+
+    console.log(`[generateEmbedding] ✅ Successfully generated embedding: ${embedding.length} dimensions, ${tokenCount} tokens`);
+
     return {
-      embedding: response.data[0].embedding,
-      tokenCount: response.usage?.total_tokens || 0
+      embedding,
+      tokenCount
     };
   } catch (error) {
-    console.error('Error generating embedding:', error);
-    throw new Error('Failed to generate embedding');
+    console.error('[generateEmbedding] Error generating embedding:', error);
+    throw new Error(`Failed to generate embedding: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
