@@ -52,7 +52,7 @@ export default function HomeClient({ currentVideoId }: HomeClientProps) {
               </p>
             </div>
 
-            <div className="glass-effect rounded-2xl p-8 shadow-2xl shadow-glow-accent mb-16">
+            <div className="glass-effect rounded-2xl shadow-2xl shadow-glow-accent mb-16">
               <SimpleYoutubeForm />
             </div>
             
@@ -83,7 +83,7 @@ export default function HomeClient({ currentVideoId }: HomeClientProps) {
           </p>
         </div>
 
-        <div className="glass-effect rounded-2xl p-8 shadow-2xl shadow-glow-accent mb-10">
+        <div className="glass-effect rounded-2xl shadow-2xl shadow-glow-accent mb-10">
           <SimpleYoutubeForm />
         </div>
         

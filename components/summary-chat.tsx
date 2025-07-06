@@ -30,7 +30,6 @@ export function SummaryChat({ summary, videoId }: SummaryChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputMessage, setInputMessage] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([])
   const [isInitialized, setIsInitialized] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
@@ -76,14 +75,7 @@ export function SummaryChat({ summary, videoId }: SummaryChatProps) {
           
           setMessages(formattedMessages)
           
-          // Extract suggested questions from the last AI message
-          const lastAiMessage = formattedMessages
-            .filter((msg: ChatMessage) => msg.type === 'ai')
-            .pop()
-          
-          if (lastAiMessage?.suggested_questions) {
-            setSuggestedQuestions(lastAiMessage.suggested_questions)
-          }
+          // Extract suggested questions from the last AI message (stored in message data)
           
           setIsInitialized(true)
           setIsLoading(false)
@@ -118,13 +110,12 @@ export function SummaryChat({ summary, videoId }: SummaryChatProps) {
 
       if (response.ok) {
         const data = await response.json()
-        setSuggestedQuestions(data.questions || [])
         
         // Add system welcome message
         const welcomeMessage: ChatMessage = {
           id: `system-${Date.now()}`,
           type: 'system',
-          content: '비디오 요약을 바탕으로 질문해 주세요. 아래 추천 질문을 클릭하거나 직접 입력하실 수 있습니다.',
+          content: '비디오 요약을 바탕으로 질문해 주세요.',
           timestamp: new Date(),
           suggested_questions: data.questions
         }
@@ -179,7 +170,6 @@ export function SummaryChat({ summary, videoId }: SummaryChatProps) {
         }
         
         setMessages(prev => [...prev, aiMessage])
-        setSuggestedQuestions(data.followUpQuestions || [])
       } else {
         throw new Error('Failed to send message')
       }
@@ -295,25 +285,6 @@ export function SummaryChat({ summary, videoId }: SummaryChatProps) {
 
         <Separator />
 
-        {/* Suggested Questions (Current) */}
-        {suggestedQuestions.length > 0 && !isLoading && (
-          <div className="space-y-2">
-            <p className="text-sm font-medium">추천 질문:</p>
-            <div className="flex flex-wrap gap-2">
-              {suggestedQuestions.map((question, index) => (
-                <Button
-                  key={index}
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleSuggestedQuestion(question)}
-                  className="text-xs"
-                >
-                  {question}
-                </Button>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* Input Form */}
         <form onSubmit={handleSubmit} className="flex gap-2">

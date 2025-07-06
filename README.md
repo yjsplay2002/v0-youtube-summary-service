@@ -1,71 +1,183 @@
-# YouTube Summary Service
+# Supabase CLI
 
-YouTube 동영상의 자막을 가져와서 AI를 활용해 요약을 생성하는 웹 애플리케이션입니다.
+[![Coverage Status](https://coveralls.io/repos/github/supabase/cli/badge.svg?branch=main)](https://coveralls.io/github/supabase/cli?branch=main) [![Bitbucket Pipelines](https://img.shields.io/bitbucket/pipelines/supabase-cli/setup-cli/master?style=flat-square&label=Bitbucket%20Canary)](https://bitbucket.org/supabase-cli/setup-cli/pipelines) [![Gitlab Pipeline Status](https://img.shields.io/gitlab/pipeline-status/sweatybridge%2Fsetup-cli?label=Gitlab%20Canary)
+](https://gitlab.com/sweatybridge/setup-cli/-/pipelines)
 
-[![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com/yjsplay2002s-projects/v0-youtube-summary-service)
-[![Built with v0](https://img.shields.io/badge/Built%20with-v0.dev-black?style=for-the-badge)](https://v0.dev/chat/projects/yPhSPaVY9EE)
+[Supabase](https://supabase.io) is an open source Firebase alternative. We're building the features of Firebase using enterprise-grade open source tools.
 
-## 주요 기능
+This repository contains all the functionality for Supabase CLI.
 
-- 🎥 YouTube URL로부터 자동 자막 추출
-- 🤖 AI를 활용한 동영상 요약 (Claude, GPT 지원)
-- 🔐 Google OAuth를 통한 사용자 인증
-- 👤 사용자별 개인 요약 히스토리 관리
-- 📱 반응형 모바일 UI
-- 🌙 다크/라이트 테마 지원
-- 💾 Supabase 기반 데이터 저장
+- [x] Running Supabase locally
+- [x] Managing database migrations
+- [x] Creating and deploying Supabase Functions
+- [x] Generating types directly from your database schema
+- [x] Making authenticated HTTP requests to [Management API](https://supabase.com/docs/reference/api/introduction)
 
-## 기술 스택
+## Getting started
 
-- **Frontend**: Next.js 15, React 18, TypeScript
-- **Styling**: Tailwind CSS, Radix UI
-- **Authentication**: Supabase Auth (Google OAuth)
-- **Database**: Supabase (PostgreSQL)
-- **AI Models**: Anthropic Claude, OpenAI GPT
-- **Deployment**: Vercel
+### Install the CLI
 
-## 설치 및 설정
-
-### 1. 저장소 클론
-```bash
-git clone https://github.com/your-username/v0-youtube-summary-service.git
-cd v0-youtube-summary-service
-```
-
-### 2. 의존성 설치
-```bash
-npm install
-```
-
-### 3. 환경 변수 설정
-`.env.example` 파일을 `.env.local`로 복사하고 필요한 값들을 설정하세요:
+Available via [NPM](https://www.npmjs.com) as dev dependency. To install:
 
 ```bash
-cp .env.example .env.local
+npm i supabase --save-dev
 ```
 
-### 4. Supabase 설정
-1. [Supabase](https://supabase.com)에서 새 프로젝트 생성
-2. SQL Editor에서 `supabase/migrations/001_create_video_summaries.sql` 실행
-3. Authentication > Providers에서 Google OAuth 설정
-4. 환경 변수에 Supabase URL과 Anon Key 추가
+To install the beta release channel:
 
-### 5. 개발 서버 실행
 ```bash
-npm run dev
+npm i supabase@beta --save-dev
 ```
 
-## 사용 방법
+When installing with yarn 4, you need to disable experimental fetch with the following nodejs config.
 
-1. **로그인**: Google 계정으로 로그인
-2. **요약 생성**: YouTube URL을 입력하고 요약 생성
-3. **히스토리 확인**: 사이드바에서 이전 요약들 확인
-4. **개인화**: 로그인한 사용자만 자신의 요약을 확인 가능
+```
+NODE_OPTIONS=--no-experimental-fetch yarn add supabase
+```
 
-## 배포
+> **Note**
+For Bun versions below v1.0.17, you must add `supabase` as a [trusted dependency](https://bun.sh/guides/install/trusted) before running `bun add -D supabase`.
 
-Vercel에 배포된 버전: **[https://vercel.com/yjsplay2002s-projects/v0-youtube-summary-service](https://vercel.com/yjsplay2002s-projects/v0-youtube-summary-service)**
+<details>
+  <summary><b>macOS</b></summary>
 
-## 라이선스
+  Available via [Homebrew](https://brew.sh). To install:
 
-MIT License
+  ```sh
+  brew install supabase/tap/supabase
+  ```
+
+  To install the beta release channel:
+  
+  ```sh
+  brew install supabase/tap/supabase-beta
+  brew link --overwrite supabase-beta
+  ```
+  
+  To upgrade:
+
+  ```sh
+  brew upgrade supabase
+  ```
+</details>
+
+<details>
+  <summary><b>Windows</b></summary>
+
+  Available via [Scoop](https://scoop.sh). To install:
+
+  ```powershell
+  scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
+  scoop install supabase
+  ```
+
+  To upgrade:
+
+  ```powershell
+  scoop update supabase
+  ```
+</details>
+
+<details>
+  <summary><b>Linux</b></summary>
+
+  Available via [Homebrew](https://brew.sh) and Linux packages.
+
+  #### via Homebrew
+
+  To install:
+
+  ```sh
+  brew install supabase/tap/supabase
+  ```
+
+  To upgrade:
+
+  ```sh
+  brew upgrade supabase
+  ```
+
+  #### via Linux packages
+
+  Linux packages are provided in [Releases](https://github.com/supabase/cli/releases). To install, download the `.apk`/`.deb`/`.rpm`/`.pkg.tar.zst` file depending on your package manager and run the respective commands.
+
+  ```sh
+  sudo apk add --allow-untrusted <...>.apk
+  ```
+
+  ```sh
+  sudo dpkg -i <...>.deb
+  ```
+
+  ```sh
+  sudo rpm -i <...>.rpm
+  ```
+
+  ```sh
+  sudo pacman -U <...>.pkg.tar.zst
+  ```
+</details>
+
+<details>
+  <summary><b>Other Platforms</b></summary>
+
+  You can also install the CLI via [go modules](https://go.dev/ref/mod#go-install) without the help of package managers.
+
+  ```sh
+  go install github.com/supabase/cli@latest
+  ```
+
+  Add a symlink to the binary in `$PATH` for easier access:
+
+  ```sh
+  ln -s "$(go env GOPATH)/bin/cli" /usr/bin/supabase
+  ```
+
+  This works on other non-standard Linux distros.
+</details>
+
+<details>
+  <summary><b>Community Maintained Packages</b></summary>
+
+  Available via [pkgx](https://pkgx.sh/). Package script [here](https://github.com/pkgxdev/pantry/blob/main/projects/supabase.com/cli/package.yml).
+  To install in your working directory:
+
+  ```bash
+  pkgx install supabase
+  ```
+
+  Available via [Nixpkgs](https://nixos.org/). Package script [here](https://github.com/NixOS/nixpkgs/blob/master/pkgs/development/tools/supabase-cli/default.nix).
+</details>
+
+### Run the CLI
+
+```bash
+supabase bootstrap
+```
+
+Or using npx:
+
+```bash
+npx supabase bootstrap
+```
+
+The bootstrap command will guide you through the process of setting up a Supabase project using one of the [starter](https://github.com/supabase-community/supabase-samples/blob/main/samples.json) templates.
+
+## Docs
+
+Command & config reference can be found [here](https://supabase.com/docs/reference/cli/about).
+
+## Breaking changes
+
+We follow semantic versioning for changes that directly impact CLI commands, flags, and configurations.
+
+However, due to dependencies on other service images, we cannot guarantee that schema migrations, seed.sql, and generated types will always work for the same CLI major version. If you need such guarantees, we encourage you to pin a specific version of CLI in package.json.
+
+## Developing
+
+To run from source:
+
+```sh
+# Go >= 1.22
+go run . help
+```
