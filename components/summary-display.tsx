@@ -155,7 +155,7 @@ export function SummaryDisplayClient({ summary, seekTo, videoId }: { summary: st
                 }
               }}
             >
-              {summary}
+              {summary?.replace(/^(#{1,6})\s+(.+?)\s+\1\s*$/gm, '$1 $2')}
             </ReactMarkdown>
           </TabsContent>
           <TabsContent value="chat">
