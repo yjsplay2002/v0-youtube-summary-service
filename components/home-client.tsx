@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from "@/components/auth-context"
+import { memo } from "react"
 import { SimpleYoutubeForm } from "@/components/simple-youtube-form"
 import SimpleSummaryContainer from "@/components/simple-summary-container"
 import { HeroSection } from "@/components/hero-section"
@@ -14,8 +15,12 @@ interface HomeClientProps {
   currentVideoId?: string;
 }
 
-export default function HomeClient({ currentVideoId }: HomeClientProps) {
+const HomeClient = memo(function HomeClient({ currentVideoId }: HomeClientProps) {
   const { user, loading } = useAuth();
+  
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[HomeClient] Props 수신:', { currentVideoId, user: !!user, loading });
+  }
 
   // Show loading state while auth is being determined
   if (loading) {
@@ -106,10 +111,12 @@ export default function HomeClient({ currentVideoId }: HomeClientProps) {
               <p className="text-muted-foreground">Loading recommendations...</p>
             </div>
           }>
-            <CurationSection />
+            <CurationSection currentVideoId={currentVideoId} />
           </Suspense>
         </div>
       </div>
     </div>
   );
-}
+});
+
+export default HomeClient;

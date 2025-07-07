@@ -88,10 +88,13 @@ export function SimpleYoutubeForm() {
         setSummaryState(summaryInfo)
         setSummaryExists(summaryInfo.hasMySummary)
         
-        // Update URL parameter
-        const newUrl = new URL(window.location.href)
-        newUrl.searchParams.set('videoId', videoId)
-        router.replace(newUrl.pathname + newUrl.search, { scroll: false })
+        // Update URL parameter only if it's different
+        const currentVideoId = searchParams.get('videoId')
+        if (currentVideoId !== videoId) {
+          const newUrl = new URL(window.location.href)
+          newUrl.searchParams.set('videoId', videoId)
+          router.replace(newUrl.pathname + newUrl.search, { scroll: false })
+        }
         
       } catch (err) {
         setVideoInfo(null)
