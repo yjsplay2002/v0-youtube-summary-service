@@ -247,7 +247,7 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
       )}
       
       <div
-        className={`h-screen bg-sidebar-background transition-all duration-300 flex flex-col ${
+        className={`h-screen bg-sidebar-background sidebar-opaque transition-all duration-300 flex flex-col ${
           isCollapsed ? "w-16" : "w-80"
         } ${isMobile ? "fixed right-0 z-40" : ""} ${
           !(isMobile && isCollapsed) ? (isMobile ? "border-l border-sidebar-border" : "border-r border-sidebar-border") : ""
