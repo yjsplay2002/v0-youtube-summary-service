@@ -197,10 +197,17 @@ export default function CurationSection({ className, currentVideoId }: CurationS
     }
   };
 
-  // 비디오 클릭 핸들러
+  // 비디오 클릭 핸들러 (전체화면 모달)
   const handleVideoClick = (video: VideoItem) => {
     setSelectedVideo(video);
     setShowFullscreen(true);
+  };
+
+  // 비디오 재생 핸들러 (페이지 이동 후 자동 재생)
+  const handleVideoPlay = (video: VideoItem) => {
+    const videoId = video.id;
+    // videoId 페이지로 이동하고 자동재생 파라미터 추가
+    window.location.href = `/?videoId=${videoId}&autoplay=true`;
   };
 
   // 요약 버튼 클릭 핸들러
@@ -399,7 +406,13 @@ export default function CurationSection({ className, currentVideoId }: CurationS
                     }}
                   />
                   <div className="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors duration-300" />
-                  <div className="absolute inset-0 flex items-center justify-center">
+                  <div 
+                    className="absolute inset-0 flex items-center justify-center cursor-pointer z-10"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleVideoPlay(video);
+                    }}
+                  >
                     <PlayCircle className="h-12 w-12 text-white opacity-80 group-hover:opacity-100 group-hover:scale-110 transition-all duration-300" />
                   </div>
                   <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">

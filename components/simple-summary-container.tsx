@@ -36,6 +36,7 @@ interface AllSummariesData {
 export default function SimpleSummaryContainer() {
   const searchParams = useSearchParams()
   const videoId = searchParams.get("videoId")
+  const autoplay = searchParams.get("autoplay") === "true"
   const [allSummaries, setAllSummaries] = useState<AllSummariesData | null>(null)
   const [summary, setSummary] = useState<string | null>(null)
   const [videoInfo, setVideoInfo] = useState<any | null>(null)
@@ -77,6 +78,16 @@ export default function SimpleSummaryContainer() {
       return null
     }
   }
+
+  // autoplay 파라미터 제거 (한 번만 실행)
+  useEffect(() => {
+    if (autoplay && videoId) {
+      // autoplay 파라미터를 URL에서 제거
+      const newUrl = new URL(window.location.href)
+      newUrl.searchParams.delete('autoplay')
+      window.history.replaceState({}, '', newUrl.pathname + newUrl.search)
+    }
+  }, [autoplay, videoId])
 
   // Fetch existing summary and video details (인증 완료 후)
   useEffect(() => {
@@ -242,6 +253,7 @@ export default function SimpleSummaryContainer() {
                     rel: 0,
                     modestbranding: 1,
                     enablejsapi: 1,
+                    autoplay: autoplay ? 1 : 0,
                     origin: typeof window !== 'undefined' ? window.location.origin : undefined,
                   },
                 }}
@@ -286,6 +298,7 @@ export default function SimpleSummaryContainer() {
                   rel: 0,
                   modestbranding: 1,
                   enablejsapi: 1,
+                  autoplay: autoplay ? 1 : 0,
                   origin: typeof window !== 'undefined' ? window.location.origin : undefined,
                 },
               }}

@@ -1425,18 +1425,18 @@ export async function getTrendingVideos(maxResults: number = 10) {
       return { videos: [] };
     }
 
-    // 정보전달 관련 카테고리 (뉴스, 교육, 과학기술)
-    const categories = ['25', '27', '28']; // News & Politics, Education, Science & Technology
+    let allVideos = [];
     
-    const allVideos = [];
+    // 1차 시도: 정보전달 관련 카테고리 (뉴스, 교육, 과학기술)
+    const infoCategories = ['25', '27', '28']; // News & Politics, Education, Science & Technology
     
-    for (const categoryId of categories) {
+    for (const categoryId of infoCategories) {
       const url = `https://www.googleapis.com/youtube/v3/videos?` +
         `part=snippet,contentDetails,statistics&` +
         `chart=mostPopular&` +
         `regionCode=KR&` +
         `categoryId=${categoryId}&` +
-        `maxResults=${Math.ceil(maxResults / categories.length)}&` +
+        `maxResults=${Math.ceil(maxResults / infoCategories.length)}&` +
         `key=${apiKey}`;
       
       const response = await fetch(url);
@@ -1467,6 +1467,83 @@ export async function getTrendingVideos(maxResults: number = 10) {
           }));
         
         allVideos.push(...videos);
+      }
+    }
+    
+    // 결과가 부족하면 2차 시도: 전체 인기 동영상 (카테고리 제한 없음)
+    if (allVideos.length < maxResults / 2) {
+      console.log(`[getTrendingVideos] 정보 카테고리에서 ${allVideos.length}개만 발견, 전체 인기 동영상 추가 조회`);
+      
+      const fallbackUrl = `https://www.googleapis.com/youtube/v3/videos?` +
+        `part=snippet,contentDetails,statistics&` +
+        `chart=mostPopular&` +
+        `regionCode=KR&` +
+        `maxResults=${maxResults}&` +
+        `key=${apiKey}`;
+      
+      const fallbackResponse = await fetch(fallbackUrl);
+      if (fallbackResponse.ok) {
+        const fallbackData = await fallbackResponse.json();
+        
+        if (fallbackData.items && fallbackData.items.length > 0) {
+          const fallbackVideos = fallbackData.items
+            .filter((item: any) => {
+              // 이미 있는 비디오 제외, 라이브 방송 제외
+              return item.snippet.liveBroadcastContent !== 'live' &&
+                     !allVideos.some(v => v.id === item.id);
+            })
+            .map((item: any) => ({
+              id: item.id,
+              title: item.snippet.title,
+              channelTitle: item.snippet.channelTitle,
+              thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default?.url,
+              publishedAt: item.snippet.publishedAt,
+              duration: item.contentDetails.duration,
+              description: item.snippet.description,
+              viewCount: item.statistics.viewCount,
+              category: item.snippet.categoryId || 'general'
+            }));
+          
+          allVideos.push(...fallbackVideos);
+        }
+      }
+    }
+    
+    // 여전히 결과가 부족하면 3차 시도: 글로벌 인기 동영상 (지역 제한 없음)
+    if (allVideos.length < maxResults / 2) {
+      console.log(`[getTrendingVideos] 한국 동영상에서 ${allVideos.length}개만 발견, 글로벌 인기 동영상 추가 조회`);
+      
+      const globalUrl = `https://www.googleapis.com/youtube/v3/videos?` +
+        `part=snippet,contentDetails,statistics&` +
+        `chart=mostPopular&` +
+        `maxResults=${maxResults}&` +
+        `key=${apiKey}`;
+      
+      const globalResponse = await fetch(globalUrl);
+      if (globalResponse.ok) {
+        const globalData = await globalResponse.json();
+        
+        if (globalData.items && globalData.items.length > 0) {
+          const globalVideos = globalData.items
+            .filter((item: any) => {
+              // 이미 있는 비디오 제외, 라이브 방송 제외
+              return item.snippet.liveBroadcastContent !== 'live' &&
+                     !allVideos.some(v => v.id === item.id);
+            })
+            .map((item: any) => ({
+              id: item.id,
+              title: item.snippet.title,
+              channelTitle: item.snippet.channelTitle,
+              thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default?.url,
+              publishedAt: item.snippet.publishedAt,
+              duration: item.contentDetails.duration,
+              description: item.snippet.description,
+              viewCount: item.statistics.viewCount,
+              category: item.snippet.categoryId || 'global'
+            }));
+          
+          allVideos.push(...globalVideos);
+        }
       }
     }
     
