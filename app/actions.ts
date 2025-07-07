@@ -1203,7 +1203,7 @@ export async function getGuestKeywords(): Promise<Array<{keyword: string, freque
   }
 }
 
-// 비디오 요약 존재 여부 확인
+// 비디오 요약 존재 여부 확인 (단일)
 export async function checkVideoSummaryExists(videoId: string, userId?: string): Promise<boolean> {
   try {
     console.log(`[checkVideoSummaryExists] 요약 존재 확인: ${videoId}, userId: ${userId || 'guest'}`);
@@ -1250,6 +1250,73 @@ export async function checkVideoSummaryExists(videoId: string, userId?: string):
   } catch (err) {
     console.error('[checkVideoSummaryExists] 오류 발생:', err);
     return false;
+  }
+}
+
+// 여러 비디오의 요약 존재 여부를 배치로 확인
+export async function checkMultipleVideoSummaryExists(videoIds: string[], userId?: string): Promise<{[videoId: string]: boolean}> {
+  try {
+    if (!videoIds.length) return {};
+    
+    console.log(`[checkMultipleVideoSummaryExists] 배치 요약 존재 확인: ${videoIds.length}개 비디오, userId: ${userId || 'guest'}`);
+    
+    const result: {[videoId: string]: boolean} = {};
+    
+    // 모든 비디오 ID에 대해 기본값 false 설정
+    videoIds.forEach(id => {
+      result[id] = false;
+    });
+    
+    if (userId) {
+      // 로그인한 사용자의 개인 요약들 확인
+      const { data: userSummaries, error: userError } = await supabase
+        .from('video_summaries')
+        .select('video_id')
+        .in('video_id', videoIds)
+        .eq('user_id', userId);
+      
+      if (userError) {
+        console.error('[checkMultipleVideoSummaryExists] 개인 요약 조회 에러:', userError);
+      } else if (userSummaries) {
+        userSummaries.forEach(summary => {
+          result[summary.video_id] = true;
+        });
+        console.log(`[checkMultipleVideoSummaryExists] 개인 요약 발견: ${userSummaries.length}개`);
+      }
+    }
+    
+    // 게스트 요약들 확인 (아직 요약이 없는 비디오들만)
+    const remainingVideoIds = videoIds.filter(id => !result[id]);
+    if (remainingVideoIds.length > 0) {
+      const { data: guestSummaries, error: guestError } = await supabase
+        .from('video_summaries')
+        .select('video_id')
+        .in('video_id', remainingVideoIds)
+        .is('user_id', null);
+      
+      if (guestError) {
+        console.error('[checkMultipleVideoSummaryExists] 게스트 요약 조회 에러:', guestError);
+      } else if (guestSummaries) {
+        guestSummaries.forEach(summary => {
+          result[summary.video_id] = true;
+        });
+        console.log(`[checkMultipleVideoSummaryExists] 게스트 요약 발견: ${guestSummaries.length}개`);
+      }
+    }
+    
+    const existsCount = Object.values(result).filter(Boolean).length;
+    console.log(`[checkMultipleVideoSummaryExists] 결과: ${existsCount}/${videoIds.length}개 요약 존재`);
+    
+    return result;
+    
+  } catch (err) {
+    console.error('[checkMultipleVideoSummaryExists] 오류 발생:', err);
+    // 에러 발생 시 모든 비디오에 대해 false 반환
+    const result: {[videoId: string]: boolean} = {};
+    videoIds.forEach(id => {
+      result[id] = false;
+    });
+    return result;
   }
 }
 
@@ -1345,6 +1412,195 @@ export async function searchVideosByKeyword(keyword: string, maxResults: number 
     
   } catch (err) {
     console.error('[searchVideosByKeyword] 오류 발생:', err);
+    return { videos: [] };
+  }
+}
+
+// 실시간 급등 영상 조회 (정보전달 컨텐츠 위주)
+export async function getTrendingVideos(maxResults: number = 10) {
+  try {
+    const apiKey = process.env.YOUTUBE_API_KEY;
+    if (!apiKey) {
+      console.error('[getTrendingVideos] YOUTUBE_API_KEY 환경변수가 설정되지 않음');
+      return { videos: [] };
+    }
+
+    // 정보전달 관련 카테고리 (뉴스, 교육, 과학기술)
+    const categories = ['25', '27', '28']; // News & Politics, Education, Science & Technology
+    
+    const allVideos = [];
+    
+    for (const categoryId of categories) {
+      const url = `https://www.googleapis.com/youtube/v3/videos?` +
+        `part=snippet,contentDetails,statistics&` +
+        `chart=mostPopular&` +
+        `regionCode=KR&` +
+        `categoryId=${categoryId}&` +
+        `maxResults=${Math.ceil(maxResults / categories.length)}&` +
+        `key=${apiKey}`;
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        console.error(`[getTrendingVideos] YouTube API 오류 (카테고리 ${categoryId}): ${response.status}`);
+        continue;
+      }
+      
+      const data = await response.json();
+      
+      if (data.items && data.items.length > 0) {
+        const videos = data.items
+          .filter((item: any) => {
+            // 재생 가능한 비디오만 필터링
+            return item.snippet.liveBroadcastContent !== 'live' && 
+                   item.snippet.categoryId === categoryId;
+          })
+          .map((item: any) => ({
+            id: item.id,
+            title: item.snippet.title,
+            channelTitle: item.snippet.channelTitle,
+            thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default?.url,
+            publishedAt: item.snippet.publishedAt,
+            duration: item.contentDetails.duration,
+            description: item.snippet.description,
+            viewCount: item.statistics.viewCount,
+            category: categoryId
+          }));
+        
+        allVideos.push(...videos);
+      }
+    }
+    
+    // 조회수 기준으로 정렬하고 중복 제거
+    const uniqueVideos = allVideos
+      .sort((a, b) => parseInt(b.viewCount) - parseInt(a.viewCount))
+      .slice(0, maxResults);
+    
+    console.log(`[getTrendingVideos] 급등 영상 조회 완료: ${uniqueVideos.length}개`);
+    return { videos: uniqueVideos };
+    
+  } catch (err) {
+    console.error('[getTrendingVideos] 오류 발생:', err);
+    return { videos: [] };
+  }
+}
+
+// 특정 비디오와 관련된 영상 조회
+export async function getRelatedVideos(videoId: string, maxResults: number = 10) {
+  try {
+    const apiKey = process.env.YOUTUBE_API_KEY;
+    if (!apiKey) {
+      console.error('[getRelatedVideos] YOUTUBE_API_KEY 환경변수가 설정되지 않음');
+      return { videos: [] };
+    }
+
+    // 먼저 원본 비디오 정보 조회
+    const videoUrl = `https://www.googleapis.com/youtube/v3/videos?` +
+      `part=snippet&` +
+      `id=${videoId}&` +
+      `key=${apiKey}`;
+    
+    const videoResponse = await fetch(videoUrl);
+    if (!videoResponse.ok) {
+      throw new Error(`YouTube 비디오 정보 API 오류: ${videoResponse.status}`);
+    }
+    
+    const videoData = await videoResponse.json();
+    if (!videoData.items || videoData.items.length === 0) {
+      console.log(`[getRelatedVideos] 비디오 ${videoId}를 찾을 수 없음`);
+      return { videos: [] };
+    }
+    
+    const originalVideo = videoData.items[0];
+    const channelId = originalVideo.snippet.channelId;
+    const title = originalVideo.snippet.title;
+    
+    // 키워드 추출 (제목에서 주요 단어 추출)
+    const keywords = title
+      .replace(/[^\w\s가-힣]/g, ' ')
+      .split(/\s+/)
+      .filter(word => word.length > 2)
+      .slice(0, 3)
+      .join(' ');
+    
+    const relatedVideos = [];
+    
+    // 1. 같은 채널의 다른 동영상
+    const channelUrl = `https://www.googleapis.com/youtube/v3/search?` +
+      `part=snippet&` +
+      `channelId=${channelId}&` +
+      `maxResults=${Math.ceil(maxResults / 2)}&` +
+      `order=relevance&` +
+      `type=video&` +
+      `key=${apiKey}`;
+    
+    const channelResponse = await fetch(channelUrl);
+    if (channelResponse.ok) {
+      const channelData = await channelResponse.json();
+      if (channelData.items) {
+        relatedVideos.push(...channelData.items.filter((item: any) => item.id.videoId !== videoId));
+      }
+    }
+    
+    // 2. 키워드 기반 검색
+    if (keywords) {
+      const keywordUrl = `https://www.googleapis.com/youtube/v3/search?` +
+        `part=snippet&` +
+        `q=${encodeURIComponent(keywords)}&` +
+        `maxResults=${Math.ceil(maxResults / 2)}&` +
+        `order=relevance&` +
+        `type=video&` +
+        `key=${apiKey}`;
+      
+      const keywordResponse = await fetch(keywordUrl);
+      if (keywordResponse.ok) {
+        const keywordData = await keywordResponse.json();
+        if (keywordData.items) {
+          relatedVideos.push(...keywordData.items.filter((item: any) => item.id.videoId !== videoId));
+        }
+      }
+    }
+    
+    // 비디오 ID 목록 추출 (중복 제거)
+    const uniqueVideoIds = [...new Set(relatedVideos.map(item => item.id.videoId))];
+    if (uniqueVideoIds.length === 0) {
+      return { videos: [] };
+    }
+    
+    // 상세 정보 가져오기
+    const detailsUrl = `https://www.googleapis.com/youtube/v3/videos?` +
+      `part=snippet,contentDetails,status&` +
+      `id=${uniqueVideoIds.slice(0, maxResults).join(',')}&` +
+      `key=${apiKey}`;
+    
+    const detailsResponse = await fetch(detailsUrl);
+    if (!detailsResponse.ok) {
+      throw new Error(`YouTube 상세정보 API 오류: ${detailsResponse.status}`);
+    }
+    
+    const detailsData = await detailsResponse.json();
+    
+    // 재생 가능한 비디오만 필터링
+    const videos = detailsData.items
+      .filter((item: any) => {
+        return item.status?.uploadStatus === 'processed' && 
+               item.status?.privacyStatus === 'public' &&
+               item.status?.embeddable !== false;
+      })
+      .map((item: any) => ({
+        id: item.id,
+        title: item.snippet.title,
+        channelTitle: item.snippet.channelTitle,
+        thumbnail: item.snippet.thumbnails.high?.url || item.snippet.thumbnails.default?.url,
+        publishedAt: item.snippet.publishedAt,
+        duration: item.contentDetails.duration,
+        description: item.snippet.description
+      }));
+    
+    console.log(`[getRelatedVideos] 관련 영상 조회 완료: ${videos.length}개`);
+    return { videos };
+    
+  } catch (err) {
+    console.error('[getRelatedVideos] 오류 발생:', err);
     return { videos: [] };
   }
 }

@@ -79,30 +79,44 @@ if (process.env.NODE_ENV === 'production' && (!process.env.NEXT_PUBLIC_SUPABASE_
   throw new Error('Missing required Supabase environment variables. Please check your .env.local file.');
 }
 
-// 일반 클라이언트 (RLS 적용됨)
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true,
-    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
-    storageKey: 'youtube-summarizer-auth',
-  },
-  global: {
-    headers: {
-      'x-application-name': 'youtube-summarizer',
-    },
-  },
-});
+// 단일 Supabase 클라이언트 인스턴스
+let supabaseInstance: ReturnType<typeof createClient<Database>> | null = null;
+let supabaseAdminInstance: ReturnType<typeof createClient<Database>> | null = null;
 
-// 관리자 클라이언트 (RLS 우회) - 서버 액션에서만 사용해야 함
-export const supabaseAdmin = createClient<Database>(
-  supabaseUrl,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseAnonKey,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
+// 일반 클라이언트 (RLS 적용됨) - 싱글톤 패턴
+export const supabase = (() => {
+  if (!supabaseInstance) {
+    supabaseInstance = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true,
+        storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+        storageKey: 'youtube-summarizer-auth',
+      },
+      global: {
+        headers: {
+          'x-application-name': 'youtube-summarizer',
+        },
+      },
+    });
   }
-);
+  return supabaseInstance;
+})();
+
+// 관리자 클라이언트 (RLS 우회) - 서버 액션에서만 사용해야 함 - 싱글톤 패턴
+export const supabaseAdmin = (() => {
+  if (!supabaseAdminInstance) {
+    supabaseAdminInstance = createClient<Database>(
+      supabaseUrl,
+      process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseAnonKey,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      }
+    );
+  }
+  return supabaseAdminInstance;
+})();

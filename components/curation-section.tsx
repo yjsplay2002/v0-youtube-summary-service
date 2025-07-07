@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/components/auth-context';
-import { getUserKeywords, getGuestKeywords, searchVideosByKeyword, checkVideoSummaryExists } from '@/app/actions';
+import { useSearchParams } from 'next/navigation';
+import { getUserKeywords, searchVideosByKeyword, checkVideoSummaryExists, checkMultipleVideoSummaryExists, getTrendingVideos, getRelatedVideos } from '@/app/actions';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { PlayCircle, Clock, User, Sparkles, Tag, Loader2, X, Eye, FileText } from 'lucide-react';
+import { PlayCircle, Clock, User, Sparkles, Tag, X, Eye, FileText, TrendingUp, Zap } from 'lucide-react';
 import YouTube from 'react-youtube';
 import { toast } from 'sonner';
 
@@ -19,6 +20,8 @@ interface VideoItem {
   publishedAt: string;
   duration: string;
   description?: string;
+  viewCount?: string;
+  category?: string;
 }
 
 interface UserKeyword {
@@ -28,13 +31,13 @@ interface UserKeyword {
 
 interface CurationSectionProps {
   className?: string;
+  currentVideoId?: string;
 }
 
-// 비디오 길이를 사람이 읽기 쉬운 형태로 변환
+// 유틸리티 함수들
 function formatDuration(duration: string): string {
   if (!duration || duration === 'Unknown') return '';
   
-  // PT15M33S 형태를 15:33 형태로 변환
   const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
   if (!match) return '';
   
@@ -49,7 +52,6 @@ function formatDuration(duration: string): string {
   }
 }
 
-// 날짜를 상대적 형태로 변환
 function formatRelativeDate(dateString: string): string {
   const date = new Date(dateString);
   const now = new Date();
@@ -63,276 +65,183 @@ function formatRelativeDate(dateString: string): string {
   return `${Math.ceil(diffDays / 365)}년 전`;
 }
 
-export default function CurationSection({ className }: CurationSectionProps) {
+function formatViewCount(viewCount: string): string {
+  const count = parseInt(viewCount);
+  if (count >= 100000000) return `${Math.floor(count / 100000000)}억`;
+  if (count >= 10000) return `${Math.floor(count / 10000)}만`;
+  if (count >= 1000) return `${Math.floor(count / 1000)}천`;
+  return count.toString();
+}
+
+export default function CurationSection({ className, currentVideoId }: CurationSectionProps) {
   const { user } = useAuth();
+  const searchParams = useSearchParams();
+  
+  // 상태
+  const [mode, setMode] = useState<'trending' | 'related' | 'interest'>('trending');
+  const [videos, setVideos] = useState<VideoItem[]>([]);
   const [keywords, setKeywords] = useState<UserKeyword[]>([]);
   const [selectedKeyword, setSelectedKeyword] = useState<string | null>(null);
-  const [videos, setVideos] = useState<VideoItem[]>([]);
-  const [keywordsLoading, setKeywordsLoading] = useState(true);
-  const [videosLoading, setVideosLoading] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedVideo, setSelectedVideo] = useState<VideoItem | null>(null);
   const [showFullscreen, setShowFullscreen] = useState(false);
-  const [nextPageToken, setNextPageToken] = useState<string | undefined>(undefined);
   const [videoSummaryStatus, setVideoSummaryStatus] = useState<{[videoId: string]: boolean}>({});
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const isLoadingMoreRef = useRef(false); // 중복 호출 방지용 ref
+  
+  // 중복 로딩 방지를 위한 ref
+  const loadingRef = useRef(false);
+  const lastLoadedKey = useRef<string>('');
 
-  // 유저(또는 게스트)의 키워드 추출
-  const fetchKeywords = async () => {
-    try {
-      setKeywordsLoading(true);
-      setError(null);
-      
-      let keywordData: UserKeyword[];
-      if (user) {
-        // 로그인한 사용자: 개인 키워드
-        keywordData = await getUserKeywords(user.id);
-      } else {
-        // 게스트 사용자: 게스트 키워드
-        keywordData = await getGuestKeywords();
-      }
-      
-      setKeywords(keywordData || []);
-    } catch (err) {
-      console.error('키워드 로딩 실패:', err);
-      setError('키워드를 불러오는 중 오류가 발생했습니다.');
-    } finally {
-      setKeywordsLoading(false);
-    }
+  // videoId 결정
+  const videoId = searchParams.get('videoId') || currentVideoId;
+
+  // 모드 결정 함수
+  const determineMode = (): 'trending' | 'related' | 'interest' => {
+    if (!user) return 'trending';
+    if (videoId) return 'related';
+    return 'interest';
   };
 
-  // 비디오 요약 상태 확인
-  const checkVideoSummaryStatus = async (videoIds: string[]) => {
-    const statusPromises = videoIds.map(async (videoId) => {
-      const exists = await checkVideoSummaryExists(videoId, user?.id);
-      return { videoId, exists };
-    });
+  // 비디오 요약 상태 확인 (배치 처리)
+  const checkSummaryStatus = async (videoIds: string[]) => {
+    if (!videoIds.length) return;
     
-    const results = await Promise.all(statusPromises);
-    const statusMap = results.reduce((acc, { videoId, exists }) => {
-      acc[videoId] = exists;
-      return acc;
-    }, {} as {[videoId: string]: boolean});
-    
+    const statusMap = await checkMultipleVideoSummaryExists(videoIds, user?.id);
     setVideoSummaryStatus(prev => ({ ...prev, ...statusMap }));
   };
 
-  // 선택된 키워드로 관련 동영상 검색
-  const searchVideosForKeyword = async (keyword: string, append: boolean = false) => {
+  // 데이터 로딩 함수
+  const loadData = async () => {
+    const currentMode = determineMode();
+    const loadKey = `${currentMode}-${videoId}-${user?.id}`;
+    
+    // 중복 로딩 방지
+    if (loadingRef.current || lastLoadedKey.current === loadKey) {
+      return;
+    }
+    
+    loadingRef.current = true;
+    lastLoadedKey.current = loadKey;
+    setLoading(true);
+    setError(null);
+    setMode(currentMode);
+    
     try {
-      // 중복 호출 방지
-      if (append && isLoadingMoreRef.current) {
-        console.log('Already loading more videos, skipping...');
-        return;
-      }
+      let result: { videos: VideoItem[] } = { videos: [] };
       
-      if (process.env.NODE_ENV === 'development') {
-        console.log('searchVideosForKeyword called:', { keyword, append, nextPageToken, hasMore });
-      }
-      
-      if (!append) {
-        setVideosLoading(true);
-        setVideos([]);
-        setHasMore(true);
-        setNextPageToken(undefined);
-        isLoadingMoreRef.current = false;
-      } else {
-        setLoadingMore(true);
-        isLoadingMoreRef.current = true;
-      }
-      setError(null);
-      
-      const currentPageToken = append ? nextPageToken : undefined;
-      
-      const searchResult = await searchVideosByKeyword(keyword, 10, currentPageToken);
-      
-      if (process.env.NODE_ENV === 'development') {
-        console.log('Search result:', { 
-          videosCount: searchResult.videos.length, 
-          nextPageToken: searchResult.nextPageToken 
-        });
-      }
-      
-      if (append) {
-        // 중복 제거: 기존 비디오 ID와 새로운 비디오 ID를 비교
-        setVideos(prev => {
-          const existingIds = new Set(prev.map(v => v.id));
-          const newVideos = searchResult.videos.filter(video => !existingIds.has(video.id));
+      switch (currentMode) {
+        case 'trending':
+          result = await getTrendingVideos(12);
+          setKeywords([]);
+          setSelectedKeyword(null);
+          break;
           
-          if (process.env.NODE_ENV === 'development') {
-            console.log('Adding new videos:', { existing: prev.length, new: newVideos.length });
+        case 'related':
+          if (videoId) {
+            result = await getRelatedVideos(videoId, 12);
           }
+          setKeywords([]);
+          setSelectedKeyword(null);
+          break;
           
-          return [...prev, ...newVideos];
-        });
-        
-        // 새로운 비디오가 없거나 다음 페이지 토큰이 없으면 더 이상 로드할 것이 없다고 간주
-        if (searchResult.videos.length === 0 || !searchResult.nextPageToken) {
-          if (process.env.NODE_ENV === 'development') {
-            console.log('No more videos to load');
+        case 'interest':
+          if (user?.id) {
+            const keywordData = await getUserKeywords(user.id);
+            setKeywords(keywordData || []);
+            
+            if (keywordData && keywordData.length > 0) {
+              const topKeyword = keywordData[0].keyword;
+              setSelectedKeyword(topKeyword);
+              const searchResult = await searchVideosByKeyword(topKeyword, 12);
+              result = searchResult;
+            }
           }
-          setHasMore(false);
-        }
-        
-        // 새 비디오들의 요약 상태 확인
-        if (searchResult.videos.length > 0) {
-          const newVideoIds = searchResult.videos.map(v => v.id);
-          await checkVideoSummaryStatus(newVideoIds);
-        }
-      } else {
-        setVideos(searchResult.videos);
-        
-        // 비디오들의 요약 상태 확인
-        if (searchResult.videos.length > 0) {
-          await checkVideoSummaryStatus(searchResult.videos.map(v => v.id));
-        }
-        
-        // 첫 번째 로드에서 결과가 적거나 nextPageToken이 없으면 hasMore를 false로 설정
-        if (searchResult.videos.length < 10 || !searchResult.nextPageToken) {
-          setHasMore(false);
-        }
+          break;
       }
       
-      // 페이지 토큰 업데이트
-      setNextPageToken(searchResult.nextPageToken);
+      setVideos(result.videos);
       
+      if (result.videos.length > 0) {
+        await checkSummaryStatus(result.videos.map(v => v.id));
+      }
     } catch (err) {
-      console.error('동영상 검색 실패:', err);
-      setError('동영상을 불러오는 중 오류가 발생했습니다.');
+      console.error('데이터 로딩 실패:', err);
+      setError('데이터를 불러오는 중 오류가 발생했습니다.');
     } finally {
-      setVideosLoading(false);
-      setLoadingMore(false);
-      isLoadingMoreRef.current = false;
+      setLoading(false);
+      loadingRef.current = false;
     }
   };
 
-  // 더 많은 동영상 로드
-  const loadMoreVideos = useCallback(() => {
-    if (selectedKeyword && !loadingMore && hasMore) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('Loading more videos:', { selectedKeyword, loadingMore, hasMore, nextPageToken });
-      }
-      searchVideosForKeyword(selectedKeyword, true);
-    }
-  }, [selectedKeyword, loadingMore, hasMore, nextPageToken]);
-
-  // 스크롤 이벤트 핸들러
-  const handleScroll = useCallback(() => {
-    if (!scrollContainerRef.current || loadingMore || !hasMore || !selectedKeyword) return;
+  // 키워드 선택 핸들러
+  const handleKeywordSelect = async (keyword: string) => {
+    if (selectedKeyword === keyword || loadingRef.current) return;
     
-    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
-    const scrollPercentage = (scrollTop + clientHeight) / scrollHeight;
-    
-    // 90% 스크롤했을 때 더 로드
-    if (scrollPercentage >= 0.9) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('Scroll threshold reached:', { 
-          scrollPercentage: Math.round(scrollPercentage * 100) + '%',
-          loadingMore,
-          hasMore,
-          selectedKeyword
-        });
-      }
-      loadMoreVideos();
-    }
-  }, [loadMoreVideos, loadingMore, hasMore, selectedKeyword]);
-
-  // 스크롤 이벤트 리스너 등록
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) return;
-    
-    // 스크롤 이벤트 디바운싱
-    let timeoutId: NodeJS.Timeout;
-    const debouncedScroll = (e: Event) => {
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => handleScroll(), 100);
-    };
-    
-    container.addEventListener('scroll', debouncedScroll, { passive: true });
-    return () => {
-      container.removeEventListener('scroll', debouncedScroll);
-      clearTimeout(timeoutId);
-    };
-  }, [handleScroll]);
-
-  // 태그 선택 핸들러
-  const handleKeywordSelect = (keyword: string) => {
-    if (selectedKeyword === keyword) return; // 이미 선택된 키워드면 무시
-    
-    if (process.env.NODE_ENV === 'development') {
-      console.log('Keyword selected:', keyword);
-    }
-    
-    // 모든 상태 초기화
+    loadingRef.current = true;
     setSelectedKeyword(keyword);
-    setVideos([]); 
-    setHasMore(true);
-    setSelectedVideo(null); 
-    setNextPageToken(undefined);
-    setLoadingMore(false);
-    isLoadingMoreRef.current = false;
+    setLoading(true);
     
-    searchVideosForKeyword(keyword);
+    try {
+      const searchResult = await searchVideosByKeyword(keyword, 12);
+      setVideos(searchResult.videos);
+      
+      if (searchResult.videos.length > 0) {
+        await checkSummaryStatus(searchResult.videos.map(v => v.id));
+      }
+    } catch (err) {
+      console.error('키워드 검색 실패:', err);
+      setError('키워드 검색 중 오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
+      loadingRef.current = false;
+    }
   };
 
-  // 비디오 클릭 핸들러 (한 번 클릭으로 바로 전체화면)
+  // 비디오 클릭 핸들러
   const handleVideoClick = (video: VideoItem) => {
     setSelectedVideo(video);
     setShowFullscreen(true);
   };
 
-  // 요약 버튼 클릭 핸들러 (개선된 버전)
+  // 요약 버튼 클릭 핸들러
   const handleSummarizeClick = async () => {
     if (!selectedVideo) return;
     
     const videoId = selectedVideo.id;
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
     
-    // 이미 요약이 존재하는 경우 메인 페이지로 이동하여 해당 비디오 표시
     if (videoSummaryStatus[videoId]) {
       window.location.href = `/?videoId=${videoId}`;
       return;
     }
     
-    // 요약 시작 - 기존 YouTube Form으로 URL 전달
     window.postMessage({
       type: 'FILL_YOUTUBE_URL',
       url: videoUrl
     }, '*');
     
-    // 스크롤을 YouTube Form 섹션으로 이동
     const youtubeFormSection = document.getElementById('youtube-form');
     if (youtubeFormSection) {
       youtubeFormSection.scrollIntoView({ behavior: 'smooth' });
     }
     
-    // 알림 토스트
     toast.success('동영상이 설정되었습니다', {
       description: '아래 요약 폼에서 요약을 시작하세요.',
       duration: 3000,
     });
   };
 
-  // 전체화면 모달 닫기
-  const handleCloseFullscreen = () => {
-    setShowFullscreen(false);
-  };
-
-  // 키보드 이벤트 핸들러 (ESC 키로 전체화면 닫기)
+  // 키보드 이벤트 핸들러
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && showFullscreen) {
-        handleCloseFullscreen();
+        setShowFullscreen(false);
       }
     };
 
     if (showFullscreen) {
       document.addEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = 'hidden'; // 스크롤 방지
+      document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = 'unset';
     }
@@ -343,31 +252,102 @@ export default function CurationSection({ className }: CurationSectionProps) {
     };
   }, [showFullscreen]);
 
-  // 컴포넌트 마운트 시 키워드 로드
+  // 데이터 로딩 useEffect - 단순화
   useEffect(() => {
-    fetchKeywords();
-  }, [user?.id]); // user가 변경될 때마다 다시 로드
+    loadData();
+  }, [user?.id, videoId]); // 핵심 의존성만
 
-  if (keywordsLoading) {
+  // 제목과 설명
+  const getTitleAndDescription = () => {
+    switch (mode) {
+      case 'trending':
+        return {
+          title: '실시간 급등 영상',
+          description: '정보전달 위주의 인기 급상승 동영상들을 확인해보세요',
+          icon: <TrendingUp className="w-5 h-5" />
+        };
+      case 'related':
+        return {
+          title: '관련 영상',
+          description: '현재 보고 있는 영상과 관련된 추천 동영상들입니다',
+          icon: <Sparkles className="w-5 h-5" />
+        };
+      case 'interest':
+        return {
+          title: '맞춤 추천',
+          description: '시청 기록 분석을 통해 발견된 관심 키워드 기반 추천',
+          icon: <Zap className="w-5 h-5" />
+        };
+      default:
+        return {
+          title: '큐레이션',
+          description: '추천 동영상',
+          icon: <Tag className="w-5 h-5" />
+        };
+    }
+  };
+
+  const { title, description, icon } = getTitleAndDescription();
+
+  if (error) {
     return (
       <div className={className}>
-        <div className="mb-6">
-          <h2 className="text-2xl font-bold mb-2">맞춤 추천</h2>
-          <p className="text-muted-foreground">
-            당신의 시청 기록을 분석하여 관심 키워드를 찾고 있습니다
-          </p>
+        <div className="text-center py-8">
+          <Sparkles className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+          <p className="text-muted-foreground mb-4">{error}</p>
+          <Button onClick={() => loadData()} variant="outline">
+            다시 시도
+          </Button>
         </div>
-        
-        {/* 키워드 로딩 스켈레톤 */}
+      </div>
+    );
+  }
+
+  return (
+    <div className={className}>
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-2">
+          {icon}
+          <h2 className="text-2xl font-bold">{title}</h2>
+        </div>
+        <p className="text-muted-foreground">{description}</p>
+      </div>
+      
+      {/* 키워드 태그들 - 관심사 모드일 때만 표시 */}
+      {mode === 'interest' && keywords.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-6">
-          {[...Array(5)].map((_, i) => (
-            <Skeleton key={i} className="h-8 w-20" />
+          {keywords.map((item) => (
+            <Badge
+              key={item.keyword}
+              variant={selectedKeyword === item.keyword ? "default" : "outline"}
+              className={`cursor-pointer px-3 py-1 text-sm transition-all hover:scale-105 ${
+                selectedKeyword === item.keyword 
+                  ? 'bg-primary text-primary-foreground' 
+                  : 'hover:bg-muted'
+              }`}
+              onClick={() => handleKeywordSelect(item.keyword)}
+            >
+              <Tag className="w-3 h-3 mr-1" />
+              {item.keyword}
+              <span className="ml-1 text-xs opacity-70">({item.frequency})</span>
+            </Badge>
           ))}
         </div>
-        
-        {/* 동영상 로딩 스켈레톤 */}
+      )}
+
+      {/* 선택된 키워드 표시 */}
+      {mode === 'interest' && selectedKeyword && (
+        <div className="mb-4">
+          <h3 className="text-lg font-semibold text-primary">
+            "{selectedKeyword}" 관련 동영상
+          </h3>
+        </div>
+      )}
+
+      {/* 동영상 리스트 */}
+      {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {[...Array(8)].map((_, i) => (
+          {[...Array(12)].map((_, i) => (
             <Card key={i} className="overflow-hidden">
               <Skeleton className="aspect-video w-full" />
               <CardContent className="p-4">
@@ -378,93 +358,8 @@ export default function CurationSection({ className }: CurationSectionProps) {
             </Card>
           ))}
         </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className={className}>
-        <div className="text-center py-8">
-          <Sparkles className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-          <p className="text-muted-foreground mb-4">{error}</p>
-          <Button onClick={fetchKeywords} variant="outline">
-            다시 시도
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (keywords.length === 0) {
-    return (
-      <div className={className}>
-        <div className="text-center py-8">
-          <Tag className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-          <p className="text-muted-foreground">
-            {user 
-              ? '아직 충분한 시청 기록이 없습니다. 더 많은 동영상을 요약해보세요!' 
-              : '아직 게스트 요약 데이터가 충분하지 않습니다. 동영상을 요약하여 키워드를 생성해보세요!'
-            }
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className={className}>
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold mb-2">맞춤 추천</h2>
-        <p className="text-muted-foreground">
-          {user ? '시청 기록 분석을 통해 발견된 관심 키워드입니다' : '게스트 사용자를 위한 인기 키워드입니다'}
-        </p>
-      </div>
-      
-      {/* 키워드 태그들 */}
-      <div className="flex flex-wrap gap-2 mb-6">
-        {keywords.map((item) => (
-          <Badge
-            key={item.keyword}
-            variant={selectedKeyword === item.keyword ? "default" : "outline"}
-            className={`cursor-pointer px-3 py-1 text-sm transition-all hover:scale-105 ${
-              selectedKeyword === item.keyword 
-                ? 'bg-primary text-primary-foreground' 
-                : 'hover:bg-muted'
-            }`}
-            onClick={() => handleKeywordSelect(item.keyword)}
-          >
-            <Tag className="w-3 h-3 mr-1" />
-            {item.keyword}
-            <span className="ml-1 text-xs opacity-70">({item.frequency})</span>
-          </Badge>
-        ))}
-      </div>
-
-      {/* 선택된 키워드 표시 */}
-      {selectedKeyword && (
-        <div className="mb-4">
-          <h3 className="text-lg font-semibold text-primary">
-            "{selectedKeyword}" 관련 동영상
-          </h3>
-        </div>
-      )}
-
-      {/* 동영상 리스트 - 스크롤 가능한 컨테이너 */}
-      {videosLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {[...Array(10)].map((_, i) => (
-            <Card key={i} className="overflow-hidden">
-              <Skeleton className="aspect-video w-full" />
-            </Card>
-          ))}
-        </div>
       ) : videos.length > 0 ? (
-        <div 
-          ref={scrollContainerRef}
-          className="max-h-[80vh] overflow-y-auto pr-2"
-          style={{ scrollbarWidth: 'thin' }}
-        >
+        <div className="max-h-[80vh] overflow-y-auto pr-2" style={{ scrollbarWidth: 'thin' }}>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
             {videos.map((video) => (
               <Card 
@@ -494,15 +389,12 @@ export default function CurationSection({ className }: CurationSectionProps) {
                     }}
                     onReady={(event) => {
                       try {
-                        // 썸네일만 보여주고 자동재생 방지
                         event.target.pauseVideo();
                       } catch (error) {
-                        // CORS 에러 무시
                         console.debug('YouTube player ready - CORS error ignored:', error);
                       }
                     }}
                     onError={(error) => {
-                      // YouTube 플레이어 에러 무시 (CORS 관련)
                       console.debug('YouTube player error ignored:', error);
                     }}
                   />
@@ -513,13 +405,35 @@ export default function CurationSection({ className }: CurationSectionProps) {
                   <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">
                     {formatDuration(video.duration)}
                   </div>
+                  
+                  {/* 급등 영상 모드일 때 조회수 표시 */}
+                  {mode === 'trending' && video.viewCount && (
+                    <div className="absolute top-2 left-2 bg-red-600 text-white text-xs px-2 py-1 rounded flex items-center gap-1">
+                      <TrendingUp className="w-3 h-3" />
+                      {formatViewCount(video.viewCount)}
+                    </div>
+                  )}
                 </div>
                 
-                {/* 플로팅 요약 버튼 - 우측 하단 */}
+                <CardContent className="p-4">
+                  <h3 className="font-semibold text-sm line-clamp-2 mb-2">
+                    {video.title}
+                  </h3>
+                  <div className="flex items-center text-xs text-muted-foreground mb-2">
+                    <User className="w-3 h-3 mr-1" />
+                    <span className="truncate">{video.channelTitle}</span>
+                  </div>
+                  <div className="flex items-center text-xs text-muted-foreground">
+                    <Clock className="w-3 h-3 mr-1" />
+                    <span>{formatRelativeDate(video.publishedAt)}</span>
+                  </div>
+                </CardContent>
+                
+                {/* 플로팅 요약 버튼 */}
                 <div 
                   className="absolute bottom-3 right-3 z-10"
                   onClick={(e) => {
-                    e.stopPropagation(); // 카드 클릭 이벤트 방지
+                    e.stopPropagation();
                     setSelectedVideo(video);
                     handleSummarizeClick();
                   }}
@@ -539,34 +453,15 @@ export default function CurationSection({ className }: CurationSectionProps) {
               </Card>
             ))}
           </div>
-          
-          {/* 무한 스크롤 로딩 인디케이터 */}
-          {loadingMore && (
-            <div className="flex justify-center items-center py-8">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mr-2" />
-              <span className="text-muted-foreground">더 많은 동영상을 불러오는 중...</span>
-            </div>
-          )}
-          
-          {/* 더 이상 로드할 동영상이 없을 때 */}
-          {!hasMore && videos.length > 0 && (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground text-sm">모든 동영상을 불러왔습니다.</p>
-            </div>
-          )}
-        </div>
-      ) : selectedKeyword ? (
-        <div className="text-center py-8">
-          <PlayCircle className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-          <p className="text-muted-foreground">
-            "{selectedKeyword}" 관련 동영상을 찾을 수 없습니다.
-          </p>
         </div>
       ) : (
         <div className="text-center py-8">
-          <Tag className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+          <PlayCircle className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
           <p className="text-muted-foreground">
-            관심 있는 키워드를 선택해보세요!
+            {mode === 'trending' && '급등 영상을 찾을 수 없습니다.'}
+            {mode === 'related' && '관련 영상을 찾을 수 없습니다.'}
+            {mode === 'interest' && selectedKeyword && `"${selectedKeyword}" 관련 동영상을 찾을 수 없습니다.`}
+            {mode === 'interest' && !selectedKeyword && '관심 있는 키워드를 선택해보세요!'}
           </p>
         </div>
       )}
@@ -576,7 +471,7 @@ export default function CurationSection({ className }: CurationSectionProps) {
         <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4">
           <div className="relative w-full max-w-6xl aspect-video bg-black rounded-lg overflow-hidden">
             <Button
-              onClick={handleCloseFullscreen}
+              onClick={() => setShowFullscreen(false)}
               variant="ghost"
               size="icon"
               className="absolute top-4 right-4 z-10 bg-black/50 hover:bg-black/70 text-white rounded-full"
