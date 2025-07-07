@@ -6,6 +6,7 @@ import OpenAI from 'openai';
 import { promises as fs } from 'fs';
 import path from 'path';
 import { supabase } from './supabase';
+import { searchWeb, formatWebSearchContext } from './web-search';
 // Dynamically import tiktoken only when needed to avoid WASM issues in server
 
 // 시스템 프롬프트 캐시
@@ -103,7 +104,60 @@ const getOpenAIClient = () => {
   return new OpenAI({ apiKey });
 };
 
-// Gemini API 클라이언트 함수
+// 웹 검색을 포함한 향상된 Gemini API 클라이언트 함수
+const callGeminiAPIWithWebSearch = async (systemPrompt: string, userMessage: string, language?: string, enableWebSearch: boolean = false): Promise<string> => {
+  let enhancedUserMessage = userMessage;
+  
+  // 웹 검색이 활성화된 경우
+  if (enableWebSearch) {
+    try {
+      // 사용자 메시지에서 검색 키워드 추출 (간단한 구현)
+      const searchQuery = extractSearchKeywords(userMessage);
+      
+      if (searchQuery) {
+        console.log(`[callGeminiAPIWithWebSearch] 웹 검색 수행: "${searchQuery}"`);
+        const searchResults = await searchWeb(searchQuery, { maxResults: 3, language: 'ko' });
+        
+        if (searchResults.results.length > 0) {
+          const webContext = formatWebSearchContext(searchResults);
+          enhancedUserMessage = `${userMessage}\n\n**웹 검색 결과 (참고 정보):**\n${webContext}`;
+          console.log(`[callGeminiAPIWithWebSearch] 웹 검색 컨텍스트 추가: ${searchResults.results.length}개 결과`);
+        }
+      }
+    } catch (error) {
+      console.warn('[callGeminiAPIWithWebSearch] 웹 검색 실패, 원본 메시지로 진행:', error);
+    }
+  }
+  
+  return callGeminiAPI(systemPrompt, enhancedUserMessage, language);
+};
+
+// 검색 키워드 추출 함수
+const extractSearchKeywords = (text: string): string | null => {
+  // 비디오 관련 키워드나 전문 용어가 포함된 경우 검색 활성화
+  const searchTriggers = [
+    '최신', '동향', '트렌드', '뉴스', '발표', '출시', '업데이트',
+    '기업', '회사', '정책', '법률', '규제', '시장', '경제',
+    '기술', '과학', '연구', '개발', '혁신', 'AI', '인공지능',
+    '정치', '사회', '문화', '교육', '의료', '환경'
+  ];
+  
+  const hasSearchTrigger = searchTriggers.some(trigger => text.includes(trigger));
+  
+  if (hasSearchTrigger) {
+    // 간단한 키워드 추출 (실제로는 더 정교한 NLP 기법 사용 가능)
+    const words = text.split(/\s+/).filter(word => 
+      word.length > 2 && 
+      !['에서', '에게', '으로', '을', '를', '이', '가', '의', '와', '과'].includes(word)
+    );
+    
+    return words.slice(0, 3).join(' '); // 상위 3개 단어
+  }
+  
+  return null;
+};
+
+// 기본 Gemini API 클라이언트 함수
 const callGeminiAPI = async (systemPrompt: string, userMessage: string, language?: string): Promise<string> => {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -325,8 +379,9 @@ export async function generateSummary(
       summary = await callClaudeAPI(systemPrompt, userMessage, model as ClaudeModel, language);
       console.log(`[generateSummary] Claude API 응답 받음, 요약 길이: ${summary.length} 문자`);
     } else if (model.startsWith('gemini')) {
-      console.log(`[generateSummary] Gemini API 요청 시작...`);
-      summary = await callGeminiAPI(systemPrompt, userMessage, language);
+      console.log(`[generateSummary] Gemini API (웹 검색 포함) 요청 시작...`);
+      // 웹 검색 활성화하여 최신 정보 포함
+      summary = await callGeminiAPIWithWebSearch(systemPrompt, userMessage, language, true);
       console.log(`[generateSummary] Gemini API 응답 받음, 요약 길이: ${summary.length} 문자`);
     } else {
       console.log(`[generateSummary] OpenAI API 요청 시작...`);

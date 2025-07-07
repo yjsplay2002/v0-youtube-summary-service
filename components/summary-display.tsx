@@ -10,6 +10,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 
+
 export function SummaryDisplayClient({ summary, seekTo, videoId }: { summary: string; seekTo: (seconds: number) => void; videoId?: string }) {
   const [copied, setCopied] = useState(false)
   const [shared, setShared] = useState(false)
@@ -30,6 +31,62 @@ export function SummaryDisplayClient({ summary, seekTo, videoId }: { summary: st
         button.style.transform = 'scale(1)';
       }, 200);
     }
+  };
+
+  // Process timestamps function that uses the seekTo prop
+  const processTimestampsWithSeekTo = (children: any): any => {
+    if (typeof children === 'string') {
+      // Enhanced regex to match various timestamp formats including hours
+      const timestampRegex = /\b(\d{1,2}):(\d{2})(?::(\d{2}))?\b/g;
+      const parts = [];
+      let lastIndex = 0;
+      let match;
+
+      while ((match = timestampRegex.exec(children)) !== null) {
+        // Add text before timestamp
+        if (match.index > lastIndex) {
+          parts.push(children.slice(lastIndex, match.index));
+        }
+
+        // Calculate seconds from timestamp
+        const hours = match[3] ? parseInt(match[1]) : 0;
+        const minutes = match[3] ? parseInt(match[2]) : parseInt(match[1]);
+        const seconds = match[3] ? parseInt(match[3]) : parseInt(match[2]);
+        const totalSeconds = hours * 3600 + minutes * 60 + seconds;
+
+        // Add clickable timestamp
+        parts.push(
+          <span
+            key={`timestamp-${match.index}`}
+            className="text-sky-500 hover:text-sky-600 underline cursor-pointer timestamp-btn transition-colors font-medium"
+            onClick={(e) => {
+              e.preventDefault();
+              handleTimestampClick(totalSeconds);
+            }}
+          >
+            {match[0]}
+          </span>
+        );
+
+        lastIndex = match.index + match[0].length;
+      }
+
+      // Add remaining text
+      if (lastIndex < children.length) {
+        parts.push(children.slice(lastIndex));
+      }
+
+      return parts.length > 1 ? parts : children;
+    }
+
+    // If children is an array, process each child
+    if (Array.isArray(children)) {
+      return children.map((child, index) => 
+        typeof child === 'string' ? processTimestampsWithSeekTo(child) : child
+      );
+    }
+
+    return children;
   };
 
 
@@ -127,12 +184,40 @@ export function SummaryDisplayClient({ summary, seekTo, videoId }: { summary: st
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkBreaks]}
               components={{
+                // Custom text renderer to convert timestamps to clickable links
+                p: ({ children, ...props }) => {
+                  const processedChildren = processTimestampsWithSeekTo(children);
+                  return <p {...props}>{processedChildren}</p>;
+                },
+                li: ({ children, ...props }) => {
+                  const processedChildren = processTimestampsWithSeekTo(children);
+                  return <li {...props}>{processedChildren}</li>;
+                },
                 // Custom link renderer for timestamps
                 a: ({ href, children, ...props }) => {
-                  // Check if this is a timestamp link
+                  // Check if this is a timestamp link (supports multiple formats)
                   const timestampMatch = href?.match(/[&?]t=(\d+)s?$/);
+                  
+                  // Also check for time format in the children text (e.g., "1:23:45", "12:34", "0:05")
+                  const childrenText = children?.toString() || '';
+                  const timeFormatMatch = childrenText.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+                  
+                  let seconds = 0;
+                  
                   if (timestampMatch) {
-                    const seconds = parseInt(timestampMatch[1]);
+                    // URL parameter format: t=123
+                    seconds = parseInt(timestampMatch[1]);
+                  } else if (timeFormatMatch) {
+                    // Time format: H:MM:SS or MM:SS
+                    const hours = timeFormatMatch[3] ? parseInt(timeFormatMatch[1]) : 0;
+                    const minutes = timeFormatMatch[3] ? parseInt(timeFormatMatch[2]) : parseInt(timeFormatMatch[1]);
+                    const secs = timeFormatMatch[3] ? parseInt(timeFormatMatch[3]) : parseInt(timeFormatMatch[2]);
+                    
+                    seconds = hours * 3600 + minutes * 60 + secs;
+                  }
+                  
+                  // If we found a valid timestamp, make it clickable
+                  if (seconds > 0) {
                     return (
                       <span
                         className="text-sky-500 hover:text-sky-600 underline cursor-pointer timestamp-btn transition-colors font-medium"

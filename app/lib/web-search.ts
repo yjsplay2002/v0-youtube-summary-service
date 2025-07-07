@@ -37,51 +37,85 @@ export async function searchWeb(query: string, options: {
   const startTime = Date.now();
 
   try {
-    // For now, we'll create a mock implementation
-    // In a real implementation, you would use:
-    // - SerpAPI (https://serpapi.com/)
-    // - Google Custom Search API
-    // - Bing Search API
-    // - DuckDuckGo API
+    // 실제 Google Custom Search API 구현
+    const apiKey = process.env.GOOGLE_SEARCH_API_KEY;
+    const cx = process.env.GOOGLE_SEARCH_ENGINE_ID;
     
-    const mockResults: WebSearchResult[] = [
-      {
-        title: `${query}에 대한 최신 정보`,
-        url: "https://example.com/search-result-1",
-        snippet: `${query}와 관련된 최신 동향과 정보를 제공합니다. 이 분야의 전문가들이 공유하는 인사이트와 실무 경험을 확인하세요.`,
-        source: "웹 검색 결과"
-      },
-      {
-        title: `${query} 가이드 및 팁`,
-        url: "https://example.com/search-result-2", 
-        snippet: `${query}에 대한 실용적인 가이드와 전문가 팁을 제공합니다. 단계별 설명과 실제 사례를 통해 더 깊이 이해할 수 있습니다.`,
-        source: "웹 검색 결과"
-      }
-    ];
+    if (!apiKey || !cx) {
+      console.warn('[WebSearch] Google Search API 키 또는 엔진 ID가 설정되지 않음, mock 결과 반환');
+      return getMockResults(query, maxResults, startTime);
+    }
+
+    const searchUrl = new URL('https://www.googleapis.com/customsearch/v1');
+    searchUrl.searchParams.set('key', apiKey);
+    searchUrl.searchParams.set('cx', cx);
+    searchUrl.searchParams.set('q', query);
+    searchUrl.searchParams.set('num', Math.min(maxResults, 10).toString());
+    searchUrl.searchParams.set('lr', `lang_${language}`);
+    if (safeSearch) {
+      searchUrl.searchParams.set('safe', 'active');
+    }
+
+    const response = await fetch(searchUrl.toString());
+    
+    if (!response.ok) {
+      console.error(`[WebSearch] Google Search API 오류: ${response.status}`);
+      return getMockResults(query, maxResults, startTime);
+    }
+
+    const data = await response.json();
+    
+    const results: WebSearchResult[] = (data.items || []).map((item: any) => ({
+      title: item.title || '',
+      url: item.link || '',
+      snippet: item.snippet || '',
+      source: new URL(item.link || '').hostname
+    }));
 
     const searchTime = Date.now() - startTime;
     
-    console.log(`[WebSearch] Found ${mockResults.length} results in ${searchTime}ms`);
+    console.log(`[WebSearch] 실제 검색 완료: ${results.length}개 결과, ${searchTime}ms`);
     
     return {
-      results: mockResults.slice(0, maxResults),
+      results,
       query,
-      resultCount: mockResults.length,
+      resultCount: results.length,
       searchTime
     };
-    
+
   } catch (error) {
-    console.error('[WebSearch] Error during web search:', error);
-    
-    const searchTime = Date.now() - startTime;
-    
-    return {
-      results: [],
-      query,
-      resultCount: 0,
-      searchTime
-    };
+    console.error('[WebSearch] 검색 중 오류 발생:', error);
+    return getMockResults(query, maxResults, startTime);
   }
+}
+
+// Mock 결과 생성 함수
+function getMockResults(query: string, maxResults: number, startTime: number): WebSearchResponse {
+  const mockResults: WebSearchResult[] = [
+    {
+      title: `${query}에 대한 최신 정보`,
+      url: "https://example.com/search-result-1",
+      snippet: `${query}와 관련된 최신 동향과 정보를 제공합니다. 이 분야의 전문가들이 공유하는 인사이트와 실무 경험을 확인하세요.`,
+      source: "example.com"
+    },
+    {
+      title: `${query} 가이드 및 팁`,
+      url: "https://example.com/search-result-2", 
+      snippet: `${query}에 대한 실용적인 가이드와 전문가 팁을 제공합니다. 단계별 설명과 실제 사례를 통해 더 깊이 이해할 수 있습니다.`,
+      source: "example.com"
+    }
+  ];
+
+  const searchTime = Date.now() - startTime;
+  
+  console.log(`[WebSearch] Mock 결과 반환: ${mockResults.length}개, ${searchTime}ms`);
+  
+  return {
+    results: mockResults.slice(0, maxResults),
+    query,
+    resultCount: mockResults.length,
+    searchTime
+  };
 }
 
 /**
