@@ -70,7 +70,8 @@ async function upsertUserVideoSummaryToDB({
   inferred_keywords,
   summary, 
   summary_prompt,
-  dialog
+  dialog,
+  language
 }: {
   user_id: string,
   video_id: string,
@@ -84,7 +85,8 @@ async function upsertUserVideoSummaryToDB({
   inferred_keywords?: string[],
   summary: string,
   summary_prompt?: string,
-  dialog?: string
+  dialog?: string,
+  language?: string
 }) {
   console.log(`[upsertUserVideoSummaryToDB] 시작 - user_id: ${user_id}, video_id: ${video_id}`);
   
@@ -121,7 +123,8 @@ async function upsertUserVideoSummaryToDB({
         inferred_keywords,
         summary, 
         summary_prompt,
-        dialog
+        dialog,
+        language: language || 'en'
       }
     ]).select();
     
@@ -150,7 +153,8 @@ async function upsertGuestVideoSummaryToDB({
   video_description,
   inferred_topics,
   inferred_keywords,
-  dialog
+  dialog,
+  language
 }: {
   video_id: string,
   summary: string,
@@ -162,7 +166,8 @@ async function upsertGuestVideoSummaryToDB({
   video_description?: string,
   inferred_topics?: string[],
   inferred_keywords?: string[],
-  dialog?: string
+  dialog?: string,
+  language?: string
 }) {
   console.log(`[upsertGuestVideoSummaryToDB] 게스트 요약 저장 시작: ${video_id}`);
   
@@ -180,7 +185,8 @@ async function upsertGuestVideoSummaryToDB({
         inferred_topics,
         inferred_keywords,
         summary,
-        dialog
+        dialog,
+        language: language || 'en'
       }
     ]).select();
     
@@ -250,55 +256,45 @@ export async function summarizeYoutubeVideo(
       }
     }
 
-    // 3. DB에서 기존 요약 조회 (모든 요약 검색)
-    console.log(`[summarizeYoutubeVideo] 기존 요약 검색 중...`);
-    const summariesResult = await getAllVideoSummaries(videoId, userId);
+    // 3. DB에서 기존 언어별 요약 조회
+    console.log(`[summarizeYoutubeVideo] 기존 요약 검색 중... (언어: ${language})`);
     
-    // 3-1. 내 요약이 있으면 바로 반환
-    if (summariesResult.mySummary) {
-      console.log(`[summarizeYoutubeVideo] 내 요약 발견, 바로 반환 (videoId: ${videoId})`);
-      return { success: true, videoId, summary: summariesResult.mySummary.summary };
-    }
-    
-    // 3-2. 내 요약이 없지만 다른 사용자의 요약이 있으면 복사해서 내 요약으로 저장
-    if (summariesResult.otherSummaries.length > 0) {
-      const latestOtherSummary = summariesResult.otherSummaries[0]; // 가장 최근 요약
-      console.log(`[summarizeYoutubeVideo] 다른 사용자의 요약 발견 (${latestOtherSummary.isGuest ? '게스트' : '다른 사용자'}), AI API 호출 없이 복사하여 저장`);
+    // 3-1. 해당 언어의 요약이 이미 있는지 확인
+    const { data: existingSummaryCheck } = await supabaseAdmin
+      .rpc('summary_exists_for_language', {
+        target_video_id: videoId,
+        target_language: language || 'en'
+      });
+
+    if (existingSummaryCheck) {
+      console.log(`[summarizeYoutubeVideo] ${language || 'en'} 언어 요약이 이미 존재함, 기존 요약 반환`);
       
-      try {
-        // 기존 요약을 내 계정에 연결 (AI API 호출 없이)
-        if (userId) {
-          // 기존 요약 찾기
-          const { data: existingSummary } = await supabaseAdmin
-            .from('video_summaries')
-            .select('id')
-            .eq('video_id', videoId)
-            .single();
-          
-          if (existingSummary) {
-            // user_summaries 테이블에 연결 추가
-            await supabaseAdmin
-              .from('user_summaries')
-              .insert({
-                user_id: userId,
-                summary_id: existingSummary.id
-              });
-            console.log(`[summarizeYoutubeVideo] 기존 요약을 내 계정에 연결 완료 (videoId: ${videoId})`);
-          }
+      // 기존 요약을 가져와서 사용자에게 연결
+      const existingSummary = await getSummaryWithMetadata(videoId, userId, language);
+      if (existingSummary && userId) {
+        // 사용자가 이 요약에 접근할 수 있도록 user_summaries에 연결
+        const { data: existingSummaryData } = await supabaseAdmin
+          .from('video_summaries')
+          .select('id')
+          .eq('video_id', videoId)
+          .eq('language', language || 'en')
+          .single();
+
+        if (existingSummaryData) {
+          await supabaseAdmin
+            .from('user_summaries')
+            .upsert({
+              user_id: userId,
+              summary_id: existingSummaryData.id
+            });
         }
-        
-        return { success: true, videoId, summary: latestOtherSummary.summary };
-      } catch (copyError) {
-        console.error(`[summarizeYoutubeVideo] 요약 복사 중 오류:`, copyError);
-        // 복사 실패 시 기존 요약 그대로 반환
-        return { success: true, videoId, summary: latestOtherSummary.summary };
       }
+      
+      return { success: true, videoId, summary: existingSummary?.summary || '' };
     }
     
-    console.log(`[summarizeYoutubeVideo] 기존 요약 없음, 새로 생성 필요 (videoId: ${videoId})`);
-    
-    // 기존 코드는 제거 (위의 새로운 로직으로 대체됨)
-    let dbResult = null;
+    // 3-2. 해당 언어의 요약이 없으므로 새로운 요약 생성 진행
+    console.log(`[summarizeYoutubeVideo] ${language || 'en'} 언어 요약이 없음, 새로운 요약 생성 시작`);
 
     // 4. 자막 가져오기
     console.log(`[summarizeYoutubeVideo] 자막 가져오기 시도 중...`);
@@ -377,7 +373,8 @@ export async function summarizeYoutubeVideo(
           inferred_keywords: inferredKeywords,
           summary: markdown,
           summary_prompt: summaryPrompt,
-          dialog: JSON.stringify(apifyRawData)
+          dialog: JSON.stringify(apifyRawData),
+          language: language || 'en'
         })
         .select('id')
         .single();
@@ -440,7 +437,7 @@ export async function getAllVideoSummaries(videoId: string, currentUserId?: stri
     // 해당 비디오의 요약이 있는지 확인
     const { data: videoSummary, error: summaryError } = await supabaseAdmin
       .from('video_summaries')
-      .select('id, summary, created_at, user_id')
+      .select('id, summary, created_at, user_id, language')
       .eq('video_id', videoId)
       .single();
 
@@ -451,7 +448,7 @@ export async function getAllVideoSummaries(videoId: string, currentUserId?: stri
 
     console.log(`[getAllVideoSummaries] 요약 발견: ${videoSummary.id}`);
 
-    let mySummary: { summary: string; created_at: string; user_id?: string } | undefined;
+    let mySummary: { summary: string; created_at: string; user_id?: string; language?: string } | undefined;
     let hasMySummary = false;
 
     // 현재 사용자가 이 요약을 가지고 있는지 확인
@@ -467,7 +464,8 @@ export async function getAllVideoSummaries(videoId: string, currentUserId?: stri
         mySummary = {
           summary: videoSummary.summary,
           created_at: userSummaryConnection.created_at,
-          user_id: currentUserId
+          user_id: currentUserId,
+          language: videoSummary.language
         };
         hasMySummary = true;
         console.log(`[getAllVideoSummaries] 내 요약 발견: ${currentUserId}`);
@@ -475,7 +473,7 @@ export async function getAllVideoSummaries(videoId: string, currentUserId?: stri
     }
 
     // 다른 요약들 (현재는 하나의 요약만 있지만 구조상 배열로 반환)
-    const otherSummaries: Array<{ summary: string; created_at: string; user_id?: string; isGuest: boolean }> = [];
+    const otherSummaries: Array<{ summary: string; created_at: string; user_id?: string; isGuest: boolean; language?: string }> = [];
     
     if (!hasMySummary) {
       // 현재 사용자가 이 요약을 갖고 있지 않으면 다른 요약으로 분류
@@ -483,7 +481,8 @@ export async function getAllVideoSummaries(videoId: string, currentUserId?: stri
         summary: videoSummary.summary,
         created_at: videoSummary.created_at,
         user_id: videoSummary.user_id,
-        isGuest: videoSummary.user_id === null
+        isGuest: videoSummary.user_id === null,
+        language: videoSummary.language
       });
     }
 
@@ -531,6 +530,96 @@ export async function getSummary(videoId: string, userId?: string): Promise<stri
   }
 }
 
+// New function that returns summary with metadata including language with fallback support
+export async function getSummaryWithMetadata(videoId: string, userId?: string, preferredLanguage?: string): Promise<{
+  summary: string;
+  language?: string;
+  created_at: string;
+  user_id?: string;
+  isGuest?: boolean;
+  foundLanguage?: string;
+  isFallback?: boolean;
+  availableLanguages?: string[];
+} | null> {
+  console.log(`[getSummaryWithMetadata] 요청 videoId: ${videoId}, userId: ${userId || 'anonymous'}, preferredLanguage: ${preferredLanguage || 'default'}`);
+  
+  try {
+    // Get user's preferred language if not specified
+    let targetLanguage = preferredLanguage;
+    if (!targetLanguage && userId) {
+      const { data: userPreference } = await supabase
+        .from('user_preferences')
+        .select('preferred_language')
+        .eq('user_id', userId)
+        .maybeSingle();
+      targetLanguage = userPreference?.preferred_language || 'en';
+    }
+    targetLanguage = targetLanguage || 'en';
+
+    // Use the new database function for language fallback
+    const { data: summaryData, error } = await supabaseAdmin
+      .rpc('get_summary_with_language_fallback', {
+        target_video_id: videoId,
+        preferred_language: targetLanguage
+      });
+
+    if (error) {
+      console.error(`[getSummaryWithMetadata] DB 함수 호출 오류:`, error);
+      return null;
+    }
+
+    if (!summaryData || summaryData.length === 0) {
+      console.log(`[getSummaryWithMetadata] DB에 요약 없음: ${videoId}`);
+      return null;
+    }
+
+    const summary = summaryData[0];
+    
+    // Get available languages for this video
+    const { data: availableLanguages } = await supabaseAdmin
+      .rpc('get_available_languages_for_video', {
+        target_video_id: videoId
+      });
+
+    // Check if user has access to this summary (via user_summaries table)
+    let hasAccess = true; // Default to true for public summaries
+    if (userId) {
+      const { data: userSummaryConnection } = await supabaseAdmin
+        .from('user_summaries')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('summary_id', summary.id)
+        .maybeSingle();
+      
+      // If this is a user-specific summary but user doesn't have access, check if it's guest summary
+      if (summary.user_id && !userSummaryConnection) {
+        hasAccess = summary.user_id === null; // Only allow access to guest summaries
+      }
+    }
+
+    if (!hasAccess) {
+      console.log(`[getSummaryWithMetadata] 사용자 접근 권한 없음: ${videoId}`);
+      return null;
+    }
+
+    console.log(`[getSummaryWithMetadata] 요약 반환: ${videoId}, 언어: ${summary.found_language}, 폴백: ${summary.is_fallback}`);
+    
+    return {
+      summary: summary.summary,
+      language: summary.language,
+      created_at: summary.created_at,
+      user_id: summary.user_id,
+      isGuest: summary.user_id === null,
+      foundLanguage: summary.found_language,
+      isFallback: summary.is_fallback,
+      availableLanguages: availableLanguages?.map(lang => lang.language) || []
+    };
+  } catch (err) {
+    console.error(`[getSummaryWithMetadata] DB 조회 오류:`, err);
+    return null;
+  }
+}
+
 /**
  * YouTube 영상 정보를 가져오는 서버 액션
  * 이 함수의 실제 구현은 app/lib/youtube.ts의 getVideoDetails로 이동되었습니다.
@@ -558,6 +647,7 @@ export async function resummarizeYoutubeVideo(
   aiModel: AIModel,
   userId?: string,
   promptType: PromptType = 'general_summary',
+  language?: string,
   userEmail?: string,
   isUserAdminFromClient?: boolean
 ): Promise<{ success: boolean; videoId?: string; error?: string; summary?: string }> {
@@ -780,14 +870,15 @@ export async function resummarizeYoutubeVideo(
     const userPrompt = `다음은 YouTube 비디오의 전체 대화 내용입니다:\n\n${transcript}\n\n위 내용을 체계적으로 요약해주세요.`;
     const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
     
-    const newSummary = await generateSummary(fullPrompt, aiModel);
+    const newSummary = await generateSummary(fullPrompt, aiModel, undefined, promptType, language);
     const markdown = formatSummaryAsMarkdown(newSummary, videoId);
     console.log(`[resummarizeYoutubeVideo] 새로운 요약 생성 완료: ${newSummary.length}자`);
 
     // 4. 요약 업데이트 (dialog는 그대로 유지)
     const summaryData = {
       summary: markdown,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
+      language: language || 'en'
     };
 
     if (userSummary) {
