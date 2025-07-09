@@ -2,19 +2,32 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState, useCallback, useRef, useContext } from "react";
 import { SummaryDisplayClient } from "@/components/summary-display";
-import { getSummary, fetchVideoDetailsServer } from "@/app/actions";
+import { getSummary, getSummaryWithMetadata, fetchVideoDetailsServer } from "@/app/actions";
 import { LoadingContext } from "@/components/youtube-form";
 import YouTube, { YouTubePlayer } from "react-youtube";
 import { useResetContext } from "@/components/reset-context";
 import { useAuth } from "@/components/auth-context";
 import { Skeleton } from "@/components/ui/skeleton";
 import { generateVideoSummaryStructuredData, injectStructuredData } from "@/app/lib/structured-data";
+import { SUPPORTED_LANGUAGES } from "@/components/language-selector";
+import { supabase } from "@/app/lib/supabase";
 
 export default function SummaryContainer() {
   const searchParams = useSearchParams();
   const videoId = searchParams.get("videoId");
+  const urlLanguage = searchParams.get("language");
   const [summary, setSummary] = useState<string | null>(null);
+  const [summaryMetadata, setSummaryMetadata] = useState<{
+    language?: string;
+    created_at: string;
+    user_id?: string;
+    isGuest?: boolean;
+    foundLanguage?: string;
+    isFallback?: boolean;
+    availableLanguages?: string[];
+  } | null>(null);
   const [videoInfo, setVideoInfo] = useState<any | null>(null);
+  const [userPreferredLanguage, setUserPreferredLanguage] = useState<string>('en');
   const [playerRef, setPlayerRef] = useState<YouTubePlayer | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
   const { user } = useAuth();
@@ -25,6 +38,40 @@ export default function SummaryContainer() {
   
   // Get the reset context
   const { registerResetCallback } = useResetContext();
+
+  // Load user's preferred language
+  useEffect(() => {
+    const loadUserLanguage = async () => {
+      if (user?.id) {
+        try {
+          const { data } = await supabase
+            .from('user_preferences')
+            .select('preferred_language')
+            .eq('user_id', user.id)
+            .maybeSingle();
+          
+          if (data?.preferred_language) {
+            setUserPreferredLanguage(data.preferred_language);
+          } else {
+            // Fallback to browser language detection
+            const browserLang = navigator.language.split('-')[0];
+            const supportedLang = SUPPORTED_LANGUAGES.find(lang => lang.code === browserLang);
+            setUserPreferredLanguage(supportedLang?.code || 'en');
+          }
+        } catch (error) {
+          console.error('Error loading user language preference:', error);
+          setUserPreferredLanguage('en');
+        }
+      } else {
+        // For guest users, use browser language detection
+        const browserLang = navigator.language.split('-')[0];
+        const supportedLang = SUPPORTED_LANGUAGES.find(lang => lang.code === browserLang);
+        setUserPreferredLanguage(supportedLang?.code || 'en');
+      }
+    };
+
+    loadUserLanguage();
+  }, [user?.id]);
   
   // Memoize the fetch function to prevent unnecessary re-creations
   const fetchVideoDetails = useCallback(async (id: string) => {
@@ -48,16 +95,33 @@ export default function SummaryContainer() {
   const fetchSummaryWithRetry = useCallback(async () => {
     if (!videoId) {
       setSummary(null);
+      setSummaryMetadata(null);
       setVideoInfo(null);
       return;
     }
     
     try {
-      const result = await getSummary(videoId, user?.id);
-      setSummary(result);
+      // Use URL language parameter if available, otherwise fall back to user preference
+      const targetLanguage = urlLanguage || userPreferredLanguage;
+      const result = await getSummaryWithMetadata(videoId, user?.id, targetLanguage);
+      if (result) {
+        setSummary(result.summary);
+        setSummaryMetadata({
+          language: result.language,
+          created_at: result.created_at,
+          user_id: result.user_id,
+          isGuest: result.isGuest,
+          foundLanguage: result.foundLanguage,
+          isFallback: result.isFallback,
+          availableLanguages: result.availableLanguages
+        });
+      } else {
+        setSummary(null);
+        setSummaryMetadata(null);
+      }
       
       // Only fetch video details if we have a valid summary
-      if (result && result.trim() !== "") {
+      if (result?.summary && result.summary.trim() !== "") {
         setIsRetrying(false);
         retryCountRef.current = 0; // Reset retry count on success
         await fetchVideoDetails(videoId);
@@ -104,12 +168,13 @@ export default function SummaryContainer() {
         await fetchVideoDetails(videoId);
       }
     }
-  }, [videoId, user?.id, fetchVideoDetails]);
+  }, [videoId, user?.id, fetchVideoDetails, userPreferredLanguage, urlLanguage]);
   
   // Register a callback to reset the summary and video info
   useEffect(() => {
     const resetHandler = () => {
       setSummary(null);
+      setSummaryMetadata(null);
       setVideoInfo(null);
       setIsRetrying(false);
       retryCountRef.current = 0;
@@ -139,10 +204,12 @@ export default function SummaryContainer() {
       retryCountRef.current = 0;
       setIsRetrying(false);
       setSummary(null); // Clear previous summary immediately
+      setSummaryMetadata(null); // Clear previous summary metadata immediately
       setVideoInfo(null); // Clear previous video info immediately
       fetchSummaryWithRetry();
     } else {
       setSummary(null);
+      setSummaryMetadata(null);
       setVideoInfo(null);
       setIsRetrying(false);
       retryCountRef.current = 0;
@@ -289,6 +356,38 @@ export default function SummaryContainer() {
               }}
             />
           </div>
+        </div>
+      )}
+      
+      {/* Summary Metadata */}
+      {summaryMetadata && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground border-l-2 border-primary/20 pl-3">
+            <span>요약 언어:</span>
+            <span className="font-medium">
+              {SUPPORTED_LANGUAGES.find(lang => lang.code === summaryMetadata.foundLanguage)?.nativeName || summaryMetadata.foundLanguage || 'English'}
+            </span>
+            {summaryMetadata.isFallback && (
+              <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">
+                폴백 (요청한 언어: {SUPPORTED_LANGUAGES.find(lang => lang.code === (urlLanguage || userPreferredLanguage))?.nativeName || (urlLanguage || userPreferredLanguage)})
+              </span>
+            )}
+            {summaryMetadata.isGuest && (
+              <span className="text-xs bg-muted px-2 py-1 rounded">게스트 요약</span>
+            )}
+          </div>
+          {summaryMetadata.availableLanguages && summaryMetadata.availableLanguages.length > 1 && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground pl-3">
+              <span>사용 가능한 언어:</span>
+              <div className="flex gap-1">
+                {summaryMetadata.availableLanguages.map(lang => (
+                  <span key={lang} className="bg-secondary px-2 py-1 rounded text-xs">
+                    {SUPPORTED_LANGUAGES.find(l => l.code === lang)?.nativeName || lang}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
       

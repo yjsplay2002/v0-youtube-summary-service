@@ -19,6 +19,7 @@ import { useResetContext } from "@/components/reset-context"
 import { useAuth } from "@/components/auth-context"
 import { getAvailableModels, getDefaultModel, isUserAdmin, getUserSubscriptionTier, getSubscriptionLimits } from "@/app/lib/auth-utils"
 import { supabase } from "@/app/lib/supabase"
+import { LanguageSelector, type SupportedLanguage } from "@/components/language-selector"
 
 export const LoadingContext = createContext(false)
 
@@ -41,6 +42,7 @@ export function SimpleYoutubeForm() {
   const selectedPromptType: PromptType = 'general_summary' // Always use default summary style
   const [isSpecialUser, setIsSpecialUser] = useState(false)
   const [availableModels, setAvailableModels] = useState<AIModel[]>([])
+  const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>('en')
   
   // 이전 상태를 추적하여 중복 호출 방지
   const prevUserState = useRef<{user?: any, authLoading: boolean}>({
@@ -54,13 +56,20 @@ export function SimpleYoutubeForm() {
   const { refreshSummaries } = useSummaryContext()
   const { registerResetCallback } = useResetContext()
 
-  // Initialize form with URL parameter if present
+  // Initialize form with URL parameters if present
   useEffect(() => {
     const videoId = searchParams.get("videoId")
+    const language = searchParams.get("language")
+    
     if (videoId) {
       const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`
       setYoutubeUrl(youtubeUrl)
       handleUrlChange(youtubeUrl) // Process the URL immediately
+    }
+    
+    // Set language from URL parameter if present
+    if (language && language !== selectedLanguage) {
+      setSelectedLanguage(language as SupportedLanguage)
     }
   }, [searchParams])
 
@@ -88,11 +97,13 @@ export function SimpleYoutubeForm() {
         setSummaryState(summaryInfo)
         setSummaryExists(summaryInfo.hasMySummary)
         
-        // Update URL parameter only if it's different
+        // Update URL parameters only if they're different
         const currentVideoId = searchParams.get('videoId')
-        if (currentVideoId !== videoId) {
+        const currentLanguage = searchParams.get('language')
+        if (currentVideoId !== videoId || currentLanguage !== selectedLanguage) {
           const newUrl = new URL(window.location.href)
           newUrl.searchParams.set('videoId', videoId)
+          newUrl.searchParams.set('language', selectedLanguage)
           router.replace(newUrl.pathname + newUrl.search, { scroll: false })
         }
         
@@ -110,9 +121,10 @@ export function SimpleYoutubeForm() {
         hasMySummary: false,
         hasOtherSummary: false
       })
-      // Clear URL parameter if no valid video ID
+      // Clear URL parameters if no valid video ID
       const newUrl = new URL(window.location.href)
       newUrl.searchParams.delete('videoId')
+      newUrl.searchParams.delete('language')
       router.replace(newUrl.pathname + newUrl.search, { scroll: false })
     }
   }
@@ -315,7 +327,7 @@ export function SimpleYoutubeForm() {
         undefined, // summaryPrompt
         user?.id,
         selectedPromptType,
-        undefined, // language
+        selectedLanguage, // language
         user?.email, // userEmail
         isSpecialUser // isUserAdminFromClient
       )
@@ -326,9 +338,10 @@ export function SimpleYoutubeForm() {
           ...prev,
           hasMySummary: true
         }))
-        // Update URL parameter to trigger summary container refresh
+        // Update URL parameters to trigger summary container refresh
         const newUrl = new URL(window.location.href)
         newUrl.searchParams.set('videoId', result.videoId)
+        newUrl.searchParams.set('language', selectedLanguage)
         router.replace(newUrl.pathname + newUrl.search, { scroll: false })
         
         // Dispatch events and refresh with slight delays to ensure proper sequencing
@@ -396,6 +409,7 @@ export function SimpleYoutubeForm() {
         // Update URL to ensure proper state
         const newUrl = new URL(window.location.href)
         newUrl.searchParams.set('videoId', videoInfo.id)
+        newUrl.searchParams.set('language', selectedLanguage)
         router.replace(newUrl.pathname + newUrl.search, { scroll: false })
         
         // Notify other components with proper sequencing
@@ -499,6 +513,7 @@ export function SimpleYoutubeForm() {
         selectedModel,
         user?.id,
         selectedPromptType,
+        selectedLanguage, // language
         user?.email, // userEmail
         isSpecialUser // isUserAdminFromClient
       )
@@ -507,9 +522,10 @@ export function SimpleYoutubeForm() {
 
       if (result.success && result.videoId) {
         console.log("[handleResummarize] 재요약 성공, URL 파라미터 업데이트")
-        // Update URL parameter to trigger summary container refresh
+        // Update URL parameters to trigger summary container refresh
         const newUrl = new URL(window.location.href)
         newUrl.searchParams.set('videoId', result.videoId)
+        newUrl.searchParams.set('language', selectedLanguage)
         router.replace(newUrl.pathname + newUrl.search, { scroll: false })
         
         // Dispatch events and refresh with slight delays to ensure proper sequencing
@@ -556,6 +572,13 @@ export function SimpleYoutubeForm() {
                 />
               </div>
 
+              {/* Language Selection */}
+              <LanguageSelector
+                value={selectedLanguage}
+                onChange={setSelectedLanguage}
+                disabled={isLoading}
+              />
+
               {/* Model Selection */}
               {availableModels.length > 1 && (
                 <div className="space-y-2">
@@ -575,7 +598,6 @@ export function SimpleYoutubeForm() {
                   </select>
                 </div>
               )}
-
 
               {/* Action Buttons */}
               <div className="flex flex-col gap-2">
