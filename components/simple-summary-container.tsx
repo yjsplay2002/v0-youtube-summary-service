@@ -39,6 +39,7 @@ export default function SimpleSummaryContainer() {
   const autoplay = searchParams.get("autoplay") === "true"
   const [allSummaries, setAllSummaries] = useState<AllSummariesData | null>(null)
   const [summary, setSummary] = useState<string | null>(null)
+  const [currentLanguage, setCurrentLanguage] = useState<string>('en')
   const [videoInfo, setVideoInfo] = useState<any | null>(null)
   const [playerRef, setPlayerRef] = useState<YouTubePlayer | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -58,6 +59,13 @@ export default function SimpleSummaryContainer() {
     } else {
       console.warn(`[SimpleSummaryContainer] 비디오 플레이어가 준비되지 않았습니다`)
     }
+  }
+
+  // Handle language change in summary display
+  const handleLanguageChange = (language: string, newSummary: string) => {
+    console.log(`[SimpleSummaryContainer] 언어 변경: ${currentLanguage} -> ${language}`)
+    setCurrentLanguage(language)
+    setSummary(newSummary)
   }
 
   // Fetch all summaries for a video
@@ -130,8 +138,16 @@ export default function SimpleSummaryContainer() {
         // Set primary summary (mine if available, otherwise the latest other summary)
         if (allSummariesData?.mySummary) {
           setSummary(allSummariesData.mySummary.summary)
+          // Set current language from the summary data if available
+          if ((allSummariesData.mySummary as any).language) {
+            setCurrentLanguage((allSummariesData.mySummary as any).language)
+          }
         } else if (allSummariesData?.otherSummaries.length > 0) {
           setSummary(allSummariesData.otherSummaries[0].summary)
+          // Set current language from the summary data if available
+          if ((allSummariesData.otherSummaries[0] as any).language) {
+            setCurrentLanguage((allSummariesData.otherSummaries[0] as any).language)
+          }
         } else {
           setSummary(null)
         }
@@ -191,9 +207,15 @@ export default function SimpleSummaryContainer() {
           // Set primary summary with improved logic
           if (allSummariesData?.mySummary) {
             setSummary(allSummariesData.mySummary.summary)
+            if ((allSummariesData.mySummary as any).language) {
+              setCurrentLanguage((allSummariesData.mySummary as any).language)
+            }
             console.log("[SimpleSummaryContainer] Set summary to user's own summary")
           } else if (allSummariesData?.otherSummaries.length > 0) {
             setSummary(allSummariesData.otherSummaries[0].summary)
+            if ((allSummariesData.otherSummaries[0] as any).language) {
+              setCurrentLanguage((allSummariesData.otherSummaries[0] as any).language)
+            }
             console.log("[SimpleSummaryContainer] Set summary to latest other summary")
           } else {
             setSummary(null)
@@ -344,7 +366,9 @@ export default function SimpleSummaryContainer() {
                   <SummaryDisplayClient 
                     summary={allSummaries.mySummary.summary} 
                     seekTo={handleSeek} 
-                    videoId={videoId} 
+                    videoId={videoId}
+                    currentLanguage={currentLanguage}
+                    onLanguageChange={handleLanguageChange}
                   />
                 </CardContent>
               </Card>
@@ -367,7 +391,9 @@ export default function SimpleSummaryContainer() {
                   <SummaryDisplayClient 
                     summary={allSummaries.otherSummaries[0].summary} 
                     seekTo={handleSeek} 
-                    videoId={videoId} 
+                    videoId={videoId}
+                    currentLanguage={currentLanguage}
+                    onLanguageChange={handleLanguageChange}
                   />
                 </CardContent>
               </Card>
@@ -392,7 +418,9 @@ export default function SimpleSummaryContainer() {
                     <SummaryDisplayClient 
                       summary={summaryData.summary} 
                       seekTo={handleSeek} 
-                      videoId={videoId} 
+                      videoId={videoId}
+                      currentLanguage={currentLanguage}
+                      onLanguageChange={handleLanguageChange}
                     />
                   </CardContent>
                 </Card>
@@ -402,7 +430,13 @@ export default function SimpleSummaryContainer() {
         </Tabs>
       ) : (
         // Single summary display (existing behavior)
-        <SummaryDisplayClient summary={summary} seekTo={handleSeek} videoId={videoId} />
+        <SummaryDisplayClient 
+          summary={summary} 
+          seekTo={handleSeek} 
+          videoId={videoId}
+          currentLanguage={currentLanguage}
+          onLanguageChange={handleLanguageChange}
+        />
       )}
     </div>
   )

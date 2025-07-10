@@ -43,7 +43,8 @@ export async function GET(request: NextRequest) {
               video_id,
               video_title,
               video_thumbnail,
-              channel_title
+              channel_title,
+              language
             )
           `)
           .eq('user_id', userId)
@@ -60,6 +61,7 @@ export async function GET(request: NextRequest) {
           video_title: item.video_summaries.video_title,
           video_thumbnail: item.video_summaries.video_thumbnail,
           channel_title: item.video_summaries.channel_title,
+          language: item.video_summaries.language,
           created_at: item.created_at,
           user_id: userId
         })) || [];
@@ -77,6 +79,7 @@ export async function GET(request: NextRequest) {
             video_title,
             video_thumbnail,
             channel_title,
+            language,
             created_at,
             user_id
           `)
@@ -100,6 +103,7 @@ export async function GET(request: NextRequest) {
           video_title,
           video_thumbnail,
           channel_title,
+          language,
           created_at,
           user_id
         `)
@@ -172,6 +176,7 @@ export async function GET(request: NextRequest) {
       title: item.video_title || item.video_summaries?.video_title,
       thumbnail_url: item.video_thumbnail || item.video_summaries?.video_thumbnail,
       channel_title: item.channel_title || item.video_summaries?.channel_title,
+      language: item.language || item.video_summaries?.language || 'en',
       created_at: item.created_at,
       // Don't expose user_id in public responses
       ...(userId && { user_id: item.user_id })

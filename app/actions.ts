@@ -9,14 +9,20 @@ import { extractKeywordsFromHistory } from "./lib/curation-utils";
 import { processAndStoreVideoChunks } from "@/app/lib/rag";
 
 // Supabase에서 사용자별 요약 조회
-async function getUserVideoSummaryFromDB(videoId: string, userId: string) {
-  console.log(`[DB 조회] video_id: ${videoId}, user_id: ${userId}`);
-  const { data, error } = await supabase
+async function getUserVideoSummaryFromDB(videoId: string, userId: string, language?: string) {
+  console.log(`[DB 조회] video_id: ${videoId}, user_id: ${userId}, language: ${language || 'default'}`);
+  
+  let query = supabase
     .from('video_summaries')
     .select('*')
     .eq('video_id', videoId)
-    .eq('user_id', userId)
-    .single();
+    .eq('user_id', userId);
+  
+  if (language) {
+    query = query.eq('language', language);
+  }
+  
+  const { data, error } = await query.single();
 
   if (error) {
     if (error.code === 'PGRST116' && error.details && error.details.includes('0 rows')) {
@@ -33,14 +39,20 @@ async function getUserVideoSummaryFromDB(videoId: string, userId: string) {
 }
 
 // 게스트 사용자용 요약 조회 (video_summaries 테이블에서 user_id가 null인 데이터)
-async function getGuestVideoSummaryFromDB(videoId: string) {
-  console.log(`[게스트 DB 조회] video_id: ${videoId} - video_summaries 테이블에서 게스트 데이터 조회`);
-  const { data, error } = await supabase
+async function getGuestVideoSummaryFromDB(videoId: string, language?: string) {
+  console.log(`[게스트 DB 조회] video_id: ${videoId}, language: ${language || 'default'} - video_summaries 테이블에서 게스트 데이터 조회`);
+  
+  let query = supabase
     .from('video_summaries')
     .select('*')
     .eq('video_id', videoId)
-    .is('user_id', null)
-    .single();
+    .is('user_id', null);
+  
+  if (language) {
+    query = query.eq('language', language);
+  }
+  
+  const { data, error } = await query.single();
 
   if (error) {
     if (error.code === 'PGRST116' && error.details && error.details.includes('0 rows')) {
@@ -434,56 +446,62 @@ export async function getAllVideoSummaries(videoId: string, currentUserId?: stri
   console.log(`[getAllVideoSummaries] 모든 요약 조회 - videoId: ${videoId}, currentUserId: ${currentUserId || 'anonymous'}`);
   
   try {
-    // 해당 비디오의 요약이 있는지 확인
-    const { data: videoSummary, error: summaryError } = await supabaseAdmin
+    // 해당 비디오의 모든 언어별 요약 조회
+    const { data: videoSummaries, error: summaryError } = await supabaseAdmin
       .from('video_summaries')
       .select('id, summary, created_at, user_id, language')
       .eq('video_id', videoId)
-      .single();
+      .order('created_at', { ascending: false });
 
-    if (summaryError || !videoSummary) {
+    if (summaryError || !videoSummaries || videoSummaries.length === 0) {
       console.log(`[getAllVideoSummaries] 요약 없음: ${videoId}`);
       return { otherSummaries: [], totalSummaries: 0 };
     }
 
-    console.log(`[getAllVideoSummaries] 요약 발견: ${videoSummary.id}`);
+    console.log(`[getAllVideoSummaries] 요약 발견: ${videoSummaries.length}개 (다국어)`);
 
     let mySummary: { summary: string; created_at: string; user_id?: string; language?: string } | undefined;
-    let hasMySummary = false;
-
-    // 현재 사용자가 이 요약을 가지고 있는지 확인
-    if (currentUserId) {
-      const { data: userSummaryConnection } = await supabaseAdmin
-        .from('user_summaries')
-        .select('created_at')
-        .eq('user_id', currentUserId)
-        .eq('summary_id', videoSummary.id)
-        .single();
-
-      if (userSummaryConnection) {
-        mySummary = {
-          summary: videoSummary.summary,
-          created_at: userSummaryConnection.created_at,
-          user_id: currentUserId,
-          language: videoSummary.language
-        };
-        hasMySummary = true;
-        console.log(`[getAllVideoSummaries] 내 요약 발견: ${currentUserId}`);
-      }
-    }
-
-    // 다른 요약들 (현재는 하나의 요약만 있지만 구조상 배열로 반환)
     const otherSummaries: Array<{ summary: string; created_at: string; user_id?: string; isGuest: boolean; language?: string }> = [];
     
-    if (!hasMySummary) {
-      // 현재 사용자가 이 요약을 갖고 있지 않으면 다른 요약으로 분류
-      otherSummaries.push({
-        summary: videoSummary.summary,
-        created_at: videoSummary.created_at,
-        user_id: videoSummary.user_id,
-        isGuest: videoSummary.user_id === null,
-        language: videoSummary.language
-      });
+    // 현재 사용자가 접근 가능한 요약들 확인
+    for (const videoSummary of videoSummaries) {
+      let hasAccess = false;
+      let isMyConnection = false;
+      
+      if (currentUserId) {
+        const { data: userSummaryConnection } = await supabaseAdmin
+          .from('user_summaries')
+          .select('created_at')
+          .eq('user_id', currentUserId)
+          .eq('summary_id', videoSummary.id)
+          .single();
+
+        if (userSummaryConnection) {
+          hasAccess = true;
+          isMyConnection = true;
+          
+          if (!mySummary) { // 첫 번째 내 요약만 사용
+            mySummary = {
+              summary: videoSummary.summary,
+              created_at: userSummaryConnection.created_at,
+              user_id: currentUserId,
+              language: videoSummary.language
+            };
+            console.log(`[getAllVideoSummaries] 내 요약 발견: ${currentUserId}, 언어: ${videoSummary.language}`);
+          }
+        }
+      }
+      
+      // 게스트 요약이거나 사용자가 접근 권한이 없으면 다른 요약으로 분류
+      if (!isMyConnection) {
+        otherSummaries.push({
+          summary: videoSummary.summary,
+          created_at: videoSummary.created_at,
+          user_id: videoSummary.user_id,
+          isGuest: videoSummary.user_id === null,
+          language: videoSummary.language
+        });
+      }
     }
 
     console.log(`[getAllVideoSummaries] 결과 - 내 요약: ${mySummary ? '있음' : '없음'}, 다른 요약: ${otherSummaries.length}개`);
@@ -491,7 +509,7 @@ export async function getAllVideoSummaries(videoId: string, currentUserId?: stri
     return {
       mySummary,
       otherSummaries,
-      totalSummaries: 1 // 현재는 비디오당 하나의 요약만 존재
+      totalSummaries: videoSummaries.length
     };
 
   } catch (err) {

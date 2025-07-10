@@ -32,11 +32,13 @@ export async function GET(request: NextRequest) {
       mySummary: summariesResult.mySummary ? {
         summary: summariesResult.mySummary.summary,
         created_at: summariesResult.mySummary.created_at,
+        language: summariesResult.mySummary.language,
         isMine: true
       } : null,
       otherSummaries: summariesResult.otherSummaries.map((summary, index) => ({
         summary: summary.summary,
         created_at: summary.created_at,
+        language: summary.language,
         isGuest: summary.isGuest,
         isMine: false,
         order: index + 1 // 최신순으로 정렬된 순서
