@@ -14,11 +14,13 @@ export async function POST(request: NextRequest) {
 
     console.log(`[API /add-to-my-summaries] 요청 - videoId: ${videoId}, userId: ${userId}`);
 
-    // 1. 해당 비디오의 요약이 존재하는지 확인
+    // 1. 해당 비디오의 요약이 존재하는지 확인 (언어 무관하게 가장 최신 요약 선택)
     const { data: existingSummary } = await supabaseAdmin
       .from('video_summaries')
-      .select('id')
+      .select('id, language')
       .eq('video_id', videoId)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .single();
 
     if (!existingSummary) {

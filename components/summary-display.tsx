@@ -1,19 +1,92 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Copy, Check, Share2 } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Copy, Check, Share2, Loader2 } from "lucide-react"
 import { SummaryChat } from "@/components/summary-chat"
+import { SUPPORTED_LANGUAGES, type SupportedLanguage } from "@/components/language-selector"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 
+interface LanguageOption {
+  language: string;
+  created_at: string;
+  summary_id: string;
+}
 
-export function SummaryDisplayClient({ summary, seekTo, videoId }: { summary: string; seekTo: (seconds: number) => void; videoId?: string }) {
+interface SummaryDisplayProps {
+  summary: string;
+  seekTo: (seconds: number) => void;
+  videoId?: string;
+  currentLanguage?: string;
+  onLanguageChange?: (language: string, summary: string) => void;
+}
+
+export function SummaryDisplayClient({ 
+  summary, 
+  seekTo, 
+  videoId, 
+  currentLanguage = 'en',
+  onLanguageChange 
+}: SummaryDisplayProps) {
   const [copied, setCopied] = useState(false)
   const [shared, setShared] = useState(false)
+  const [availableLanguages, setAvailableLanguages] = useState<LanguageOption[]>([])
+  const [isLoadingLanguages, setIsLoadingLanguages] = useState(false)
+  const [isLoadingSummary, setIsLoadingSummary] = useState(false)
+
+  // Fetch available languages for this video
+  useEffect(() => {
+    const fetchAvailableLanguages = async () => {
+      if (!videoId) return
+
+      setIsLoadingLanguages(true)
+      try {
+        const response = await fetch(`/api/video-languages?videoId=${encodeURIComponent(videoId)}`)
+        if (response.ok) {
+          const data = await response.json()
+          setAvailableLanguages(data.languages || [])
+        }
+      } catch (error) {
+        console.error('Error fetching available languages:', error)
+        setAvailableLanguages([])
+      } finally {
+        setIsLoadingLanguages(false)
+      }
+    }
+
+    fetchAvailableLanguages()
+  }, [videoId])
+
+  // Handle language selection change
+  const handleLanguageChange = async (selectedLanguage: string) => {
+    if (!videoId || !onLanguageChange || selectedLanguage === currentLanguage) return
+
+    setIsLoadingSummary(true)
+    try {
+      const response = await fetch(`/api/video-summary-by-language?videoId=${encodeURIComponent(videoId)}&language=${encodeURIComponent(selectedLanguage)}`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.summary) {
+          onLanguageChange(selectedLanguage, data.summary)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching summary for language:', error)
+    } finally {
+      setIsLoadingSummary(false)
+    }
+  }
+
+  // Get language display name
+  const getLanguageDisplayName = (langCode: string) => {
+    const lang = SUPPORTED_LANGUAGES.find(l => l.code === langCode)
+    return lang ? `${lang.nativeName} (${lang.name})` : langCode
+  }
 
   // Handle timestamp button clicks
   const handleTimestampClick = (seconds: number) => {
@@ -176,10 +249,49 @@ export function SummaryDisplayClient({ summary, seekTo, videoId }: { summary: st
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="preview">
-          <TabsList className="mb-4">
-            <TabsTrigger value="preview">Preview</TabsTrigger>
-            <TabsTrigger value="chat">Ask to AI</TabsTrigger>
-          </TabsList>
+          <div className="flex items-center justify-between mb-4">
+            <TabsList>
+              <TabsTrigger value="preview">Preview</TabsTrigger>
+              <TabsTrigger value="chat">Ask to AI</TabsTrigger>
+            </TabsList>
+            
+            {/* Language Selector */}
+            {availableLanguages.length > 1 && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">언어:</span>
+                <Select
+                  value={currentLanguage}
+                  onValueChange={handleLanguageChange}
+                  disabled={isLoadingLanguages || isLoadingSummary}
+                >
+                  <SelectTrigger className="w-[200px] h-8">
+                    <SelectValue>
+                      {isLoadingSummary ? (
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <span>로딩중...</span>
+                        </div>
+                      ) : (
+                        getLanguageDisplayName(currentLanguage)
+                      )}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableLanguages.map((langOption) => (
+                      <SelectItem key={langOption.language} value={langOption.language}>
+                        <div className="flex flex-col">
+                          <span>{getLanguageDisplayName(langOption.language)}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(langOption.created_at).toLocaleDateString('ko-KR')}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
           <TabsContent value="preview" className="prose prose-sm max-w-none dark:prose-invert prose-headings:font-bold prose-h1:text-xl prose-h2:text-lg prose-h3:text-base prose-p:mb-4 prose-li:mb-1 prose-ul:my-4 prose-ol:my-4 prose-blockquote:border-l-4 prose-blockquote:border-gray-300 prose-blockquote:pl-4 prose-blockquote:italic prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-pre:bg-muted prose-pre:p-4 prose-pre:rounded-md prose-pre:overflow-auto prose-a:text-blue-600 hover:prose-a:text-blue-800 prose-strong:font-bold prose-em:italic">
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkBreaks]}
