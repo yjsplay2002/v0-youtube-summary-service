@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -20,6 +20,7 @@ import { useAuth } from "@/components/auth-context"
 import { getAvailableModels, getDefaultModel, isUserAdmin, getUserSubscriptionTier, getSubscriptionLimits } from "@/app/lib/auth-utils"
 import { supabase } from "@/app/lib/supabase"
 import { LanguageSelector, type SupportedLanguage } from "@/components/language-selector"
+import { useDebouncedValue } from "@/hooks/use-debounced-value"
 
 export const LoadingContext = createContext(false)
 
@@ -55,88 +56,19 @@ export function SimpleYoutubeForm() {
   const { user, loading: authLoading } = useAuth()
   const { refreshSummaries } = useSummaryContext()
   const { registerResetCallback } = useResetContext()
+  
+  // Debounced values to prevent excessive API calls
+  const debouncedLanguage = useDebouncedValue(selectedLanguage, 300)
+  const debouncedVideoId = useDebouncedValue(extractYoutubeVideoId(youtubeUrl), 300)
 
-  // Initialize form with URL parameters if present
-  useEffect(() => {
-    const videoId = searchParams.get("videoId")
-    const language = searchParams.get("language")
-    
-    if (videoId) {
-      const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`
-      setYoutubeUrl(youtubeUrl)
-      handleUrlChange(youtubeUrl) // Process the URL immediately
-    }
-    
-    // Set language from URL parameter if present
-    if (language && language !== selectedLanguage) {
-      setSelectedLanguage(language as SupportedLanguage)
-    }
-  }, [searchParams])
-
-  // Handle URL input changes
-  const handleUrlChange = async (url: string) => {
-    setError(null)
-    // Clear previous summary state instead of calling resetSummary
-    setSummaryExists(false)
-    setSummaryState({
-      hasMySummary: false,
-      hasOtherSummary: false
-    })
-    
-    const videoId = extractYoutubeVideoId(url)
-    if (videoId) {
-      try {
-        setVideoLoading(true)
-        
-        // Get video info
-        const info = await fetchVideoDetailsServer(videoId)
-        setVideoInfo(info.items[0])
-        
-        // Check detailed summary state
-        const summaryInfo = await checkDetailedSummaryState(videoId, user?.id)
-        setSummaryState(summaryInfo)
-        setSummaryExists(summaryInfo.hasMySummary)
-        
-        // Update URL parameters only if they're different
-        const currentVideoId = searchParams.get('videoId')
-        const currentLanguage = searchParams.get('language')
-        if (currentVideoId !== videoId || currentLanguage !== selectedLanguage) {
-          const newUrl = new URL(window.location.href)
-          newUrl.searchParams.set('videoId', videoId)
-          newUrl.searchParams.set('language', selectedLanguage)
-          router.replace(newUrl.pathname + newUrl.search, { scroll: false })
-        }
-        
-      } catch (err) {
-        setVideoInfo(null)
-        setSummaryExists(false)
-        setError("비디오 정보를 가져올 수 없습니다.")
-      } finally {
-        setVideoLoading(false)
-      }
-    } else {
-      setVideoInfo(null)
-      setSummaryExists(false)
-      setSummaryState({
-        hasMySummary: false,
-        hasOtherSummary: false
-      })
-      // Clear URL parameters if no valid video ID
-      const newUrl = new URL(window.location.href)
-      newUrl.searchParams.delete('videoId')
-      newUrl.searchParams.delete('language')
-      router.replace(newUrl.pathname + newUrl.search, { scroll: false })
-    }
-  }
-
-  // Detailed function to check summary state (인증 완료 후 실행)
-  const checkDetailedSummaryState = async (videoId: string, userId?: string): Promise<{
+  // Detailed function to check summary state for specific language (인증 완료 후 실행)
+  const checkDetailedSummaryState = useCallback(async (videoId: string, userId?: string, language: string = 'en'): Promise<{
     hasMySummary: boolean;
     hasOtherSummary: boolean;
     otherSummaryInfo?: { isGuest: boolean; created_at: string; };
   }> => {
     try {
-      console.log(`[checkDetailedSummaryState] Checking for videoId: ${videoId}, userId: ${userId}, authLoading: ${authLoading}`)
+      console.log(`[checkDetailedSummaryState] Checking for videoId: ${videoId}, userId: ${userId}, language: ${language}, authLoading: ${authLoading}`)
       
       // 인증이 아직 로딩 중이면 기본값 반환 (데이터 요청 방지)
       if (authLoading) {
@@ -148,14 +80,15 @@ export function SimpleYoutubeForm() {
       let hasOtherSummary = false;
       let otherSummaryInfo: { isGuest: boolean; created_at: string; } | undefined;
       
-      // Check if video summary exists
+      // Check if video summary exists for the specific language
       const { data: videoSummary, error: summaryError } = await supabase
         .from('video_summaries')
-        .select('id, user_id, created_at')
+        .select('id, user_id, created_at, language')
         .eq('video_id', videoId)
+        .eq('language', language)
         .maybeSingle()
       
-      console.log(`[checkDetailedSummaryState] Video summary result:`, { videoSummary, summaryError })
+      console.log(`[checkDetailedSummaryState] Video summary result for language ${language}:`, { videoSummary, summaryError })
       
       if (videoSummary) {
         // Check if user has this summary in their list
@@ -186,14 +119,121 @@ export function SimpleYoutubeForm() {
       }
       
       const result = { hasMySummary, hasOtherSummary, otherSummaryInfo }
-      console.log(`[checkDetailedSummaryState] Final result:`, result)
+      console.log(`[checkDetailedSummaryState] Final result for language ${language}:`, result)
       return result
     } catch (error) {
       console.error("Error checking detailed summary state:", error)
       return { hasMySummary: false, hasOtherSummary: false }
     }
-  }
+  }, [authLoading])
 
+  // Handle URL input changes
+  const handleUrlChange = useCallback(async (url: string, skipUrlUpdate: boolean = false) => {
+    setError(null)
+    // Clear previous summary state instead of calling resetSummary
+    setSummaryExists(false)
+    setSummaryState({
+      hasMySummary: false,
+      hasOtherSummary: false
+    })
+    
+    const videoId = extractYoutubeVideoId(url)
+    if (videoId) {
+      try {
+        setVideoLoading(true)
+        
+        // Get video info
+        const info = await fetchVideoDetailsServer(videoId)
+        setVideoInfo(info.items[0])
+        
+        // Check detailed summary state for current language
+        const summaryInfo = await checkDetailedSummaryState(videoId, user?.id, selectedLanguage)
+        setSummaryState(summaryInfo)
+        setSummaryExists(summaryInfo.hasMySummary)
+        
+        // Update URL parameters only if they're different and not skipping URL update
+        if (!skipUrlUpdate) {
+          const currentVideoId = searchParams.get('videoId')
+          const currentLanguage = searchParams.get('language')
+          if (currentVideoId !== videoId || currentLanguage !== selectedLanguage) {
+            const newUrl = new URL(window.location.href)
+            newUrl.searchParams.set('videoId', videoId)
+            newUrl.searchParams.set('language', selectedLanguage)
+            router.replace(newUrl.pathname + newUrl.search, { scroll: false })
+          }
+        }
+        
+      } catch (err) {
+        setVideoInfo(null)
+        setSummaryExists(false)
+        setError("비디오 정보를 가져올 수 없습니다.")
+      } finally {
+        setVideoLoading(false)
+      }
+    } else {
+      setVideoInfo(null)
+      setSummaryExists(false)
+      setSummaryState({
+        hasMySummary: false,
+        hasOtherSummary: false
+      })
+      // Clear URL parameters if no valid video ID and not skipping URL update
+      if (!skipUrlUpdate) {
+        const newUrl = new URL(window.location.href)
+        newUrl.searchParams.delete('videoId')
+        newUrl.searchParams.delete('language')
+        router.replace(newUrl.pathname + newUrl.search, { scroll: false })
+      }
+    }
+  }, [selectedLanguage, searchParams, user?.id, router, checkDetailedSummaryState])
+
+  // Initialize form with URL parameters if present (URL 파라미터 → 상태만, 순환 참조 방지)
+  useEffect(() => {
+    const videoId = searchParams.get("videoId")
+    const language = searchParams.get("language")
+    
+    if (videoId) {
+      const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`
+      setYoutubeUrl(youtubeUrl)
+      // URL 파라미터에서 온 변경은 router.replace 하지 않음
+      handleUrlChange(youtubeUrl, true) // skipUrlUpdate flag 추가
+    }
+    
+    // Set language from URL parameter if present
+    if (language && language !== selectedLanguage) {
+      setSelectedLanguage(language as SupportedLanguage)
+    }
+  }, [searchParams]) // handleUrlChange, selectedLanguage 의존성 제거
+
+  // Check summary state when language or video changes (debounced, URL 업데이트 없음)
+  useEffect(() => {
+    if (debouncedVideoId && !authLoading) {
+      checkDetailedSummaryState(debouncedVideoId, user?.id, debouncedLanguage).then(summaryInfo => {
+        setSummaryState(summaryInfo)
+        setSummaryExists(summaryInfo.hasMySummary)
+        // URL 업데이트 제거 - 사용자 액션에서만 URL 업데이트
+      })
+    }
+  }, [debouncedLanguage, debouncedVideoId, user?.id, authLoading, checkDetailedSummaryState])
+
+  // Update URL when user manually changes language (not from URL params)
+  const prevLanguageRef = useRef(selectedLanguage)
+  useEffect(() => {
+    const prevLanguage = prevLanguageRef.current
+    prevLanguageRef.current = selectedLanguage
+    
+    // Only update URL if language changed and it's different from URL param (user action)
+    const urlLanguage = searchParams.get('language') || 'en'
+    if (prevLanguage !== selectedLanguage && selectedLanguage !== urlLanguage) {
+      const videoId = extractYoutubeVideoId(youtubeUrl)
+      if (videoId) {
+        const newUrl = new URL(window.location.href)
+        newUrl.searchParams.set('videoId', videoId)
+        newUrl.searchParams.set('language', selectedLanguage)
+        router.replace(newUrl.pathname + newUrl.search, { scroll: false })
+      }
+    }
+  }, [selectedLanguage, searchParams, youtubeUrl, router])
 
   // Initialize user permissions and models (중복 호출 방지)
   useEffect(() => {

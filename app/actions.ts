@@ -438,23 +438,35 @@ export async function summarizeYoutubeVideo(
 }
 
 // 모든 요약 결과 조회 (새로운 함수) - 새로운 테이블 구조 사용
-export async function getAllVideoSummaries(videoId: string, currentUserId?: string): Promise<{
-  mySummary?: { summary: string; created_at: string; user_id?: string };
-  otherSummaries: Array<{ summary: string; created_at: string; user_id?: string; isGuest: boolean }>;
+export async function getAllVideoSummaries(videoId: string, currentUserId?: string, preferredLanguage?: string): Promise<{
+  mySummary?: { summary: string; created_at: string; user_id?: string; language?: string };
+  otherSummaries: Array<{ summary: string; created_at: string; user_id?: string; isGuest: boolean; language?: string }>;
   totalSummaries: number;
 }> {
-  console.log(`[getAllVideoSummaries] 모든 요약 조회 - videoId: ${videoId}, currentUserId: ${currentUserId || 'anonymous'}`);
+  console.log(`[getAllVideoSummaries] 모든 요약 조회 - videoId: ${videoId}, currentUserId: ${currentUserId || 'anonymous'}, preferredLanguage: ${preferredLanguage || 'all'}`);
   
   try {
-    // 해당 비디오의 모든 언어별 요약 조회
-    const { data: videoSummaries, error: summaryError } = await supabaseAdmin
+    // 언어별 요약 조회 - 우선 순위: 선호 언어 -> 영어 -> 모든 언어
+    let videoSummariesQuery = supabaseAdmin
       .from('video_summaries')
       .select('id, summary, created_at, user_id, language')
-      .eq('video_id', videoId)
+      .eq('video_id', videoId);
+    
+    // 선호 언어가 지정된 경우 해당 언어만 우선 조회
+    if (preferredLanguage) {
+      videoSummariesQuery = videoSummariesQuery.eq('language', preferredLanguage);
+    }
+    
+    let { data: videoSummaries, error: summaryError } = await videoSummariesQuery
       .order('created_at', { ascending: false });
 
-    if (summaryError || !videoSummaries || videoSummaries.length === 0) {
-      console.log(`[getAllVideoSummaries] 요약 없음: ${videoId}`);
+    // 선호 언어가 지정되었지만 결과가 없는 경우 폴백하지 않음
+    if ((summaryError || !videoSummaries || videoSummaries.length === 0) && preferredLanguage) {
+      console.log(`[getAllVideoSummaries] 선호 언어(${preferredLanguage})에서 요약 없음, 폴백하지 않음`);
+    }
+
+    if (!videoSummaries || videoSummaries.length === 0) {
+      console.log(`[getAllVideoSummaries] 모든 언어에서 요약 없음: ${videoId}`);
       return { otherSummaries: [], totalSummaries: 0 };
     }
 
@@ -1670,9 +1682,20 @@ export async function getTrendingVideos(maxResults: number = 10) {
   }
 }
 
-// 특정 비디오와 관련된 영상 조회
-export async function getRelatedVideos(videoId: string, maxResults: number = 10) {
+// 특정 비디오와 관련된 영상 조회 (관리자 전용)
+export async function getRelatedVideos(videoId: string, maxResults: number = 10, userEmail?: string) {
   try {
+    // 관리자 권한 확인 (하드코딩된 관리자 이메일 체크)
+    const adminEmails = ['yjs@lnrgame.com'];
+    if (!userEmail || !adminEmails.includes(userEmail)) {
+      console.log('[getRelatedVideos] 관리자 권한이 필요한 기능입니다');
+      return { videos: [] };
+    }
+
+    // 네트워크 이슈로 인한 임시 비활성화
+    console.log('[getRelatedVideos] 관련 영상 기능이 임시로 비활성화되었습니다 (네트워크 이슈)');
+    return { videos: [] };
+
     const apiKey = process.env.YOUTUBE_API_KEY;
     if (!apiKey) {
       console.error('[getRelatedVideos] YOUTUBE_API_KEY 환경변수가 설정되지 않음');
@@ -1685,7 +1708,12 @@ export async function getRelatedVideos(videoId: string, maxResults: number = 10)
       `id=${videoId}&` +
       `key=${apiKey}`;
     
-    const videoResponse = await fetch(videoUrl);
+    const videoResponse = await fetch(videoUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      },
+      signal: AbortSignal.timeout(10000) // 10초 타임아웃
+    });
     if (!videoResponse.ok) {
       throw new Error(`YouTube 비디오 정보 API 오류: ${videoResponse.status}`);
     }

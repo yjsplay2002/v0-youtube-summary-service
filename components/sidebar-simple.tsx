@@ -16,6 +16,7 @@ import {
   Plus
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-context";
 import { AuthButton } from "@/components/auth-button";
 import { getUserSubscriptionTier } from "@/app/lib/auth-utils";
@@ -45,6 +46,7 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
   const { user, isAuthenticated, loading: authLoading } = useAuth();
   const userTier = getUserSubscriptionTier(user);
   const { registerRefreshCallback } = useSummaryContext();
+  const router = useRouter();
   
   // 이전 상태를 추적하여 중복 호출 방지
   const prevAuthState = useRef<{isAuthenticated: boolean, userId?: string}>({
@@ -203,10 +205,8 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
     console.log('[SidebarSimple] 새로운 영상 요약하기 버튼 클릭');
     // 메인 페이지의 input field 초기화를 위한 이벤트 발생
     window.dispatchEvent(new CustomEvent('clearVideoInput'));
-    // URL에서 videoId 파라미터 제거
-    const newUrl = new URL(window.location.href);
-    newUrl.searchParams.delete('videoId');
-    window.history.replaceState({}, '', newUrl.pathname + newUrl.search);
+    // Next.js router를 사용해서 메인 페이지로 이동 (페이지 새로고침 없음)
+    router.push('/');
   };
 
   const toggleSidebar = () => {

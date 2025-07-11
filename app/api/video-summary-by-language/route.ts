@@ -16,15 +16,17 @@ export async function GET(request: NextRequest) {
 
     console.log(`[API /video-summary-by-language] 요청 - videoId: ${videoId}, language: ${language}`);
 
-    // Get summary for specific video and language using the database function
+    // Get summary for specific video and language WITHOUT fallback
     const { data: summaryData, error } = await supabaseAdmin
-      .rpc('get_video_summary_with_fallback', {
-        target_video_id: videoId,
-        preferred_language: language
-      });
+      .from('video_summaries')
+      .select('id, summary, language, video_title, channel_title, created_at, user_id')
+      .eq('video_id', videoId)
+      .eq('language', language)
+      .order('created_at', { ascending: false })
+      .limit(1);
 
     if (error) {
-      console.error('[API /video-summary-by-language] DB 함수 호출 오류:', error);
+      console.error('[API /video-summary-by-language] DB 조회 오류:', error);
       return NextResponse.json(
         { error: 'Failed to fetch summary' },
         { status: 500 }
@@ -45,7 +47,6 @@ export async function GET(request: NextRequest) {
       videoId,
       requestedLanguage: language,
       foundLanguage: summary.language,
-      isFallback: summary.is_fallback,
       hasSummary: !!summary.summary
     });
 
@@ -53,7 +54,6 @@ export async function GET(request: NextRequest) {
       videoId,
       requestedLanguage: language,
       foundLanguage: summary.language,
-      isFallback: summary.is_fallback,
       summary: summary.summary,
       videoTitle: summary.video_title,
       channelTitle: summary.channel_title,

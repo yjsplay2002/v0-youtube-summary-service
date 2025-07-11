@@ -6,6 +6,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const videoId = searchParams.get('videoId');
     const userId = searchParams.get('userId');
+    const language = searchParams.get('language') || 'en';
     
     if (!videoId) {
       return NextResponse.json(
@@ -14,10 +15,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log(`[API /video-summaries] 요청 - videoId: ${videoId}, userId: ${userId || 'anonymous'}`);
+    console.log(`[API /video-summaries] 요청 - videoId: ${videoId}, userId: ${userId || 'anonymous'}, language: ${language}`);
 
-    // 모든 요약 결과 조회
-    const summariesResult = await getAllVideoSummaries(videoId, userId || undefined);
+    // 언어별 요약 결과 조회
+    const summariesResult = await getAllVideoSummaries(videoId, userId || undefined, language);
 
     console.log(`[API /video-summaries] 조회 결과:`, {
       videoId,

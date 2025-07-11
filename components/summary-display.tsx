@@ -8,6 +8,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Copy, Check, Share2, Loader2 } from "lucide-react"
 import { SummaryChat } from "@/components/summary-chat"
 import { SUPPORTED_LANGUAGES, type SupportedLanguage } from "@/components/language-selector"
+import { summarizeYoutubeVideo } from "@/app/actions"
+import { useAuth } from "@/components/auth-context"
+import { getAvailableModels, getDefaultModel, isUserAdmin } from "@/app/lib/auth-utils"
+import type { AIModel, PromptType } from "@/app/lib/summary"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
@@ -24,6 +28,7 @@ interface SummaryDisplayProps {
   videoId?: string;
   currentLanguage?: string;
   onLanguageChange?: (language: string, summary: string) => void;
+  onNewSummaryCreated?: () => void; // Callback to refresh available languages
 }
 
 export function SummaryDisplayClient({ 
@@ -31,13 +36,39 @@ export function SummaryDisplayClient({
   seekTo, 
   videoId, 
   currentLanguage = 'en',
-  onLanguageChange 
+  onLanguageChange,
+  onNewSummaryCreated
 }: SummaryDisplayProps) {
   const [copied, setCopied] = useState(false)
   const [shared, setShared] = useState(false)
   const [availableLanguages, setAvailableLanguages] = useState<LanguageOption[]>([])
   const [isLoadingLanguages, setIsLoadingLanguages] = useState(false)
   const [isLoadingSummary, setIsLoadingSummary] = useState(false)
+  const [isSummarizing, setIsSummarizing] = useState(false)
+  
+  // Auth and user settings
+  const { user } = useAuth()
+  const [selectedModel, setSelectedModel] = useState<AIModel>('gemini-2.5-flash')
+  const [isSpecialUser, setIsSpecialUser] = useState(false)
+
+  // Initialize user settings
+  useEffect(() => {
+    if (user) {
+      try {
+        const models = getAvailableModels(user) as AIModel[]
+        const defaultModel = getDefaultModel(user) as AIModel
+        const adminStatus = isUserAdmin(user)
+        
+        setSelectedModel(defaultModel)
+        setIsSpecialUser(adminStatus || user.email === 'yjs@lnrgame.com')
+      } catch (error) {
+        console.error('[SummaryDisplayClient] 사용자 설정 초기화 오류:', error)
+      }
+    } else {
+      setSelectedModel('gemini-2.5-flash')
+      setIsSpecialUser(false)
+    }
+  }, [user])
 
   // Fetch available languages for this video
   useEffect(() => {
@@ -64,21 +95,94 @@ export function SummaryDisplayClient({
 
   // Handle language selection change
   const handleLanguageChange = async (selectedLanguage: string) => {
-    if (!videoId || !onLanguageChange || selectedLanguage === currentLanguage) return
+    if (!videoId || selectedLanguage === currentLanguage) return
+
+    console.log(`[SummaryDisplayClient] 언어 변경: ${currentLanguage} -> ${selectedLanguage}`)
+    
+    // Update URL parameters immediately for responsive UI
+    const newUrl = new URL(window.location.href)
+    newUrl.searchParams.set('videoId', videoId)
+    newUrl.searchParams.set('language', selectedLanguage)
+    window.history.replaceState({}, '', newUrl.pathname + newUrl.search)
 
     setIsLoadingSummary(true)
     try {
       const response = await fetch(`/api/video-summary-by-language?videoId=${encodeURIComponent(videoId)}&language=${encodeURIComponent(selectedLanguage)}`)
       if (response.ok) {
         const data = await response.json()
-        if (data.summary) {
+        if (data.summary && onLanguageChange) {
           onLanguageChange(selectedLanguage, data.summary)
+        }
+      } else {
+        // If no summary found for this language, still update the language but clear summary
+        if (onLanguageChange) {
+          onLanguageChange(selectedLanguage, '')
         }
       }
     } catch (error) {
       console.error('Error fetching summary for language:', error)
+      // Even on error, update language to show the no-summary state
+      if (onLanguageChange) {
+        onLanguageChange(selectedLanguage, '')
+      }
     } finally {
       setIsLoadingSummary(false)
+    }
+  }
+
+  // Handle summarization in specific language
+  const handleSummarizeInLanguage = async () => {
+    if (!videoId || !currentLanguage) return
+
+    console.log(`[SummaryDisplayClient] 언어별 요약 시작: ${currentLanguage}`)
+    setIsSummarizing(true)
+
+    try {
+      // Construct YouTube URL from videoId
+      const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`
+      
+      const result = await summarizeYoutubeVideo(
+        youtubeUrl,
+        selectedModel,
+        undefined, // summaryPrompt
+        user?.id,
+        'general_summary' as PromptType,
+        currentLanguage as SupportedLanguage,
+        user?.email,
+        isSpecialUser
+      )
+
+      if (result.success && result.videoId) {
+        console.log(`[SummaryDisplayClient] 언어별 요약 성공: ${currentLanguage}`)
+        
+        // Fetch the new summary
+        const response = await fetch(`/api/video-summary-by-language?videoId=${encodeURIComponent(videoId)}&language=${encodeURIComponent(currentLanguage)}`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.summary && onLanguageChange) {
+            onLanguageChange(currentLanguage, data.summary)
+          }
+        }
+        
+        // Refresh available languages list
+        if (onNewSummaryCreated) {
+          onNewSummaryCreated()
+        }
+        
+        // Refresh available languages in this component
+        const languageResponse = await fetch(`/api/video-languages?videoId=${encodeURIComponent(videoId)}`)
+        if (languageResponse.ok) {
+          const languageData = await languageResponse.json()
+          setAvailableLanguages(languageData.languages || [])
+        }
+        
+      } else {
+        console.error(`[SummaryDisplayClient] 언어별 요약 실패:`, result.error)
+      }
+    } catch (error) {
+      console.error('Error summarizing in specific language:', error)
+    } finally {
+      setIsSummarizing(false)
     }
   }
 
@@ -213,6 +317,40 @@ export function SummaryDisplayClient({
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Video Summary</CardTitle>
         <div className="flex items-center gap-2">
+          {/* Language Selector - show available languages with summaries */}
+          {availableLanguages.length > 0 && (
+            <Select
+              value={currentLanguage}
+              onValueChange={handleLanguageChange}
+              disabled={isLoadingLanguages || isLoadingSummary}
+            >
+              <SelectTrigger className="w-[160px] h-8">
+                <SelectValue>
+                  {isLoadingSummary ? (
+                    <div className="flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      <span className="text-xs">로딩중...</span>
+                    </div>
+                  ) : (
+                    <span className="text-xs">{getLanguageDisplayName(currentLanguage)}</span>
+                  )}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {availableLanguages.map((langOption) => (
+                  <SelectItem key={langOption.language} value={langOption.language}>
+                    <div className="flex flex-col">
+                      <span className="text-xs">{getLanguageDisplayName(langOption.language)}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(langOption.created_at).toLocaleDateString('ko-KR')}
+                      </span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          
           <Button variant="outline" size="sm" onClick={handleCopy} className="flex items-center gap-1">
             {copied ? (
               <>
@@ -248,51 +386,34 @@ export function SummaryDisplayClient({
         </div>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="preview">
-          <div className="flex items-center justify-between mb-4">
-            <TabsList>
+        {/* Show "no summary" state with summarize button */}
+        {(!summary || summary.trim() === '') ? (
+          <div className="text-center py-12">
+            <div className="text-muted-foreground mb-4">
+              선택한 언어({getLanguageDisplayName(currentLanguage)})에 대한 요약이 없습니다.
+            </div>
+            <Button
+              onClick={handleSummarizeInLanguage}
+              disabled={isSummarizing || !videoId}
+              className="px-6 py-2"
+            >
+              {isSummarizing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {currentLanguage}로 요약 중...
+                </>
+              ) : (
+                `${getLanguageDisplayName(currentLanguage)}로 요약하기`
+              )}
+            </Button>
+          </div>
+        ) : (
+          <Tabs defaultValue="preview">
+            <TabsList className="mb-4">
               <TabsTrigger value="preview">Preview</TabsTrigger>
               <TabsTrigger value="chat">Ask to AI</TabsTrigger>
             </TabsList>
-            
-            {/* Language Selector */}
-            {availableLanguages.length > 1 && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">언어:</span>
-                <Select
-                  value={currentLanguage}
-                  onValueChange={handleLanguageChange}
-                  disabled={isLoadingLanguages || isLoadingSummary}
-                >
-                  <SelectTrigger className="w-[200px] h-8">
-                    <SelectValue>
-                      {isLoadingSummary ? (
-                        <div className="flex items-center gap-2">
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                          <span>로딩중...</span>
-                        </div>
-                      ) : (
-                        getLanguageDisplayName(currentLanguage)
-                      )}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableLanguages.map((langOption) => (
-                      <SelectItem key={langOption.language} value={langOption.language}>
-                        <div className="flex flex-col">
-                          <span>{getLanguageDisplayName(langOption.language)}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(langOption.created_at).toLocaleDateString('ko-KR')}
-                          </span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </div>
-          <TabsContent value="preview" className="prose prose-sm max-w-none dark:prose-invert prose-headings:font-bold prose-h1:text-xl prose-h2:text-lg prose-h3:text-base prose-p:mb-4 prose-li:mb-1 prose-ul:my-4 prose-ol:my-4 prose-blockquote:border-l-4 prose-blockquote:border-gray-300 prose-blockquote:pl-4 prose-blockquote:italic prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-pre:bg-muted prose-pre:p-4 prose-pre:rounded-md prose-pre:overflow-auto prose-a:text-blue-600 hover:prose-a:text-blue-800 prose-strong:font-bold prose-em:italic">
+            <TabsContent value="preview" className="prose prose-sm max-w-none dark:prose-invert prose-headings:font-bold prose-h1:text-xl prose-h2:text-lg prose-h3:text-base prose-p:mb-4 prose-li:mb-1 prose-ul:my-4 prose-ol:my-4 prose-blockquote:border-l-4 prose-blockquote:border-gray-300 prose-blockquote:pl-4 prose-blockquote:italic prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-pre:bg-muted prose-pre:p-4 prose-pre:rounded-md prose-pre:overflow-auto prose-a:text-blue-600 hover:prose-a:text-blue-800 prose-strong:font-bold prose-em:italic">
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkBreaks]}
               components={{
@@ -355,12 +476,13 @@ export function SummaryDisplayClient({
               {summary?.replace(/^(#{1,6})\s+(.+?)\s+\1\s*$/gm, '$1 $2')}
             </ReactMarkdown>
           </TabsContent>
-          <TabsContent value="chat">
-            {videoId && (
-              <SummaryChat summary={summary} videoId={videoId} />
-            )}
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="chat">
+              {videoId && (
+                <SummaryChat summary={summary} videoId={videoId} />
+              )}
+            </TabsContent>
+          </Tabs>
+        )}
       </CardContent>
     </Card>
   );
