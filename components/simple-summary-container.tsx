@@ -187,11 +187,42 @@ export default function SimpleSummaryContainer() {
     }
   }, [autoplay, videoId])
 
-  // Fetch existing summary and video details (인증 완료 후)
+  // Fetch video details
+  useEffect(() => {
+    if (!videoId) {
+      setVideoInfo(null)
+      return
+    }
+
+    const fetchVideoInfo = async () => {
+      console.log(`[SimpleSummaryContainer] 비디오 정보 패칭 시작: ${videoId}`)
+      try {
+        const videoDetails = await fetchVideoDetailsServer(videoId)
+        const videoInfo = videoDetails?.items?.[0]
+        console.log("[SimpleSummaryContainer] Video details fetched:", {
+          hasVideoInfo: !!videoInfo,
+          title: videoInfo?.snippet?.title
+        })
+        setVideoInfo(videoInfo)
+
+        // Inject structured data for SEO
+        if (videoInfo) {
+          const structuredData = generateVideoSummaryStructuredData(videoInfo)
+          injectStructuredData(structuredData)
+        }
+      } catch (error) {
+        console.error("[SimpleSummaryContainer] Error fetching video details:", error)
+        setVideoInfo(null) // Clear video info on error
+      }
+    }
+
+    fetchVideoInfo()
+  }, [videoId])
+
+  // Fetch existing summary (인증 완료 후)
   useEffect(() => {
     if (!videoId) {
       setSummary(null)
-      setVideoInfo(null)
       return
     }
 
@@ -201,66 +232,48 @@ export default function SimpleSummaryContainer() {
       return
     }
 
-    const fetchData = async () => {
-      console.log("[SimpleSummaryContainer] 인증 완료 후 데이터 패칭 시작:", { 
-        videoId, 
-        userId: user?.id, 
-        authLoading 
+    const fetchSummaryData = async () => {
+      console.log("[SimpleSummaryContainer] 인증 완료 후 요약 데이터 패칭 시작:", {
+        videoId,
+        userId: user?.id,
+        authLoading,
+        currentLanguage
       })
       setIsLoading(true)
       try {
-        // 1. Get all summaries (including mine and others) for current language
+        // Get all summaries (including mine and others) for current language
         const allSummariesData = await fetchAllSummaries(videoId, user?.id, currentLanguage)
         console.log("[SimpleSummaryContainer] All summaries fetched:", allSummariesData)
-        
-        // 2. Get video details
-        const videoDetails = await fetchVideoDetailsServer(videoId)
-        const videoInfo = videoDetails?.items?.[0]
-        console.log("[SimpleSummaryContainer] Video details fetched:", { 
-          hasVideoInfo: !!videoInfo,
-          title: videoInfo?.snippet?.title 
-        })
-        
-        // 3. Set states
+
         setAllSummaries(allSummariesData)
-        setVideoInfo(videoInfo)
-        
+
         // Set primary summary (mine if available, otherwise the latest other summary)
         if (allSummariesData?.mySummary) {
           setSummary(allSummariesData.mySummary.summary)
-          // Set current language from the summary data if available
           if ((allSummariesData.mySummary as any).language) {
             setCurrentLanguage((allSummariesData.mySummary as any).language)
           }
         } else if (allSummariesData?.otherSummaries.length > 0) {
           setSummary(allSummariesData.otherSummaries[0].summary)
-          // Set current language from the summary data if available
           if ((allSummariesData.otherSummaries[0] as any).language) {
             setCurrentLanguage((allSummariesData.otherSummaries[0] as any).language)
           }
         } else {
           setSummary(null)
         }
-        
-        // 4. Inject structured data for SEO
-        if (videoInfo) {
-          const structuredData = generateVideoSummaryStructuredData(videoInfo)
-          injectStructuredData(structuredData)
-        }
       } catch (error) {
-        console.error("[SimpleSummaryContainer] Error fetching data:", error)
+        console.error("[SimpleSummaryContainer] Error fetching summary data:", error)
         setAllSummaries(null)
         setSummary(null)
-        setVideoInfo(null)
       } finally {
         setIsLoading(false)
       }
     }
 
     // Add a small delay to allow URL changes to settle
-    const timeoutId = setTimeout(fetchData, 100)
+    const timeoutId = setTimeout(fetchSummaryData, 100)
     return () => clearTimeout(timeoutId)
-  }, [videoId, user?.id, authLoading, currentLanguage])
+  }, [videoId, user?.id, authLoading, currentLanguage, fetchAllSummaries])
 
   // Listen for summary update events
   useEffect(() => {
