@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/components/auth-context';
 import { useSearchParams } from 'next/navigation';
 import { getUserKeywords, searchVideosByKeyword, checkVideoSummaryExists, checkMultipleVideoSummaryExists, getTrendingVideos, getRelatedVideos } from '@/app/actions';
+import { isUserAdmin } from '@/app/lib/auth-utils';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -98,7 +99,7 @@ export default function CurationSection({ className, currentVideoId }: CurationS
   // 모드 결정 함수
   const determineMode = (): 'trending' | 'related' | 'interest' => {
     if (!user) return 'trending';
-    if (videoId) return 'related';
+    if (videoId && isUserAdmin(user)) return 'related';
     return 'interest';
   };
 
@@ -138,7 +139,7 @@ export default function CurationSection({ className, currentVideoId }: CurationS
           
         case 'related':
           if (videoId) {
-            result = await getRelatedVideos(videoId, 12);
+            result = await getRelatedVideos(videoId, 12, user?.email);
           }
           setKeywords([]);
           setSelectedKeyword(null);
@@ -266,6 +267,15 @@ export default function CurationSection({ className, currentVideoId }: CurationS
 
   // 제목과 설명
   const getTitleAndDescription = () => {
+    // 비디오가 있지만 관리자가 아닌 경우 관련 영상 대신 맞춤 추천을 표시
+    if (videoId && !isUserAdmin(user) && mode === 'interest') {
+      return {
+        title: '맞춤 추천',
+        description: '시청 기록 분석을 통해 발견된 관심 키워드 기반 추천 (관련 영상 기능은 관리자 전용)',
+        icon: <Zap className="w-5 h-5" />
+      };
+    }
+    
     switch (mode) {
       case 'trending':
         return {
@@ -275,7 +285,7 @@ export default function CurationSection({ className, currentVideoId }: CurationS
         };
       case 'related':
         return {
-          title: '관련 영상',
+          title: '관련 영상 (관리자 전용)',
           description: '현재 보고 있는 영상과 관련된 추천 동영상들입니다',
           icon: <Sparkles className="w-5 h-5" />
         };

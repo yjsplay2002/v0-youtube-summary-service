@@ -1,7 +1,7 @@
 "use client"
 
 import { useSearchParams } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { SummaryDisplayClient } from "@/components/summary-display"
 import { getSummary, fetchVideoDetailsServer } from "@/app/actions"
 import { useAuth } from "@/components/auth-context"
@@ -11,6 +11,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import YouTube, { YouTubePlayer } from "react-youtube"
 import { generateVideoSummaryStructuredData, injectStructuredData } from "@/app/lib/structured-data"
+import { SUPPORTED_LANGUAGES } from "@/components/language-selector"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Loader2 } from "lucide-react"
 
 interface SummaryData {
   summary: string;
@@ -36,13 +39,16 @@ interface AllSummariesData {
 export default function SimpleSummaryContainer() {
   const searchParams = useSearchParams()
   const videoId = searchParams.get("videoId")
+  const language = searchParams.get("language") || 'en'
   const autoplay = searchParams.get("autoplay") === "true"
   const [allSummaries, setAllSummaries] = useState<AllSummariesData | null>(null)
   const [summary, setSummary] = useState<string | null>(null)
-  const [currentLanguage, setCurrentLanguage] = useState<string>('en')
+  const [currentLanguage, setCurrentLanguage] = useState<string>(language)
   const [videoInfo, setVideoInfo] = useState<any | null>(null)
   const [playerRef, setPlayerRef] = useState<YouTubePlayer | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [availableLanguages, setAvailableLanguages] = useState<Array<{language: string, created_at: string}>>([])
+  const [isLoadingLanguages, setIsLoadingLanguages] = useState(false)
   const { user, loading: authLoading } = useAuth()
 
   // Simple function to handle seeking in the video
@@ -62,16 +68,16 @@ export default function SimpleSummaryContainer() {
   }
 
   // Handle language change in summary display
-  const handleLanguageChange = (language: string, newSummary: string) => {
+  const handleSummaryLanguageChange = (language: string, newSummary: string) => {
     console.log(`[SimpleSummaryContainer] 언어 변경: ${currentLanguage} -> ${language}`)
     setCurrentLanguage(language)
     setSummary(newSummary)
   }
 
   // Fetch all summaries for a video
-  const fetchAllSummaries = async (videoId: string, userId?: string): Promise<AllSummariesData | null> => {
+  const fetchAllSummaries = useCallback(async (videoId: string, userId?: string, language?: string): Promise<AllSummariesData | null> => {
     try {
-      const url = `/api/video-summaries?videoId=${encodeURIComponent(videoId)}${userId ? `&userId=${encodeURIComponent(userId)}` : ''}`
+      const url = `/api/video-summaries?videoId=${encodeURIComponent(videoId)}${userId ? `&userId=${encodeURIComponent(userId)}` : ''}${language ? `&language=${encodeURIComponent(language)}` : ''}`
       const response = await fetch(url)
       
       if (!response.ok) {
@@ -85,6 +91,90 @@ export default function SimpleSummaryContainer() {
       console.error(`[SimpleSummaryContainer] 모든 요약 조회 실패:`, error)
       return null
     }
+  }, [])
+
+  // Fetch available languages for a video
+  const fetchAvailableLanguages = useCallback(async (videoId: string) => {
+    if (!videoId) return
+    
+    setIsLoadingLanguages(true)
+    try {
+      const response = await fetch(`/api/video-languages?videoId=${encodeURIComponent(videoId)}`)
+      if (response.ok) {
+        const data = await response.json()
+        setAvailableLanguages(data.languages || [])
+        console.log(`[SimpleSummaryContainer] 사용 가능한 언어:`, data.languages)
+      }
+    } catch (error) {
+      console.error('[SimpleSummaryContainer] Error fetching available languages:', error)
+      setAvailableLanguages([])
+    } finally {
+      setIsLoadingLanguages(false)
+    }
+  }, [])
+
+  // Handle language change and load summary for that language
+  const handleLanguageChange = async (selectedLanguage: string) => {
+    if (!videoId || selectedLanguage === currentLanguage) return
+
+    console.log(`[SimpleSummaryContainer] 언어 변경: ${currentLanguage} -> ${selectedLanguage}`)
+    setCurrentLanguage(selectedLanguage)
+
+    // Update URL parameters
+    const newUrl = new URL(window.location.href)
+    newUrl.searchParams.set('videoId', videoId)
+    newUrl.searchParams.set('language', selectedLanguage)
+    window.history.replaceState({}, '', newUrl.pathname + newUrl.search)
+
+    // Fetch summaries for the new language
+    setIsLoading(true)
+    try {
+      const allSummariesData = await fetchAllSummaries(videoId, user?.id, selectedLanguage)
+      setAllSummaries(allSummariesData)
+      
+      // Set primary summary
+      if (allSummariesData?.mySummary) {
+        setSummary(allSummariesData.mySummary.summary)
+      } else if (allSummariesData?.otherSummaries.length > 0) {
+        setSummary(allSummariesData.otherSummaries[0].summary)
+      } else {
+        setSummary(null)
+      }
+    } catch (error) {
+      console.error('[SimpleSummaryContainer] Error loading summary for language:', error)
+      setSummary(null)
+      setAllSummaries(null)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Update current language when URL parameter changes
+  useEffect(() => {
+    setCurrentLanguage(language)
+  }, [language])
+
+  // Fetch available languages when video changes
+  useEffect(() => {
+    if (videoId) {
+      fetchAvailableLanguages(videoId)
+    } else {
+      setAvailableLanguages([])
+    }
+  }, [videoId, fetchAvailableLanguages])
+
+  // Handle new summary creation (refresh available languages)
+  const handleNewSummaryCreated = useCallback(() => {
+    console.log('[SimpleSummaryContainer] 새 요약 생성됨, 사용 가능한 언어 새로고침')
+    if (videoId) {
+      fetchAvailableLanguages(videoId)
+    }
+  }, [videoId, fetchAvailableLanguages])
+
+  // Get language display name
+  const getLanguageDisplayName = (langCode: string) => {
+    const lang = SUPPORTED_LANGUAGES.find(l => l.code === langCode)
+    return lang ? `${lang.nativeName} (${lang.name})` : langCode
   }
 
   // autoplay 파라미터 제거 (한 번만 실행)
@@ -119,8 +209,8 @@ export default function SimpleSummaryContainer() {
       })
       setIsLoading(true)
       try {
-        // 1. Get all summaries (including mine and others)
-        const allSummariesData = await fetchAllSummaries(videoId, user?.id)
+        // 1. Get all summaries (including mine and others) for current language
+        const allSummariesData = await fetchAllSummaries(videoId, user?.id, currentLanguage)
         console.log("[SimpleSummaryContainer] All summaries fetched:", allSummariesData)
         
         // 2. Get video details
@@ -170,7 +260,7 @@ export default function SimpleSummaryContainer() {
     // Add a small delay to allow URL changes to settle
     const timeoutId = setTimeout(fetchData, 100)
     return () => clearTimeout(timeoutId)
-  }, [videoId, user?.id, authLoading])
+  }, [videoId, user?.id, authLoading, currentLanguage])
 
   // Listen for summary update events
   useEffect(() => {
@@ -293,8 +383,59 @@ export default function SimpleSummaryContainer() {
             </div>
           </>
         ) : null}
-        <div className="text-center text-muted-foreground py-8">
-          이 비디오에 대한 요약이 없습니다.
+        
+        <div className="text-center py-8">
+          <div className="text-muted-foreground mb-4">
+            선택한 언어({getLanguageDisplayName(currentLanguage)})에 대한 요약이 없습니다.
+          </div>
+          
+          {/* Show available languages if there are any */}
+          {availableLanguages.length > 0 && (
+            <div className="space-y-4">
+              <div className="text-sm text-muted-foreground">
+                다음 언어로 요약을 확인할 수 있습니다:
+              </div>
+              <div className="flex items-center justify-center gap-2">
+                <span className="text-sm text-muted-foreground">언어 선택:</span>
+                <Select
+                  value={currentLanguage}
+                  onValueChange={handleLanguageChange}
+                  disabled={isLoadingLanguages || isLoading}
+                >
+                  <SelectTrigger className="w-[200px] h-8">
+                    <SelectValue>
+                      {isLoading ? (
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <span>로딩중...</span>
+                        </div>
+                      ) : (
+                        getLanguageDisplayName(currentLanguage)
+                      )}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableLanguages.map((langOption) => (
+                      <SelectItem key={langOption.language} value={langOption.language}>
+                        <div className="flex flex-col">
+                          <span>{getLanguageDisplayName(langOption.language)}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(langOption.created_at).toLocaleDateString('ko-KR')}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+          
+          {availableLanguages.length === 0 && !isLoadingLanguages && (
+            <div className="text-muted-foreground">
+              이 비디오에 대한 요약이 전혀 없습니다.
+            </div>
+          )}
         </div>
       </div>
     )
@@ -368,7 +509,9 @@ export default function SimpleSummaryContainer() {
                     seekTo={handleSeek} 
                     videoId={videoId}
                     currentLanguage={currentLanguage}
-                    onLanguageChange={handleLanguageChange}
+                    onLanguageChange={handleSummaryLanguageChange}
+          onNewSummaryCreated={handleNewSummaryCreated}
+                    onNewSummaryCreated={handleNewSummaryCreated}
                   />
                 </CardContent>
               </Card>
@@ -393,7 +536,9 @@ export default function SimpleSummaryContainer() {
                     seekTo={handleSeek} 
                     videoId={videoId}
                     currentLanguage={currentLanguage}
-                    onLanguageChange={handleLanguageChange}
+                    onLanguageChange={handleSummaryLanguageChange}
+          onNewSummaryCreated={handleNewSummaryCreated}
+                    onNewSummaryCreated={handleNewSummaryCreated}
                   />
                 </CardContent>
               </Card>
@@ -420,7 +565,9 @@ export default function SimpleSummaryContainer() {
                       seekTo={handleSeek} 
                       videoId={videoId}
                       currentLanguage={currentLanguage}
-                      onLanguageChange={handleLanguageChange}
+                      onLanguageChange={handleSummaryLanguageChange}
+          onNewSummaryCreated={handleNewSummaryCreated}
+                    onNewSummaryCreated={handleNewSummaryCreated}
                     />
                   </CardContent>
                 </Card>
@@ -435,7 +582,8 @@ export default function SimpleSummaryContainer() {
           seekTo={handleSeek} 
           videoId={videoId}
           currentLanguage={currentLanguage}
-          onLanguageChange={handleLanguageChange}
+          onLanguageChange={handleSummaryLanguageChange}
+          onNewSummaryCreated={handleNewSummaryCreated}
         />
       )}
     </div>

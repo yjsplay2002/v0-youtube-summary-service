@@ -1,7 +1,16 @@
 'use client';
 
 import { useAuth } from "@/components/auth-context"
-import { memo } from "react"
+import { memo, useEffect, useState } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
+import { summarizeYoutubeVideo } from "@/app/actions"
+import { getAvailableModels, getDefaultModel, isUserAdmin } from "@/app/lib/auth-utils"
+import type { AIModel, PromptType } from "@/app/lib/summary"
+import { SUPPORTED_LANGUAGES, type SupportedLanguage } from "@/components/language-selector"
+import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Loader2, Globe } from "lucide-react"
 import { SimpleYoutubeForm } from "@/components/simple-youtube-form"
 import SimpleSummaryContainer from "@/components/simple-summary-container"
 import { HeroSection } from "@/components/hero-section"
@@ -15,11 +24,140 @@ interface HomeClientProps {
   currentVideoId?: string;
 }
 
-const HomeClient = memo(function HomeClient({ currentVideoId }: HomeClientProps) {
+const HomeClient = memo(function HomeClient({ currentVideoId: initialVideoId }: HomeClientProps) {
   const { user, loading } = useAuth();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  
+  // Use URL search params as the source of truth, fallback to initial prop
+  const currentVideoId = searchParams.get('videoId') || initialVideoId;
+  
+  // States for multi-language summarization
+  const [isLanguageDialogOpen, setIsLanguageDialogOpen] = useState(false);
+  const [availableLanguages, setAvailableLanguages] = useState<Array<{language: string, created_at: string}>>([]);
+  const [selectedLanguageForSummary, setSelectedLanguageForSummary] = useState<string>('');
+  const [isSummarizing, setIsSummarizing] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<AIModel>('gemini-2.5-flash');
+  const [isSpecialUser, setIsSpecialUser] = useState(false);
   
   if (process.env.NODE_ENV === 'development') {
-    console.log('[HomeClient] Props 수신:', { currentVideoId, user: !!user, loading });
+    console.log('[HomeClient] Props 수신:', { 
+      initialVideoId, 
+      currentVideoId, 
+      user: !!user, 
+      loading,
+      searchParams: Object.fromEntries(searchParams.entries())
+    });
+  }
+
+  // Initialize user settings
+  useEffect(() => {
+    if (user) {
+      try {
+        const models = getAvailableModels(user) as AIModel[]
+        const defaultModel = getDefaultModel(user) as AIModel
+        const adminStatus = isUserAdmin(user)
+        
+        setSelectedModel(defaultModel)
+        setIsSpecialUser(adminStatus || user.email === 'yjs@lnrgame.com')
+      } catch (error) {
+        console.error('[HomeClient] 사용자 설정 초기화 오류:', error)
+      }
+    } else {
+      setSelectedModel('gemini-2.5-flash')
+      setIsSpecialUser(false)
+    }
+  }, [user])
+
+  // Fetch available languages when video changes
+  useEffect(() => {
+    const fetchAvailableLanguages = async () => {
+      if (!currentVideoId) {
+        setAvailableLanguages([])
+        return
+      }
+      
+      try {
+        const response = await fetch(`/api/video-languages?videoId=${encodeURIComponent(currentVideoId)}`)
+        if (response.ok) {
+          const data = await response.json()
+          setAvailableLanguages(data.languages || [])
+          console.log('[HomeClient] 사용 가능한 언어:', data.languages)
+        }
+      } catch (error) {
+        console.error('[HomeClient] Error fetching available languages:', error)
+        setAvailableLanguages([])
+      }
+    }
+
+    fetchAvailableLanguages()
+  }, [currentVideoId])
+
+  // Get language display name
+  const getLanguageDisplayName = (langCode: string) => {
+    const lang = SUPPORTED_LANGUAGES.find(l => l.code === langCode)
+    return lang ? `${lang.nativeName} (${lang.name})` : langCode
+  }
+
+  // Get available languages for new summary (exclude already summarized ones)
+  const getUnsummarizedLanguages = () => {
+    const summarizedLanguages = availableLanguages.map(lang => lang.language)
+    return SUPPORTED_LANGUAGES.filter(lang => !summarizedLanguages.includes(lang.code))
+  }
+
+  // Handle language selection for new summary
+  const handleLanguageSelection = async () => {
+    if (!selectedLanguageForSummary || !currentVideoId) return
+
+    console.log(`[HomeClient] 다른 언어로 요약 시작: ${selectedLanguageForSummary}`)
+    setIsSummarizing(true)
+
+    try {
+      const youtubeUrl = `https://www.youtube.com/watch?v=${currentVideoId}`
+      
+      const result = await summarizeYoutubeVideo(
+        youtubeUrl,
+        selectedModel,
+        undefined, // summaryPrompt
+        user?.id,
+        'general_summary' as PromptType,
+        selectedLanguageForSummary as SupportedLanguage,
+        user?.email,
+        isSpecialUser
+      )
+
+      if (result.success && result.videoId) {
+        console.log(`[HomeClient] 다른 언어 요약 성공: ${selectedLanguageForSummary}`)
+        
+        // Close dialog and reset selection
+        setIsLanguageDialogOpen(false)
+        setSelectedLanguageForSummary('')
+        
+        // Refresh available languages
+        const response = await fetch(`/api/video-languages?videoId=${encodeURIComponent(currentVideoId)}`)
+        if (response.ok) {
+          const data = await response.json()
+          setAvailableLanguages(data.languages || [])
+        }
+        
+        // Navigate to the new summary
+        router.push(`/?videoId=${currentVideoId}&language=${selectedLanguageForSummary}`)
+        
+        // Dispatch events for other components to refresh
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('summaryUpdated', { 
+            detail: { videoId: currentVideoId, language: selectedLanguageForSummary } 
+          }))
+        }, 200)
+        
+      } else {
+        console.error(`[HomeClient] 다른 언어 요약 실패:`, result.error)
+      }
+    } catch (error) {
+      console.error('Error summarizing in different language:', error)
+    } finally {
+      setIsSummarizing(false)
+    }
   }
 
   // Show loading state while auth is being determined
@@ -75,7 +213,53 @@ const HomeClient = memo(function HomeClient({ currentVideoId }: HomeClientProps)
     );
   }
 
-  // Default interface for both logged in users and when processing videos
+  // Check if we're on a video summary page (has videoId) or main page (no videoId)
+  const isVideoSummaryPage = !!currentVideoId;
+
+  // Video Summary Page - Only show video player and summary component
+  if (isVideoSummaryPage) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-secondary/10 to-accent/10">
+        <div className="container mx-auto py-10 px-4 max-w-5xl">
+          <div className="flex justify-between items-center mb-8">
+            <div className="text-left">
+              <h1 className="text-3xl md:text-4xl font-bold mb-2 gradient-text">
+                Video Summary
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                AI-generated summary and analysis
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                console.log('[HomeClient] 새로운 영상 요약하기 버튼 클릭 (타이틀 영역)');
+                // 메인 페이지의 input field 초기화를 위한 이벤트 발생
+                window.dispatchEvent(new CustomEvent('clearVideoInput'));
+                // Next.js router를 사용해서 메인 페이지로 이동 (페이지 새로고침 없음)
+                router.push('/');
+              }}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium"
+            >
+              새로운 영상 요약하기
+            </button>
+          </div>
+
+          <div className="mt-6">
+            <Suspense fallback={
+              <div className="text-center py-12">
+                <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-4"></div>
+                <p className="text-muted-foreground">Loading summary...</p>
+              </div>
+            }>
+              <SimpleSummaryContainer />
+            </Suspense>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Main Page - Show form component for new video summarization
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-secondary/10 to-accent/10">
       <div className="container mx-auto py-10 px-4 max-w-5xl">
@@ -92,28 +276,19 @@ const HomeClient = memo(function HomeClient({ currentVideoId }: HomeClientProps)
           <SimpleYoutubeForm />
         </div>
         
-        <div className="mt-10">
-          <Suspense fallback={
-            <div className="text-center py-12">
-              <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-4"></div>
-              <p className="text-muted-foreground">Loading summary...</p>
-            </div>
-          }>
-            <SimpleSummaryContainer />
-          </Suspense>
-        </div>
-        
-        {/* 큐레이션 섹션 추가 */}
-        <div className="mt-16">
-          <Suspense fallback={
-            <div className="text-center py-12">
-              <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-4"></div>
-              <p className="text-muted-foreground">Loading recommendations...</p>
-            </div>
-          }>
-            <CurationSection currentVideoId={currentVideoId} />
-          </Suspense>
-        </div>
+        {/* 큐레이션 섹션 임시 비활성화 */}
+        {false && (
+          <div className="mt-16">
+            <Suspense fallback={
+              <div className="text-center py-12">
+                <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin mx-auto mb-4"></div>
+                <p className="text-muted-foreground">Loading recommendations...</p>
+              </div>
+            }>
+              <CurationSection currentVideoId={currentVideoId} />
+            </Suspense>
+          </div>
+        )}
       </div>
     </div>
   );

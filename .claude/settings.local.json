@@ -52,7 +52,10 @@
       "Bash(~/.local/bin/supabase:*)",
       "Bash(curl:*)",
       "Bash(tar:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npm run:*)",
+      "Bash(ping:*)"
     ],
     "deny": []
   }
