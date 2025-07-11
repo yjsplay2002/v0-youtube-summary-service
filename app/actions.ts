@@ -1818,3 +1818,38 @@ export async function getRelatedVideos(videoId: string, maxResults: number = 10,
     return { videos: [] };
   }
 }
+
+export async function summarizeVideoInLanguage(
+  videoId: string,
+  language: string,
+  userId?: string,
+  userEmail?: string,
+  isUserAdminFromClient?: boolean
+): Promise<{ success: boolean; error?: string; summary?: string }> {
+  console.log(`[summarizeVideoInLanguage] Request to summarize video ${videoId} in ${language} for user ${userId || 'guest'}`);
+
+  try {
+    // Call the main summarization function with the specified language
+    const result = await summarizeYoutubeVideo(
+      `https://www.youtube.com/watch?v=${videoId}`,
+      'gemini-2.5-flash', // Or another default model
+      undefined, // No custom prompt
+      userId,
+      'general_summary', // Default prompt type
+      language,
+      userEmail,
+      isUserAdminFromClient
+    );
+
+    return result;
+  } catch (error) {
+    console.error(`[summarizeVideoInLanguage] Error summarizing video ${videoId} in ${language}:`, error);
+    return { success: false, error: "요약 생성 중 오류가 발생했습니다." };
+  }
+}
+
+import { getAvailableTranscriptLanguages } from "./lib/youtube";
+
+export async function getTranscriptLanguages(videoId: string): Promise<string[] | null> {
+  return getAvailableTranscriptLanguages(videoId);
+}

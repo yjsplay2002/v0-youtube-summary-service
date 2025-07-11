@@ -319,3 +319,37 @@ export async function searchVideos(query: string, maxResults: number = 12, pageT
     throw error;
   }
 }
+
+
+/**
+ * 비디오의 사용 가능한 자막 언어 목록을 가져오는 함수
+ * @param videoId 유튜브 비디오 ID
+ * @returns 사용 가능한 언어 코드 배열 또는 null
+ */
+export async function getAvailableTranscriptLanguages(videoId: string): Promise<string[] | null> {
+  console.log(`[getAvailableTranscriptLanguages] Fetching available languages for video: ${videoId}`);
+  try {
+    // Apify를 사용하여 자막 정보를 가져옴
+    const apifyRawData = await fetchTranscript(videoId);
+    
+    if (!apifyRawData || !apifyRawData.subtitles || !Array.isArray(apifyRawData.subtitles)) {
+      console.warn(`[getAvailableTranscriptLanguages] No subtitles metadata found in Apify data for video: ${videoId}`);
+      // 자막이 없는 경우에도 'en'을 기본으로 반환하여 영어 요약 시도
+      return ['en'];
+    }
+    
+    // 자막 메타데이터에서 언어 코드만 추출
+    const languages = apifyRawData.subtitles.map((sub: any) => sub.lang_code).filter(Boolean);
+    
+    // 'en'이 없는 경우 추가
+    if (!languages.includes('en')) {
+      languages.push('en');
+    }
+    
+    console.log(`[getAvailableTranscriptLanguages] Found languages: ${[...new Set(languages)].join(', ')}`);
+    return [...new Set(languages)];
+  } catch (error) {
+    console.error(`[getAvailableTranscriptLanguages] Error fetching available languages:`, error);
+    return ['en']; // 에러 발생 시 영어 기본값 반환
+  }
+}
