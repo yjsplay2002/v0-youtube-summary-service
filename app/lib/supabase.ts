@@ -79,14 +79,16 @@ if (process.env.NODE_ENV === 'production' && (!process.env.NEXT_PUBLIC_SUPABASE_
   throw new Error('Missing required Supabase environment variables. Please check your .env.local file.');
 }
 
-// 단일 Supabase 클라이언트 인스턴스
-let supabaseInstance: ReturnType<typeof createClient<Database>> | null = null;
-let supabaseAdminInstance: ReturnType<typeof createClient<Database>> | null = null;
+// Global instances to prevent multiple clients
+declare global {
+  var __supabaseInstance: ReturnType<typeof createClient<Database>> | undefined;
+  var __supabaseAdminInstance: ReturnType<typeof createClient<Database>> | undefined;
+}
 
-// 일반 클라이언트 (RLS 적용됨) - 싱글톤 패턴
+// 일반 클라이언트 (RLS 적용됨) - 글로벌 싱글톤 패턴
 export const supabase = (() => {
-  if (!supabaseInstance) {
-    supabaseInstance = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+  if (!globalThis.__supabaseInstance) {
+    globalThis.__supabaseInstance = createClient<Database>(supabaseUrl, supabaseAnonKey, {
       auth: {
         autoRefreshToken: true,
         persistSession: true,
@@ -100,14 +102,19 @@ export const supabase = (() => {
         },
       },
     });
+    
+    // Development mode warning prevention
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[Supabase] Client instance created');
+    }
   }
-  return supabaseInstance;
+  return globalThis.__supabaseInstance;
 })();
 
-// 관리자 클라이언트 (RLS 우회) - 서버 액션에서만 사용해야 함 - 싱글톤 패턴
+// 관리자 클라이언트 (RLS 우회) - 서버 액션에서만 사용해야 함 - 글로벌 싱글톤 패턴
 export const supabaseAdmin = (() => {
-  if (!supabaseAdminInstance) {
-    supabaseAdminInstance = createClient<Database>(
+  if (!globalThis.__supabaseAdminInstance) {
+    globalThis.__supabaseAdminInstance = createClient<Database>(
       supabaseUrl,
       process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseAnonKey,
       {
@@ -117,6 +124,11 @@ export const supabaseAdmin = (() => {
         },
       }
     );
+    
+    // Development mode warning prevention
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[Supabase] Admin client instance created');
+    }
   }
-  return supabaseAdminInstance;
+  return globalThis.__supabaseAdminInstance;
 })();

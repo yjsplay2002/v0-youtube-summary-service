@@ -363,9 +363,9 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
         {!loading && !error && summaries.length > 0 && (
           <ScrollArea className="flex-grow">
             <div className="p-2 space-y-1">
-              {summaries.map((summary) => (
+              {summaries.map((summary, index) => (
                 <Link
-                  key={summary.video_id}
+                  key={`${summary.video_id}-${index}`}
                   href={`/?videoId=${summary.video_id}`}
                   onClick={() => {
                     if (isMobile) {

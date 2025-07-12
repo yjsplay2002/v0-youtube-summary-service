@@ -15,6 +15,7 @@ import type { AIModel, PromptType } from "@/app/lib/summary"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
+import { toast } from 'sonner'
 
 interface LanguageOption {
   language: string;
@@ -45,6 +46,7 @@ export function SummaryDisplayClient({
   const [isLoadingLanguages, setIsLoadingLanguages] = useState(false)
   const [isLoadingSummary, setIsLoadingSummary] = useState(false)
   const [isSummarizing, setIsSummarizing] = useState(false)
+  const [summarizingLanguage, setSummarizingLanguage] = useState<string | null>(null)
   
   // Auth and user settings
   const { user } = useAuth()
@@ -99,77 +101,104 @@ export function SummaryDisplayClient({
 
     console.log(`[SummaryDisplayClient] 언어 변경: ${currentLanguage} -> ${selectedLanguage}`)
     
-    // Update URL parameters immediately for responsive UI
-    const newUrl = new URL(window.location.href)
-    newUrl.searchParams.set('videoId', videoId)
-    newUrl.searchParams.set('language', selectedLanguage)
-    window.history.replaceState({}, '', newUrl.pathname + newUrl.search)
+    // Check if this language already has a summary
+    const existingLanguage = availableLanguages.find(lang => lang.language === selectedLanguage)
+    
+    if (existingLanguage) {
+      // Language has summary, fetch it
+      console.log(`[SummaryDisplayClient] 기존 요약 불러오기: ${selectedLanguage}`)
+      
+      // Update URL parameters immediately for responsive UI
+      const newUrl = new URL(window.location.href)
+      newUrl.searchParams.set('videoId', videoId)
+      newUrl.searchParams.set('language', selectedLanguage)
+      window.history.replaceState({}, '', newUrl.pathname + newUrl.search)
 
-    setIsLoadingSummary(true)
-    try {
-      const response = await fetch(`/api/video-summary-by-language?videoId=${encodeURIComponent(videoId)}&language=${encodeURIComponent(selectedLanguage)}`)
-      if (response.ok) {
-        const data = await response.json()
-        if (data.summary && onLanguageChange) {
-          onLanguageChange(selectedLanguage, data.summary)
+      setIsLoadingSummary(true)
+      try {
+        const response = await fetch(`/api/video-summary-by-language?videoId=${encodeURIComponent(videoId)}&language=${encodeURIComponent(selectedLanguage)}`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.summary && onLanguageChange) {
+            onLanguageChange(selectedLanguage, data.summary)
+          }
+        } else {
+          if (onLanguageChange) {
+            onLanguageChange(selectedLanguage, '')
+          }
         }
+      } catch (error) {
+        console.error('Error fetching summary for language:', error)
+        if (onLanguageChange) {
+          onLanguageChange(selectedLanguage, '')
+        }
+      } finally {
+        setIsLoadingSummary(false)
+      }
+    } else {
+      // Language doesn't have summary, create it automatically
+      console.log(`[SummaryDisplayClient] 새로운 요약 생성: ${selectedLanguage}`)
+      
+      if (user) {
+        await handleSummarizeInSpecificLanguage(selectedLanguage)
       } else {
-        // If no summary found for this language, still update the language but clear summary
+        // For non-logged in users, just switch to show no summary state
         if (onLanguageChange) {
           onLanguageChange(selectedLanguage, '')
         }
       }
-    } catch (error) {
-      console.error('Error fetching summary for language:', error)
-      // Even on error, update language to show the no-summary state
-      if (onLanguageChange) {
-        onLanguageChange(selectedLanguage, '')
-      }
-    } finally {
-      setIsLoadingSummary(false)
     }
   }
 
   // Handle summarization in specific language
-  const handleSummarizeInLanguage = async () => {
-    if (!videoId || !currentLanguage) return
+  const handleSummarizeInSpecificLanguage = async (targetLanguage: string) => {
+    if (!videoId || !targetLanguage) return
 
-    console.log(`[SummaryDisplayClient] 언어별 요약 시작: ${currentLanguage}`)
+    console.log(`[SummaryDisplayClient] 특정 언어 요약 시작: ${targetLanguage}`)
+    setSummarizingLanguage(targetLanguage)
     setIsSummarizing(true)
 
+    const languageName = getLanguageDisplayName(targetLanguage)
+    toast.info(`${languageName} 언어로 요약을 시작합니다...`)
+
+    // Update URL to target language immediately
+    const newUrl = new URL(window.location.href)
+    newUrl.searchParams.set('videoId', videoId)
+    newUrl.searchParams.set('language', targetLanguage)
+    window.history.replaceState({}, '', newUrl.pathname + newUrl.search)
+
     try {
-      // Construct YouTube URL from videoId
       const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`
       
       const result = await summarizeYoutubeVideo(
         youtubeUrl,
         selectedModel,
-        undefined, // summaryPrompt
+        undefined,
         user?.id,
         'general_summary' as PromptType,
-        currentLanguage as SupportedLanguage,
+        targetLanguage as SupportedLanguage,
         user?.email,
         isSpecialUser
       )
 
       if (result.success && result.videoId) {
-        console.log(`[SummaryDisplayClient] 언어별 요약 성공: ${currentLanguage}`)
+        console.log(`[SummaryDisplayClient] 언어별 요약 성공: ${targetLanguage}`)
+        toast.success(`${languageName} 언어 요약이 완료되었습니다!`)
         
         // Fetch the new summary
-        const response = await fetch(`/api/video-summary-by-language?videoId=${encodeURIComponent(videoId)}&language=${encodeURIComponent(currentLanguage)}`)
+        const response = await fetch(`/api/video-summary-by-language?videoId=${encodeURIComponent(videoId)}&language=${encodeURIComponent(targetLanguage)}`)
         if (response.ok) {
           const data = await response.json()
           if (data.summary && onLanguageChange) {
-            onLanguageChange(currentLanguage, data.summary)
+            onLanguageChange(targetLanguage, data.summary)
           }
         }
         
-        // Refresh available languages list
+        // Refresh available languages
         if (onNewSummaryCreated) {
           onNewSummaryCreated()
         }
         
-        // Refresh available languages in this component
         const languageResponse = await fetch(`/api/video-languages?videoId=${encodeURIComponent(videoId)}`)
         if (languageResponse.ok) {
           const languageData = await languageResponse.json()
@@ -178,18 +207,61 @@ export function SummaryDisplayClient({
         
       } else {
         console.error(`[SummaryDisplayClient] 언어별 요약 실패:`, result.error)
+        toast.error(`${languageName} 요약 생성에 실패했습니다: ${result.error}`)
       }
     } catch (error) {
       console.error('Error summarizing in specific language:', error)
+      toast.error(`${languageName} 요약 생성 중 오류가 발생했습니다.`)
     } finally {
       setIsSummarizing(false)
+      setSummarizingLanguage(null)
     }
+  }
+
+  // Handle summarization in current language (for button in no-summary state)
+  const handleSummarizeInLanguage = async () => {
+    if (!currentLanguage) return
+    await handleSummarizeInSpecificLanguage(currentLanguage)
   }
 
   // Get language display name
   const getLanguageDisplayName = (langCode: string) => {
     const lang = SUPPORTED_LANGUAGES.find(l => l.code === langCode)
-    return lang ? `${lang.nativeName} (${lang.name})` : langCode
+    return lang ? lang.nativeName : langCode
+  }
+
+  // Get expanded language list including popular languages
+  const getExpandedLanguageList = () => {
+    const popularLanguages = ['ko', 'en', 'ja', 'zh', 'es', 'fr', 'de']
+    const existingLanguageSet = new Set(availableLanguages.map(lang => lang.language))
+    
+    const expandedList: (LanguageOption & { hasSummary: boolean })[] = []
+    
+    // Add existing languages first
+    availableLanguages.forEach(lang => {
+      expandedList.push({ ...lang, hasSummary: true })
+    })
+    
+    // Add popular languages that don't have summaries yet
+    if (user) {
+      popularLanguages.forEach(langCode => {
+        if (!existingLanguageSet.has(langCode)) {
+          expandedList.push({
+            language: langCode,
+            created_at: '',
+            summary_id: '',
+            hasSummary: false
+          })
+        }
+      })
+    }
+    
+    return expandedList.sort((a, b) => {
+      // Sort by: has summary first, then alphabetically
+      if (a.hasSummary && !b.hasSummary) return -1
+      if (!a.hasSummary && b.hasSummary) return 1
+      return getLanguageDisplayName(a.language).localeCompare(getLanguageDisplayName(b.language))
+    })
   }
 
   // Handle timestamp button clicks
@@ -317,39 +389,58 @@ export function SummaryDisplayClient({
       <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle>Video Summary</CardTitle>
         <div className="flex items-center gap-2">
-          {/* Language Selector - show available languages with summaries */}
-          {availableLanguages.length > 0 && (
-            <Select
-              value={currentLanguage}
-              onValueChange={handleLanguageChange}
-              disabled={isLoadingLanguages || isLoadingSummary}
-            >
-              <SelectTrigger className="w-[160px] h-8">
-                <SelectValue>
-                  {isLoadingSummary ? (
-                    <div className="flex items-center gap-1">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      <span className="text-xs">로딩중...</span>
-                    </div>
-                  ) : (
-                    <span className="text-xs">{getLanguageDisplayName(currentLanguage)}</span>
-                  )}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {availableLanguages.map((langOption) => (
-                  <SelectItem key={langOption.language} value={langOption.language}>
+          {/* Enhanced Language Selector - show available and creatable languages */}
+          <Select
+            value={currentLanguage}
+            onValueChange={handleLanguageChange}
+            disabled={isLoadingLanguages || isLoadingSummary || summarizingLanguage !== null}
+          >
+            <SelectTrigger className="w-[180px] h-8">
+              <SelectValue>
+                {isLoadingSummary || summarizingLanguage !== null ? (
+                  <div className="flex items-center gap-1">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span className="text-xs">
+                      {summarizingLanguage ? `${getLanguageDisplayName(summarizingLanguage)} 요약중...` : '로딩중...'}
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-xs">{getLanguageDisplayName(currentLanguage)}</span>
+                )}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {getExpandedLanguageList().map((langOption) => (
+                <SelectItem key={langOption.language} value={langOption.language}>
+                  <div className="flex justify-between w-full items-center">
                     <div className="flex flex-col">
-                      <span className="text-xs">{getLanguageDisplayName(langOption.language)}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(langOption.created_at).toLocaleDateString('ko-KR')}
-                      </span>
+                      <span className="text-xs font-medium">{getLanguageDisplayName(langOption.language)}</span>
+                      {langOption.hasSummary ? (
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(langOption.created_at).toLocaleDateString('ko-KR')}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-blue-500">
+                          요약 생성 가능
+                        </span>
+                      )}
                     </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
+                    <div className="flex items-center gap-1 ml-2">
+                      {langOption.hasSummary ? (
+                        <span className="text-xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded">
+                          완료
+                        </span>
+                      ) : user && (
+                        <span className="text-xs text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">
+                          {summarizingLanguage === langOption.language ? "요약 중..." : "생성"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           
           <Button variant="outline" size="sm" onClick={handleCopy} className="flex items-center gap-1">
             {copied ? (
