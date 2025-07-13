@@ -16,12 +16,10 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 import { toast } from 'sonner'
+import { useVideoLanguages } from "@/hooks/use-video-languages"
 
-interface LanguageOption {
-  language: string;
-  created_at: string;
-  summary_id: string;
-}
+// Import the shared type instead of defining locally
+import type { LanguageOption } from "@/hooks/use-video-languages"
 
 interface SummaryDisplayProps {
   summary: string;
@@ -42,11 +40,12 @@ export function SummaryDisplayClient({
 }: SummaryDisplayProps) {
   const [copied, setCopied] = useState(false)
   const [shared, setShared] = useState(false)
-  const [availableLanguages, setAvailableLanguages] = useState<LanguageOption[]>([])
-  const [isLoadingLanguages, setIsLoadingLanguages] = useState(false)
   const [isLoadingSummary, setIsLoadingSummary] = useState(false)
   const [isSummarizing, setIsSummarizing] = useState(false)
   const [summarizingLanguage, setSummarizingLanguage] = useState<string | null>(null)
+  
+  // Use shared video languages hook to prevent duplicate API calls
+  const { languages: availableLanguages, isLoading: isLoadingLanguages, refreshLanguages } = useVideoLanguages(videoId || null)
   
   // Auth and user settings
   const { user } = useAuth()
@@ -72,28 +71,7 @@ export function SummaryDisplayClient({
     }
   }, [user])
 
-  // Fetch available languages for this video
-  useEffect(() => {
-    const fetchAvailableLanguages = async () => {
-      if (!videoId) return
-
-      setIsLoadingLanguages(true)
-      try {
-        const response = await fetch(`/api/video-languages?videoId=${encodeURIComponent(videoId)}`)
-        if (response.ok) {
-          const data = await response.json()
-          setAvailableLanguages(data.languages || [])
-        }
-      } catch (error) {
-        console.error('Error fetching available languages:', error)
-        setAvailableLanguages([])
-      } finally {
-        setIsLoadingLanguages(false)
-      }
-    }
-
-    fetchAvailableLanguages()
-  }, [videoId])
+  // Languages are now handled by the useVideoLanguages hook automatically
 
   // Handle language selection change
   const handleLanguageChange = async (selectedLanguage: string) => {
@@ -194,16 +172,13 @@ export function SummaryDisplayClient({
           }
         }
         
-        // Refresh available languages
+        // Refresh available languages using the shared hook
         if (onNewSummaryCreated) {
           onNewSummaryCreated()
         }
         
-        const languageResponse = await fetch(`/api/video-languages?videoId=${encodeURIComponent(videoId)}`)
-        if (languageResponse.ok) {
-          const languageData = await languageResponse.json()
-          setAvailableLanguages(languageData.languages || [])
-        }
+        // Use the shared hook's refresh function to update cache
+        refreshLanguages(videoId)
         
       } else {
         console.error(`[SummaryDisplayClient] 언어별 요약 실패:`, result.error)

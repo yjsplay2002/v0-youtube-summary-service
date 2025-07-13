@@ -15,11 +15,15 @@ export async function GET(request: NextRequest) {
 
     console.log(`[API /video-languages] 요청 - videoId: ${videoId}`);
 
-    // Get all available languages for this video using the database function
+    // Get all available languages for this video
     const { data: languages, error } = await supabaseAdmin
-      .rpc('get_available_languages_for_video', {
-        target_video_id: videoId
-      });
+      .from('video_summaries')
+      .select(`
+        language,
+        created_at,
+        id
+      `)
+      .eq('video_id', videoId);
 
     if (error) {
       console.error('[API /video-languages] DB 함수 호출 오류:', error);
@@ -29,17 +33,24 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Transform data to match expected format
+    const formattedLanguages = languages?.map((l: any) => ({
+      language: l.language,
+      created_at: l.created_at,
+      summary_id: l.id
+    })) || [];
+
     console.log(`[API /video-languages] 조회 결과:`, {
       videoId,
-      languageCount: languages?.length || 0,
-      languages: languages?.map(l => l.language) || []
+      languageCount: formattedLanguages.length,
+      languages: formattedLanguages.map(l => l.language)
     });
 
     return NextResponse.json({
       videoId,
-      languages: languages || [],
+      languages: formattedLanguages,
       meta: {
-        totalLanguages: languages?.length || 0,
+        totalLanguages: formattedLanguages.length,
         timestamp: new Date().toISOString()
       }
     });

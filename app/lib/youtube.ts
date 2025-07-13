@@ -30,13 +30,16 @@ export function extractVideoId(url: string): string | null {
  * @returns Apify에서 받은 원본 JSON 데이터 또는 null
  */
 export async function fetchTranscript(videoId: string): Promise<any | null> {
+  const startTime = Date.now();
   console.log(`[fetchTranscript] Fetching transcript for video: ${videoId} using Apify`);
+  
   try {
     const apifyApiToken = process.env.APIFY_API_TOKEN;
     if (!apifyApiToken) {
       console.error('[fetchTranscript] APIFY_API_TOKEN is not set in environment');
       return null;
     }
+    
     const client = new ApifyClient({ token: apifyApiToken });
     const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`;
     const input = {
@@ -49,7 +52,8 @@ export async function fetchTranscript(videoId: string): Promise<any | null> {
     const run = await client.actor('dB9f4B02ocpTICIEY').call(input);
     
     if (!run?.defaultDatasetId) {
-      console.error('[fetchTranscript] No datasetId returned from Apify actor run');
+      const duration = Date.now() - startTime;
+      console.error(`[fetchTranscript] Failed: No datasetId returned from Apify actor run (${duration}ms)`);
       return null;
     }
     
@@ -57,7 +61,8 @@ export async function fetchTranscript(videoId: string): Promise<any | null> {
     const { items } = await client.dataset(run.defaultDatasetId).listItems();
     
     if (!items || items.length === 0 || !items[0]) {
-      console.error('[fetchTranscript] No transcript items returned from Apify dataset');
+      const duration = Date.now() - startTime;
+      console.error(`[fetchTranscript] Failed: No transcript items returned from Apify dataset (${duration}ms)`);
       return null;
     }
     
@@ -65,14 +70,19 @@ export async function fetchTranscript(videoId: string): Promise<any | null> {
     const rawData = items[0];
 
     if (!rawData) {
-      console.error('[fetchTranscript] No data returned from Apify result');
+      const duration = Date.now() - startTime;
+      console.error(`[fetchTranscript] Failed: No data returned from Apify result (${duration}ms)`);
       return null;
     }
     
-    console.log(`[fetchTranscript] Successfully fetched data using Apify:`, rawData);
+    const duration = Date.now() - startTime;
+    const dataSize = JSON.stringify(rawData).length;
+    console.log(`[fetchTranscript] Success: Fetched transcript data (${dataSize} chars) in ${duration}ms`);
+    
     return rawData;
   } catch (error) {
-    console.error('[fetchTranscript] Error fetching transcript with Apify:', error);
+    const duration = Date.now() - startTime;
+    console.error(`[fetchTranscript] Failed: Error fetching transcript with Apify (${duration}ms):`, error);
     return null;
   }
 }

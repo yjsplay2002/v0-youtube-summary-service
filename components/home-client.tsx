@@ -1,10 +1,10 @@
 'use client';
 
 import { useAuth } from "@/components/auth-context"
-import { memo, useEffect, useState } from "react"
+import { memo, useEffect, useState, useMemo, useCallback } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { summarizeYoutubeVideo } from "@/app/actions"
-import { getAvailableModels, getDefaultModel, isUserAdmin } from "@/app/lib/auth-utils"
+import { getDefaultModel, isUserAdmin } from "@/app/lib/auth-utils"
 import type { AIModel, PromptType } from "@/app/lib/summary"
 import { SUPPORTED_LANGUAGES, type SupportedLanguage } from "@/components/language-selector"
 import { Button } from "@/components/ui/button"
@@ -19,6 +19,7 @@ import { PricingSection } from "@/components/pricing-section"
 import { FAQSection } from "@/components/faq-section"
 import CurationSection from "@/components/curation-section"
 import { Suspense } from "react"
+import { useVideoLanguages } from "@/hooks/use-video-languages"
 
 interface HomeClientProps {
   currentVideoId?: string;
@@ -29,32 +30,45 @@ const HomeClient = memo(function HomeClient({ currentVideoId: initialVideoId }: 
   const searchParams = useSearchParams();
   const router = useRouter();
   
-  // Use URL search params as the source of truth, fallback to initial prop
-  const currentVideoId = searchParams.get('videoId') || initialVideoId;
+  // Memoize expensive searchParams computation
+  const searchParamsObject = useMemo(() => {
+    return Object.fromEntries(searchParams.entries())
+  }, [searchParams]);
+
+  // Memoize currentVideoId computation
+  const currentVideoId = useMemo(() => {
+    return searchParams.get('videoId') || initialVideoId;
+  }, [searchParams, initialVideoId]);
   
   // States for multi-language summarization
   const [isLanguageDialogOpen, setIsLanguageDialogOpen] = useState(false);
-  const [availableLanguages, setAvailableLanguages] = useState<Array<{language: string, created_at: string}>>([]);
   const [selectedLanguageForSummary, setSelectedLanguageForSummary] = useState<string>('');
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [selectedModel, setSelectedModel] = useState<AIModel>('gemini-2.5-flash');
   const [isSpecialUser, setIsSpecialUser] = useState(false);
   
-  if (process.env.NODE_ENV === 'development') {
-    console.log('[HomeClient] Props 수신:', { 
-      initialVideoId, 
-      currentVideoId, 
-      user: !!user, 
-      loading,
-      searchParams: Object.fromEntries(searchParams.entries())
-    });
-  }
+  // Use shared video languages hook to prevent duplicate API calls
+  const { languages: availableLanguages, refreshLanguages } = useVideoLanguages(currentVideoId || null);
+  
+  // Move debug logging to useEffect to prevent render-time computation
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      const renderTimestamp = performance.now();
+      console.log('[HomeClient] State 변경:', { 
+        timestamp: renderTimestamp.toFixed(2) + 'ms',
+        initialVideoId, 
+        currentVideoId, 
+        user: !!user, 
+        loading,
+        searchParams: searchParamsObject
+      });
+    }
+  }, [initialVideoId, currentVideoId, user, loading, searchParamsObject]);
 
   // Initialize user settings
   useEffect(() => {
     if (user) {
       try {
-        const models = getAvailableModels(user) as AIModel[]
         const defaultModel = getDefaultModel(user) as AIModel
         const adminStatus = isUserAdmin(user)
         
@@ -69,44 +83,22 @@ const HomeClient = memo(function HomeClient({ currentVideoId: initialVideoId }: 
     }
   }, [user])
 
-  // Fetch available languages when video changes
-  useEffect(() => {
-    const fetchAvailableLanguages = async () => {
-      if (!currentVideoId) {
-        setAvailableLanguages([])
-        return
-      }
-      
-      try {
-        const response = await fetch(`/api/video-languages?videoId=${encodeURIComponent(currentVideoId)}`)
-        if (response.ok) {
-          const data = await response.json()
-          setAvailableLanguages(data.languages || [])
-          console.log('[HomeClient] 사용 가능한 언어:', data.languages)
-        }
-      } catch (error) {
-        console.error('[HomeClient] Error fetching available languages:', error)
-        setAvailableLanguages([])
-      }
-    }
+  // Languages are now handled by the useVideoLanguages hook automatically
 
-    fetchAvailableLanguages()
-  }, [currentVideoId])
-
-  // Get language display name
-  const getLanguageDisplayName = (langCode: string) => {
+  // Memoize language display name function
+  const getLanguageDisplayName = useCallback((langCode: string) => {
     const lang = SUPPORTED_LANGUAGES.find(l => l.code === langCode)
     return lang ? `${lang.nativeName} (${lang.name})` : langCode
-  }
+  }, []);
 
-  // Get available languages for new summary (exclude already summarized ones)
-  const getUnsummarizedLanguages = () => {
+  // Memoize available languages for new summary (exclude already summarized ones)
+  const getUnsummarizedLanguages = useCallback(() => {
     const summarizedLanguages = availableLanguages.map(lang => lang.language)
     return SUPPORTED_LANGUAGES.filter(lang => !summarizedLanguages.includes(lang.code))
-  }
+  }, [availableLanguages]);
 
-  // Handle language selection for new summary
-  const handleLanguageSelection = async () => {
+  // Memoize language selection handler
+  const handleLanguageSelection = useCallback(async () => {
     if (!selectedLanguageForSummary || !currentVideoId) return
 
     console.log(`[HomeClient] 다른 언어로 요약 시작: ${selectedLanguageForSummary}`)
@@ -133,12 +125,8 @@ const HomeClient = memo(function HomeClient({ currentVideoId: initialVideoId }: 
         setIsLanguageDialogOpen(false)
         setSelectedLanguageForSummary('')
         
-        // Refresh available languages
-        const response = await fetch(`/api/video-languages?videoId=${encodeURIComponent(currentVideoId)}`)
-        if (response.ok) {
-          const data = await response.json()
-          setAvailableLanguages(data.languages || [])
-        }
+        // Refresh available languages using the shared hook
+        refreshLanguages(currentVideoId)
         
         // Navigate to the new summary
         router.push(`/?videoId=${currentVideoId}&language=${selectedLanguageForSummary}`)
@@ -158,7 +146,7 @@ const HomeClient = memo(function HomeClient({ currentVideoId: initialVideoId }: 
     } finally {
       setIsSummarizing(false)
     }
-  }
+  }, [selectedLanguageForSummary, currentVideoId, selectedModel, user?.id, user?.email, isSpecialUser, refreshLanguages, router]);
 
   // Show loading state while auth is being determined
   if (loading) {

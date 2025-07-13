@@ -162,6 +162,21 @@ export async function processAndStoreVideoChunks(
     console.log(`[processAndStoreVideoChunks] Starting processing for video: ${videoId}`);
     console.log(`[processAndStoreVideoChunks] Dialog length: ${dialog.length}, overwrite: ${overwriteExisting}`);
     
+    // Get video_info_id for the new structure
+    const { data: videoInfo } = await supabaseAdmin
+      .from('video_info')
+      .select('id')
+      .eq('video_id', videoId)
+      .single();
+    
+    if (!videoInfo) {
+      console.error(`[processAndStoreVideoChunks] video_info not found for video: ${videoId}`);
+      return { success: false, chunksStored: 0, error: 'Video info not found' };
+    }
+    
+    const videoInfoId = videoInfo.id;
+    console.log(`[processAndStoreVideoChunks] Found video_info_id: ${videoInfoId}`);
+    
     // Check if chunks already exist
     if (!overwriteExisting) {
       const { data: existingChunks } = await supabaseAdmin
@@ -280,6 +295,7 @@ export async function processAndStoreVideoChunks(
 
         return {
           video_id: videoId,
+          video_info_id: videoInfoId, // Add video_info_id for new structure
           chunk_index: chunk.index,
           content: chunk.content,
           start_time: chunk.startTime || null,
