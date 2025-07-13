@@ -16,11 +16,22 @@ export async function GET(request: NextRequest) {
 
     console.log(`[API /video-summary-by-language] 요청 - videoId: ${videoId}, language: ${language}`);
 
-    // Get summary for specific video and language WITHOUT fallback
+    // Get summary for specific video and language WITHOUT fallback (using new normalized structure)
     const { data: summaryData, error } = await supabaseAdmin
       .from('video_summaries')
-      .select('id, summary, language, video_title, channel_title, created_at, user_id')
-      .eq('video_id', videoId)
+      .select(`
+        id, 
+        summary, 
+        language, 
+        created_at, 
+        user_id,
+        video_info!inner(
+          video_id,
+          video_title,
+          channel_title
+        )
+      `)
+      .eq('video_info.video_id', videoId)
       .eq('language', language)
       .order('created_at', { ascending: false })
       .limit(1);
@@ -55,8 +66,8 @@ export async function GET(request: NextRequest) {
       requestedLanguage: language,
       foundLanguage: summary.language,
       summary: summary.summary,
-      videoTitle: summary.video_title,
-      channelTitle: summary.channel_title,
+      videoTitle: summary.video_info.video_title,
+      channelTitle: summary.video_info.channel_title,
       createdAt: summary.created_at,
       meta: {
         timestamp: new Date().toISOString()

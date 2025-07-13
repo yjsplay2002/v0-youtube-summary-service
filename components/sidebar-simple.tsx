@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -44,6 +44,9 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
   const [summaries, setSummaries] = useState<Summary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   
   const { user, isAuthenticated, loading: authLoading } = useAuth();
   const userTier = getUserSubscriptionTier(user);
@@ -57,6 +60,9 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
   });
   const hasInitiallyLoaded = useRef(false);
   const isRequestInProgress = useRef(false);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const lastElementRef = useRef<HTMLDivElement>(null);
 
   // 모바일 체크
   useEffect(() => {
@@ -73,7 +79,7 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
   }, []);
 
   // 요약 데이터 불러오기 (매개변수로 명시적으로 상태 전달)
-  const fetchSummaries = async (forceAuthState?: { isAuthenticated: boolean; userId?: string }) => {
+  const fetchSummaries = async (forceAuthState?: { isAuthenticated: boolean; userId?: string }, resetPagination: boolean = true) => {
     // 중복 요청 방지
     if (isRequestInProgress.current) {
       console.log('[SidebarSimple] 이미 요청 진행 중 - 스킵');
@@ -84,12 +90,18 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
     
     console.log('[SidebarSimple] fetchSummaries 시작:', {
       authState: currentAuthState,
-      isForced: !!forceAuthState
+      isForced: !!forceAuthState,
+      resetPagination
     });
     
     isRequestInProgress.current = true;
     setLoading(true);
     setError(null);
+    
+    if (resetPagination) {
+      setPage(1);
+      setHasMore(true);
+    }
     
     try {
       const params = new URLSearchParams({
@@ -118,6 +130,7 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
       console.log('[SidebarSimple] API 응답:', data);
 
       setSummaries(data.summaries || []);
+      setHasMore(data.pagination?.hasNextPage || false);
       console.log('[SidebarSimple] 요약 데이터 설정 완료:', data.summaries?.length || 0);
 
     } catch (err) {
@@ -128,6 +141,95 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
       isRequestInProgress.current = false;
     }
   };
+
+  // 더 많은 요약 데이터 불러오기 (infinite scroll용)
+  const loadMoreSummaries = useCallback(async () => {
+    if (loadingMore || !hasMore || isRequestInProgress.current) {
+      return;
+    }
+
+    const currentAuthState = { isAuthenticated, userId: user?.id };
+    const nextPage = page + 1;
+    
+    console.log('[SidebarSimple] loadMoreSummaries 시작:', {
+      authState: currentAuthState,
+      nextPage,
+      hasMore
+    });
+    
+    setLoadingMore(true);
+    
+    try {
+      const params = new URLSearchParams({
+        page: nextPage.toString(),
+        limit: '20',
+      });
+
+      // 로그인한 사용자의 경우 userId 추가
+      if (currentAuthState.isAuthenticated && currentAuthState.userId) {
+        params.append('userId', currentAuthState.userId);
+      }
+
+      const url = `/api/summaries?${params}`;
+      console.log('[SidebarSimple] 더 많은 데이터 API 호출:', url);
+
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('[SidebarSimple] 추가 데이터 API 응답:', data);
+
+      const newSummaries = data.summaries || [];
+      if (newSummaries.length > 0) {
+        setSummaries(prev => [...prev, ...newSummaries]);
+        setPage(nextPage);
+        setHasMore(data.pagination?.hasNextPage || false);
+        console.log('[SidebarSimple] 추가 요약 데이터 추가 완료:', newSummaries.length);
+      } else {
+        setHasMore(false);
+        console.log('[SidebarSimple] 더 이상 데이터 없음');
+      }
+
+    } catch (err) {
+      console.error('[SidebarSimple] 추가 데이터 로딩 에러:', err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [isAuthenticated, user?.id, page, hasMore, loadingMore]);
+
+  // Intersection Observer 설정 (infinite scroll용)
+  useEffect(() => {
+    if (!lastElementRef.current || loading) return;
+
+    if (observerRef.current) {
+      observerRef.current.disconnect();
+    }
+
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        const lastEntry = entries[0];
+        if (lastEntry.isIntersecting && hasMore && !loadingMore) {
+          console.log('[SidebarSimple] 마지막 요소가 보임 - 더 많은 데이터 로딩');
+          loadMoreSummaries();
+        }
+      },
+      {
+        threshold: 0.1,
+        rootMargin: '50px'
+      }
+    );
+
+    observerRef.current.observe(lastElementRef.current);
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+      }
+    };
+  }, [hasMore, loadingMore, loading, loadMoreSummaries]);
 
   // 컴포넌트 마운트 및 사용자 변경 시 데이터 로딩 (인증 완료 후)
   useEffect(() => {
@@ -169,10 +271,13 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
   useEffect(() => {
     const handleSummaryUpdated = (event: CustomEvent) => {
       console.log('[SidebarSimple] summaryUpdated 이벤트 수신:', event.detail);
-      // 현재 인증 상태를 명시적으로 전달
+      // 현재 인증 상태를 명시적으로 전달하고 페이지네이션 리셋
       const currentAuthState = { isAuthenticated, userId: user?.id };
       console.log('[SidebarSimple] summaryUpdated 이벤트에서 현재 인증 상태 사용:', currentAuthState);
-      fetchSummaries(currentAuthState);
+      setPage(1);
+      setHasMore(true);
+      setSummaries([]);
+      fetchSummaries(currentAuthState, true);
     };
 
     window.addEventListener('summaryUpdated', handleSummaryUpdated as EventListener);
@@ -186,10 +291,13 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
   useEffect(() => {
     const refreshHandler = () => {
       console.log('[SidebarSimple] SummaryContext refresh 콜백 호출');
-      // 현재 인증 상태를 명시적으로 전달
+      // 현재 인증 상태를 명시적으로 전달하고 페이지네이션 리셋
       const currentAuthState = { isAuthenticated, userId: user?.id };
       console.log('[SidebarSimple] SummaryContext refresh에서 현재 인증 상태 사용:', currentAuthState);
-      fetchSummaries(currentAuthState);
+      setPage(1);
+      setHasMore(true);
+      setSummaries([]);
+      fetchSummaries(currentAuthState, true);
     };
     
     registerRefreshCallback(refreshHandler);
@@ -197,10 +305,13 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
 
   const handleRefresh = () => {
     console.log('[SidebarSimple] 새로고침 버튼 클릭');
-    // 현재 인증 상태를 명시적으로 전달
+    // 현재 인증 상태를 명시적으로 전달하고 페이지네이션 리셋
     const currentAuthState = { isAuthenticated, userId: user?.id };
     console.log('[SidebarSimple] 새로고침 버튼에서 현재 인증 상태 사용:', currentAuthState);
-    fetchSummaries(currentAuthState);
+    setPage(1);
+    setHasMore(true);
+    setSummaries([]);
+    fetchSummaries(currentAuthState, true);
   };
 
   const handleNewSummary = () => {
@@ -368,7 +479,7 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
 
         {/* 요약 리스트 */}
         {!loading && !error && summaries.length > 0 && (
-          <ScrollArea className="flex-grow">
+          <ScrollArea className="flex-grow" ref={scrollAreaRef}>
             <div className="p-2 space-y-1">
               {summaries.map((summary, index) => (
                 <Link
@@ -415,6 +526,30 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
                   )}
                 </Link>
               ))}
+              
+              {/* Infinite scroll loading indicator and observer target */}
+              {hasMore && (
+                <div 
+                  ref={lastElementRef}
+                  className="flex items-center justify-center p-4"
+                >
+                  {loadingMore && (
+                    <div className="flex items-center gap-2 text-sidebar-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      {!isCollapsed && <span className="text-sm">더 많은 요약을 불러오는 중...</span>}
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* End of list indicator */}
+              {!hasMore && summaries.length > 20 && !isCollapsed && (
+                <div className="flex items-center justify-center p-4">
+                  <span className="text-xs text-sidebar-muted-foreground">
+                    모든 요약을 불러왔습니다
+                  </span>
+                </div>
+              )}
             </div>
           </ScrollArea>
         )}

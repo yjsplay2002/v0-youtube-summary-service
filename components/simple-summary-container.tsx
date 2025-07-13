@@ -1,7 +1,7 @@
 "use client"
 
 import { useSearchParams } from "next/navigation"
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { SummaryDisplayClient } from "@/components/summary-display"
 import { getSummary, fetchVideoDetailsServer } from "@/app/actions"
 import { useAuth } from "@/components/auth-context"
@@ -14,6 +14,7 @@ import { generateVideoSummaryStructuredData, injectStructuredData } from "@/app/
 import { SUPPORTED_LANGUAGES } from "@/components/language-selector"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2 } from "lucide-react"
+import { useVideoLanguages } from "@/hooks/use-video-languages"
 
 interface SummaryData {
   summary: string;
@@ -47,9 +48,16 @@ export default function SimpleSummaryContainer() {
   const [videoInfo, setVideoInfo] = useState<any | null>(null)
   const [playerRef, setPlayerRef] = useState<YouTubePlayer | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [availableLanguages, setAvailableLanguages] = useState<Array<{language: string, created_at: string}>>([])
-  const [isLoadingLanguages, setIsLoadingLanguages] = useState(false)
   const { user, loading: authLoading } = useAuth()
+  
+  // Use shared video languages hook to prevent duplicate API calls
+  const { languages: availableLanguages, isLoading: isLoadingLanguages, refreshLanguages } = useVideoLanguages(videoId)
+
+  // Track which videoId has been fetched to prevent duplicate API calls
+  const fetchedVideoIds = useRef(new Set<string>())
+  
+  // Track active summary requests to prevent duplicates
+  const activeSummaryRequests = useRef(new Map<string, Promise<AllSummariesData | null>>())
 
   // Simple function to handle seeking in the video
   const handleSeek = (seconds: number) => {
@@ -74,44 +82,44 @@ export default function SimpleSummaryContainer() {
     setSummary(newSummary)
   }
 
-  // Fetch all summaries for a video
+  // Fetch all summaries for a video with duplicate request prevention
   const fetchAllSummaries = useCallback(async (videoId: string, userId?: string, language?: string): Promise<AllSummariesData | null> => {
-    try {
-      const url = `/api/video-summaries?videoId=${encodeURIComponent(videoId)}${userId ? `&userId=${encodeURIComponent(userId)}` : ''}${language ? `&language=${encodeURIComponent(language)}` : ''}`
-      const response = await fetch(url)
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
-      }
-      
-      const data = await response.json()
-      console.log(`[SimpleSummaryContainer] 모든 요약 조회 결과:`, data)
-      return data
-    } catch (error) {
-      console.error(`[SimpleSummaryContainer] 모든 요약 조회 실패:`, error)
-      return null
+    const requestKey = `${videoId}-${userId || 'no-user'}-${language || 'no-lang'}`
+    
+    // Check if there's already an active request for this combination
+    if (activeSummaryRequests.current.has(requestKey)) {
+      console.log(`[SimpleSummaryContainer] 요약 요청 중복 방지: ${requestKey}`)
+      return activeSummaryRequests.current.get(requestKey)!
     }
+    
+    const requestPromise = (async () => {
+      try {
+        const url = `/api/video-summaries?videoId=${encodeURIComponent(videoId)}${userId ? `&userId=${encodeURIComponent(userId)}` : ''}${language ? `&language=${encodeURIComponent(language)}` : ''}`
+        const response = await fetch(url)
+        
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`)
+        }
+        
+        const data = await response.json()
+        console.log(`[SimpleSummaryContainer] 모든 요약 조회 결과:`, data)
+        return data
+      } catch (error) {
+        console.error(`[SimpleSummaryContainer] 모든 요약 조회 실패:`, error)
+        return null
+      } finally {
+        // Remove from active requests when done
+        activeSummaryRequests.current.delete(requestKey)
+      }
+    })()
+    
+    // Store the promise to prevent duplicate requests
+    activeSummaryRequests.current.set(requestKey, requestPromise)
+    
+    return requestPromise
   }, [])
 
-  // Fetch available languages for a video
-  const fetchAvailableLanguages = useCallback(async (videoId: string) => {
-    if (!videoId) return
-    
-    setIsLoadingLanguages(true)
-    try {
-      const response = await fetch(`/api/video-languages?videoId=${encodeURIComponent(videoId)}`)
-      if (response.ok) {
-        const data = await response.json()
-        setAvailableLanguages(data.languages || [])
-        console.log(`[SimpleSummaryContainer] 사용 가능한 언어:`, data.languages)
-      }
-    } catch (error) {
-      console.error('[SimpleSummaryContainer] Error fetching available languages:', error)
-      setAvailableLanguages([])
-    } finally {
-      setIsLoadingLanguages(false)
-    }
-  }, [])
+  // Languages are now handled by the useVideoLanguages hook automatically
 
   // Handle language change and load summary for that language
   const handleLanguageChange = async (selectedLanguage: string) => {
@@ -154,22 +162,15 @@ export default function SimpleSummaryContainer() {
     setCurrentLanguage(language)
   }, [language])
 
-  // Fetch available languages when video changes
-  useEffect(() => {
-    if (videoId) {
-      fetchAvailableLanguages(videoId)
-    } else {
-      setAvailableLanguages([])
-    }
-  }, [videoId, fetchAvailableLanguages])
+  // Languages are automatically fetched by useVideoLanguages hook when videoId changes
 
   // Handle new summary creation (refresh available languages)
   const handleNewSummaryCreated = useCallback(() => {
     console.log('[SimpleSummaryContainer] 새 요약 생성됨, 사용 가능한 언어 새로고침')
     if (videoId) {
-      fetchAvailableLanguages(videoId)
+      refreshLanguages(videoId)
     }
-  }, [videoId, fetchAvailableLanguages])
+  }, [videoId, refreshLanguages])
 
   // Get language display name
   const getLanguageDisplayName = (langCode: string) => {
@@ -187,15 +188,27 @@ export default function SimpleSummaryContainer() {
     }
   }, [autoplay, videoId])
 
-  // Fetch video details
+  // Fetch video details (with duplicate prevention)
   useEffect(() => {
     if (!videoId) {
       setVideoInfo(null)
+      // Clear the cache when no videoId
+      fetchedVideoIds.current.clear()
+      return
+    }
+
+    // Prevent duplicate fetches for the same videoId
+    if (fetchedVideoIds.current.has(videoId)) {
+      console.log(`[SimpleSummaryContainer] 비디오 정보 이미 패칭됨 (캐시됨): ${videoId}`)
       return
     }
 
     const fetchVideoInfo = async () => {
       console.log(`[SimpleSummaryContainer] 비디오 정보 패칭 시작: ${videoId}`)
+      
+      // Mark as being fetched to prevent concurrent requests
+      fetchedVideoIds.current.add(videoId)
+      
       try {
         const videoDetails = await fetchVideoDetailsServer(videoId)
         const videoInfo = videoDetails?.items?.[0]
@@ -212,14 +225,16 @@ export default function SimpleSummaryContainer() {
         }
       } catch (error) {
         console.error("[SimpleSummaryContainer] Error fetching video details:", error)
-        setVideoInfo(null) // Clear video info on error
+        setVideoInfo(null)
+        // Remove from cache on error so it can be retried
+        fetchedVideoIds.current.delete(videoId)
       }
     }
 
     fetchVideoInfo()
   }, [videoId])
 
-  // Fetch existing summary (인증 완료 후)
+  // Fetch existing summary (인증 완료 후) - currentLanguage 의존성 제거하여 중복 호출 방지
   useEffect(() => {
     if (!videoId) {
       setSummary(null)
@@ -250,14 +265,8 @@ export default function SimpleSummaryContainer() {
         // Set primary summary (mine if available, otherwise the latest other summary)
         if (allSummariesData?.mySummary) {
           setSummary(allSummariesData.mySummary.summary)
-          if ((allSummariesData.mySummary as any).language) {
-            setCurrentLanguage((allSummariesData.mySummary as any).language)
-          }
         } else if (allSummariesData?.otherSummaries.length > 0) {
           setSummary(allSummariesData.otherSummaries[0].summary)
-          if ((allSummariesData.otherSummaries[0] as any).language) {
-            setCurrentLanguage((allSummariesData.otherSummaries[0] as any).language)
-          }
         } else {
           setSummary(null)
         }
@@ -273,7 +282,7 @@ export default function SimpleSummaryContainer() {
     // Add a small delay to allow URL changes to settle
     const timeoutId = setTimeout(fetchSummaryData, 100)
     return () => clearTimeout(timeoutId)
-  }, [videoId, user?.id, authLoading, currentLanguage, fetchAllSummaries])
+  }, [videoId, user?.id, authLoading, fetchAllSummaries])
 
   // Listen for summary update events
   useEffect(() => {

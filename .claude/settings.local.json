@@ -30,12 +30,6 @@
       "WebFetch(domain:supabase.com)",
       "Bash(mv:*)",
       "Bash(cd:*)",
-      "Bash(cd:*)",
-      "Bash(cd:*)",
-      "Bash(cd:*)",
-      "Bash(cd:*)",
-      "Bash(cd:*)",
-      "Bash(cd:*)",
       "Bash(node:*)",
       "Bash(rm:*)",
       "Bash(pkill:*)",
@@ -55,7 +49,8 @@
       "Bash(chmod:*)",
       "Bash(npm run typecheck:*)",
       "Bash(npm run:*)",
-      "Bash(ping:*)"
+      "Bash(ping:*)",
+      "Bash(env)"
     ],
     "deny": []
   }

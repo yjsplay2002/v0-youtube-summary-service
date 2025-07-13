@@ -8,15 +8,27 @@ import { extractVideoKeywords, extractVideoTopics } from "./lib/video-keywords";
 import { extractKeywordsFromHistory } from "./lib/curation-utils";
 import { processAndStoreVideoChunks } from "@/app/lib/rag";
 
-// Supabase에서 사용자별 요약 조회
+// Supabase에서 사용자별 요약 조회 (새 구조: video_info join)
 async function getUserVideoSummaryFromDB(videoId: string, userId: string, language?: string) {
   console.log(`[DB 조회] video_id: ${videoId}, user_id: ${userId}, language: ${language || 'default'}`);
   
   let query = supabase
     .from('video_summaries')
-    .select('*')
-    .eq('video_id', videoId)
-    .eq('user_id', userId);
+    .select(`
+      *,
+      video_info:video_info_id (
+        video_id,
+        video_title,
+        video_thumbnail,
+        video_duration,
+        channel_title,
+        video_tags,
+        video_description,
+        dialog
+      )
+    `)
+    .eq('user_id', userId)
+    .eq('video_info.video_id', videoId);
   
   if (language) {
     query = query.eq('language', language);
@@ -35,18 +47,46 @@ async function getUserVideoSummaryFromDB(videoId: string, userId: string, langua
   }
   
   console.log('[DB 조회 결과] 존재함');
+  
+  // 데이터 구조를 기존 형태로 맞춘
+  if (data && data.video_info) {
+    return {
+      ...data,
+      video_id: data.video_info.video_id,
+      video_title: data.video_info.video_title,
+      video_thumbnail: data.video_info.video_thumbnail,
+      video_duration: data.video_info.video_duration,
+      channel_title: data.video_info.channel_title,
+      video_tags: data.video_info.video_tags,
+      video_description: data.video_info.video_description,
+      dialog: data.video_info.dialog
+    };
+  }
+  
   return data;
 }
 
-// 게스트 사용자용 요약 조회 (video_summaries 테이블에서 user_id가 null인 데이터)
+// 게스트 사용자용 요약 조회 (새 구조: video_info join)
 async function getGuestVideoSummaryFromDB(videoId: string, language?: string) {
   console.log(`[게스트 DB 조회] video_id: ${videoId}, language: ${language || 'default'} - video_summaries 테이블에서 게스트 데이터 조회`);
   
   let query = supabase
     .from('video_summaries')
-    .select('*')
-    .eq('video_id', videoId)
-    .is('user_id', null);
+    .select(`
+      *,
+      video_info:video_info_id (
+        video_id,
+        video_title,
+        video_thumbnail,
+        video_duration,
+        channel_title,
+        video_tags,
+        video_description,
+        dialog
+      )
+    `)
+    .is('user_id', null)
+    .eq('video_info.video_id', videoId);
   
   if (language) {
     query = query.eq('language', language);
@@ -65,6 +105,22 @@ async function getGuestVideoSummaryFromDB(videoId: string, language?: string) {
   }
   
   console.log(`[게스트 DB 조회] video_id: ${videoId} - 게스트 데이터 발견`);
+  
+  // 데이터 구조를 기존 형태로 맞춤
+  if (data && data.video_info) {
+    return {
+      ...data,
+      video_id: data.video_info.video_id,
+      video_title: data.video_info.video_title,
+      video_thumbnail: data.video_info.video_thumbnail,
+      video_duration: data.video_info.video_duration,
+      channel_title: data.video_info.channel_title,
+      video_tags: data.video_info.video_tags,
+      video_description: data.video_info.video_description,
+      dialog: data.video_info.dialog
+    };
+  }
+  
   return data;
 }
 
@@ -287,8 +343,11 @@ export async function summarizeYoutubeVideo(
         // 사용자가 이 요약에 접근할 수 있도록 user_summaries에 연결
         const { data: existingSummaryData } = await supabaseAdmin
           .from('video_summaries')
-          .select('id')
-          .eq('video_id', videoId)
+          .select(`
+            id,
+            video_info!inner(video_id)
+          `)
+          .eq('video_info.video_id', videoId)
           .eq('language', language || 'en')
           .single();
 
@@ -308,19 +367,49 @@ export async function summarizeYoutubeVideo(
     // 3-2. 해당 언어의 요약이 없으므로 새로운 요약 생성 진행
     console.log(`[summarizeYoutubeVideo] ${language || 'en'} 언어 요약이 없음, 새로운 요약 생성 시작`);
 
-    // 4. 자막 가져오기
-    console.log(`[summarizeYoutubeVideo] 자막 가져오기 시도 중...`);
-    const apifyRawData = await fetchTranscript(videoId);
+    // 4. 기존 dialog 확인 및 자막 가져오기
+    console.log(`[summarizeYoutubeVideo] 기존 video_info에서 dialog 확인 중...`);
     
-    if (!apifyRawData) {
-      console.error(`[summarizeYoutubeVideo] Apify 데이터를 가져올 수 없음: ${videoId}`);
-      return { success: false, videoId, error: "자막을 찾을 수 없습니다." };
+    // 4-1. video_info 테이블에서 기존 dialog 조회
+    const { data: existingVideoInfo } = await supabaseAdmin
+      .from('video_info')
+      .select('id, dialog, video_title, channel_title, video_thumbnail, video_duration, video_description, video_tags')
+      .eq('video_id', videoId)
+      .single();
+    
+    let apifyRawData = null;
+    let transcript = "";
+    let videoInfoId = null;
+    
+    if (existingVideoInfo && existingVideoInfo.dialog) {
+      console.log(`[summarizeYoutubeVideo] 기존 video_info에서 dialog 발견, API 호출 없이 재사용`);
+      transcript = existingVideoInfo.dialog;
+      videoInfoId = existingVideoInfo.id;
+      
+      // dialog가 JSON 문자열인 경우 파싱하여 apifyRawData로 사용
+      try {
+        apifyRawData = JSON.parse(transcript);
+        console.log(`[summarizeYoutubeVideo] 기존 dialog를 apifyRawData로 파싱 성공`);
+      } catch (parseError) {
+        console.log(`[summarizeYoutubeVideo] dialog가 JSON이 아님, 문자열로 사용`);
+        apifyRawData = { transcript }; // 기본 구조로 감싸기
+      }
+    } else {
+      console.log(`[summarizeYoutubeVideo] 기존 dialog 없음, Apify API 호출 중...`);
+      
+      // 4-2. Apify API로 새로 자막 가져오기
+      apifyRawData = await fetchTranscript(videoId);
+      
+      if (!apifyRawData) {
+        console.error(`[summarizeYoutubeVideo] Apify 데이터를 가져올 수 없음: ${videoId}`);
+        return { success: false, videoId, error: "자막을 찾을 수 없습니다." };
+      }
+      
+      transcript = JSON.stringify(apifyRawData);
+      console.log(`[summarizeYoutubeVideo] Apify 데이터 가져오기 성공, 전체 데이터 길이: ${transcript.length} 문자`);
     }
     
-    // RawData 전체를 transcript로 사용
-    const transcript = JSON.stringify(apifyRawData);
-    
-    console.log(`[summarizeYoutubeVideo] Apify 데이터 가져오기 성공, 전체 데이터 길이: ${transcript.length} 문자`);
+    console.log(`[summarizeYoutubeVideo] 최종 transcript 길이: ${transcript.length} 문자`);
 
     // 5. 요약 생성 전 토큰 수 미리 확인
     const estimatedTokens = calculateTokenCount(transcript, aiModel);
@@ -367,38 +456,112 @@ export async function summarizeYoutubeVideo(
     console.log(`[summarizeYoutubeVideo] 추출된 키워드 (${inferredKeywords.length}개):`, inferredKeywords.slice(0, 5));
     console.log(`[summarizeYoutubeVideo] 추출된 주제 (${inferredTopics.length}개):`, inferredTopics);
 
-    // 8. Supabase에 저장 (새로운 구조 사용)
+    // 8. Supabase에 저장 (새로운 구조 사용: video_info + video_summaries)
     try {
-      // 먼저 video_summaries 테이블에 요약 저장 (user_id는 원래 작성자 정보로 유지)
-      const { data: savedSummary } = await supabaseAdmin
+      // videoInfoId는 위에서 이미 확인했음
+      if (videoInfoId) {
+        // 기존 video_info가 있으면 그것을 사용 (메타데이터 업데이트 필요한지 확인)
+        console.log(`[summarizeYoutubeVideo] 기존 video_info 사용: ${videoInfoId}`);
+        
+        // 기존 video_info의 메타데이터가 비어있으면 업데이트
+        if (existingVideoInfo && (!existingVideoInfo.video_title || !existingVideoInfo.channel_title)) {
+          console.log(`[summarizeYoutubeVideo] 기존 video_info 메타데이터 업데이트 중...`);
+          await supabaseAdmin
+            .from('video_info')
+            .update({
+              video_title: title,
+              channel_title: channel_title,
+              video_thumbnail: thumbnail_url,
+              video_duration: duration,
+              video_description: description,
+              video_tags: tags
+            })
+            .eq('id', videoInfoId);
+        }
+      } else {
+        // 새로운 video_info 생성
+        const { data: newVideoInfo } = await supabaseAdmin
+          .from('video_info')
+          .insert({
+            video_id: videoId,
+            video_title: title,
+            video_thumbnail: thumbnail_url,
+            video_duration: duration,
+            channel_title: channel_title,
+            video_tags: tags,
+            video_description: description,
+            dialog: JSON.stringify(apifyRawData)
+          })
+          .select('id')
+          .single();
+        
+        if (!newVideoInfo) {
+          throw new Error('Failed to create video_info record');
+        }
+        
+        videoInfoId = newVideoInfo.id;
+        console.log(`[summarizeYoutubeVideo] 새 video_info 생성: ${videoInfoId}`);
+      }
+      
+      // video_summaries 테이블에 요약 저장 (video_info_id 참조)
+      console.log(`[summarizeYoutubeVideo] video_summaries 저장 시도:`, {
+        user_id: userId || null,
+        video_info_id: videoInfoId,
+        language: language || 'en',
+        summary_length: markdown.length
+      });
+      
+      // 정규화된 구조: video_summaries에는 요약 관련 데이터만 저장
+      const insertData = {
+        user_id: userId || null,
+        video_info_id: videoInfoId,
+        video_id: videoId, // Add video_id for easier queries
+        inferred_topics: inferredTopics,
+        inferred_keywords: inferredKeywords,
+        summary: markdown,
+        summary_prompt: summaryPrompt,
+        language: language || 'en'
+      };
+      
+      console.log(`[summarizeYoutubeVideo] video_summaries 저장 데이터:`, {
+        ...insertData,
+        summary: `${insertData.summary.substring(0, 100)}...`
+      });
+      
+      const { data: savedSummary, error: summaryError } = await supabaseAdmin
         .from('video_summaries')
-        .insert({
-          user_id: userId || null, // 원래 작성자 정보 유지 (게스트는 null)
-          video_id: videoId,
-          video_title: title,
-          video_thumbnail: thumbnail_url,
-          video_duration: duration,
-          channel_title: channel_title,
-          video_tags: tags,
-          video_description: description,
-          inferred_topics: inferredTopics,
-          inferred_keywords: inferredKeywords,
-          summary: markdown,
-          summary_prompt: summaryPrompt,
-          dialog: JSON.stringify(apifyRawData),
-          language: language || 'en'
-        })
+        .insert(insertData)
         .select('id')
         .single();
+      
+      if (summaryError) {
+        console.error(`[summarizeYoutubeVideo] video_summaries 저장 실패:`, summaryError);
+        throw new Error(`Failed to save summary: ${summaryError.message}`);
+      }
+      
+      console.log(`[summarizeYoutubeVideo] video_summaries 저장 성공:`, savedSummary);
 
       if (savedSummary && userId) {
         // 로그인한 사용자의 경우 user_summaries 테이블에도 연결 추가
-        await supabaseAdmin
+        console.log(`[summarizeYoutubeVideo] user_summaries 저장 시도:`, {
+          user_id: userId,
+          summary_id: savedSummary.id
+        });
+        
+        const { error: userSummaryError } = await supabaseAdmin
           .from('user_summaries')
           .insert({
             user_id: userId,
             summary_id: savedSummary.id
           });
+          
+        if (userSummaryError) {
+          console.error(`[summarizeYoutubeVideo] user_summaries 저장 실패:`, userSummaryError);
+          // user_summaries 실패는 치명적이지 않으므로 계속 진행
+        } else {
+          console.log(`[summarizeYoutubeVideo] user_summaries 저장 성공`);
+        }
+        
         console.log(`[summarizeYoutubeVideo] 요약 저장 및 사용자 연결 완료: ${videoId}`);
       } else {
         console.log(`[summarizeYoutubeVideo] 게스트 요약 저장 완료: ${videoId}`);
@@ -642,7 +805,7 @@ export async function getSummaryWithMetadata(videoId: string, userId?: string, p
       isGuest: summary.user_id === null,
       foundLanguage: summary.found_language,
       isFallback: summary.is_fallback,
-      availableLanguages: availableLanguages?.map(lang => lang.language) || []
+      availableLanguages: availableLanguages?.map((lang: any) => lang.language) || []
     };
   } catch (err) {
     console.error(`[getSummaryWithMetadata] DB 조회 오류:`, err);
@@ -696,39 +859,38 @@ export async function resummarizeYoutubeVideo(
     
     console.log(`[resummarizeYoutubeVideo] 기존 dialog 데이터 검색 중...`);
     
-    // 2-1. 사용자별 요약에서 dialog 필드 확인
-    const { data: userSummary } = await supabase
-      .from('video_summaries')
-      .select('*')
+    // 2-1. video_info에서 dialog 데이터 찾기 (새 구조)
+    const { data: videoInfo } = await supabase
+      .from('video_info')
+      .select('id, dialog')
       .eq('video_id', videoId)
-      .eq('user_id', userId)
       .maybeSingle();
     
-    console.log(`[resummarizeYoutubeVideo] 사용자 요약 조회:`, { 
-      found: !!userSummary, 
-      hasDialog: !!userSummary?.dialog
+    console.log(`[resummarizeYoutubeVideo] video_info에서 dialog 조회:`, { 
+      found: !!videoInfo, 
+      hasDialog: !!videoInfo?.dialog
     });
     
-    if (userSummary?.dialog) {
-      videoData = userSummary;
-      console.log(`[resummarizeYoutubeVideo] 사용자 요약에서 dialog 필드 발견`);
+    if (videoInfo?.dialog) {
+      videoData = videoInfo;
+      console.log(`[resummarizeYoutubeVideo] video_info에서 dialog 필드 발견`);
       console.log(`[resummarizeYoutubeVideo] dialog 원본 데이터:`, {
-        type: typeof userSummary.dialog,
-        isString: typeof userSummary.dialog === 'string',
-        length: typeof userSummary.dialog === 'string' ? userSummary.dialog.length : 'Not string',
-        preview: typeof userSummary.dialog === 'string' ? userSummary.dialog.substring(0, 200) : JSON.stringify(userSummary.dialog).substring(0, 200)
+        type: typeof videoInfo.dialog,
+        isString: typeof videoInfo.dialog === 'string',
+        length: typeof videoInfo.dialog === 'string' ? videoInfo.dialog.length : 'Not string',
+        preview: typeof videoInfo.dialog === 'string' ? videoInfo.dialog.substring(0, 200) : JSON.stringify(videoInfo.dialog).substring(0, 200)
       });
       
       // dialog 필드에서 트랜스크립트 추출
       try {
         let dialogData;
-        if (typeof userSummary.dialog === 'string') {
+        if (typeof videoInfo.dialog === 'string') {
           // JSON 문자열인 경우 파싱
-          dialogData = JSON.parse(userSummary.dialog);
+          dialogData = JSON.parse(videoInfo.dialog);
           console.log(`[resummarizeYoutubeVideo] JSON 문자열 파싱 완료`);
         } else {
           // 이미 객체인 경우 그대로 사용
-          dialogData = userSummary.dialog;
+          dialogData = videoInfo.dialog;
           console.log(`[resummarizeYoutubeVideo] 이미 객체 형태임`);
         }
         
@@ -816,7 +978,7 @@ export async function resummarizeYoutubeVideo(
         }
       } catch (parseError) {
         console.error(`[resummarizeYoutubeVideo] dialog 파싱 오류:`, parseError);
-        console.error(`[resummarizeYoutubeVideo] 원본 dialog 값:`, userSummary.dialog);
+        console.error(`[resummarizeYoutubeVideo] 원본 dialog 값:`, videoInfo.dialog);
       }
     }
     
@@ -873,14 +1035,13 @@ export async function resummarizeYoutubeVideo(
           console.log(`[resummarizeYoutubeVideo] API에서 트랜스크립트 가져오기 성공: ${transcript.length}자`);
           
           // 가져온 트랜스크립트를 dialog 필드에 저장 (향후 재요약을 위해)
-          if (userSummary) {
+          if (videoInfo) {
             await supabase
-              .from('video_summaries')
+              .from('video_info')
               .update({ 
                 dialog: JSON.stringify(apifyRawData)
               })
-              .eq('video_id', videoId)
-              .eq('user_id', userId);
+              .eq('video_id', videoId);
             console.log(`[resummarizeYoutubeVideo] 새로 가져온 트랜스크립트 dialog 필드에 저장 완료`);
           }
         } else {
@@ -911,15 +1072,15 @@ export async function resummarizeYoutubeVideo(
       language: language || 'en'
     };
 
-    if (userSummary) {
+    if (videoInfo) {
       // 기존 사용자 요약 업데이트
       console.log(`[resummarizeYoutubeVideo] 기존 사용자 요약 업데이트 중...`);
       
       const { error: updateError } = await supabase
         .from('video_summaries')
         .update(summaryData)
-        .eq('video_id', videoId)
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .eq('video_info_id', videoInfo.id);
       
       if (updateError) {
         console.error(`[resummarizeYoutubeVideo] 요약 업데이트 실패:`, updateError);
@@ -986,11 +1147,13 @@ export async function getAllSummaries(userId?: string) {
           .select(`
             created_at,
             video_summaries!inner(
-              video_id,
-              video_title,
-              video_thumbnail,
-              channel_title,
-              language
+              language,
+              video_info:video_info_id(
+                video_id,
+                video_title,
+                video_thumbnail,
+                channel_title
+              )
             )
           `)
           .eq('user_id', userId)
@@ -1003,11 +1166,11 @@ export async function getAllSummaries(userId?: string) {
         }
         
         // 새로운 구조에서 데이터 변환
-        const summaries = data?.map(item => ({
-          video_id: item.video_summaries.video_id,
-          title: item.video_summaries.video_title,
-          thumbnail_url: item.video_summaries.video_thumbnail,
-          channel_title: item.video_summaries.channel_title,
+        const summaries = data?.map((item: any) => ({
+          video_id: item.video_summaries.video_info.video_id,
+          title: item.video_summaries.video_info.video_title,
+          thumbnail_url: item.video_summaries.video_info.video_thumbnail,
+          channel_title: item.video_summaries.video_info.channel_title,
           created_at: item.created_at,
           language: item.video_summaries.language
         })) || [];
@@ -1020,9 +1183,9 @@ export async function getAllSummaries(userId?: string) {
       } catch (newStructureError) {
         console.log('[getAllSummaries] 새로운 구조 실패, 기존 구조로 폴백');
         
-        // 기존 구조로 폴백
+        // 기존 구조로 폴백 (video_summaries_with_info view 사용)
         const { data, error } = await supabaseAdmin
-          .from('video_summaries')
+          .from('video_summaries_with_info')
           .select('video_id, title:video_title, thumbnail_url:video_thumbnail, channel_title, created_at, language')
           .eq('user_id', userId)
           .order('created_at', { ascending: false });
@@ -1039,9 +1202,9 @@ export async function getAllSummaries(userId?: string) {
       // 로그인하지 않은 사용자는 video_summaries에서 최신 20개만 조회 (공개 데이터)
       console.log('[getAllSummaries] 로그인하지 않은 사용자 - video_summaries에서 최신 20개 조회');
       
-      // 서버 액션에서는 supabaseAdmin 사용
+      // 서버 액션에서는 supabaseAdmin 사용 (video_summaries_with_info view 사용)
       const { data, error } = await supabaseAdmin
-        .from('video_summaries')
+        .from('video_summaries_with_info')
         .select('video_id, title:video_title, thumbnail_url:video_thumbnail, channel_title, created_at, language')
         .order('created_at', { ascending: false })
         .limit(20);
@@ -1734,7 +1897,7 @@ export async function getRelatedVideos(videoId: string, maxResults: number = 10,
     const keywords = title
       .replace(/[^\w\s가-힣]/g, ' ')
       .split(/\s+/)
-      .filter(word => word.length > 2)
+      .filter((word: string) => word.length > 2)
       .slice(0, 3)
       .join(' ');
     

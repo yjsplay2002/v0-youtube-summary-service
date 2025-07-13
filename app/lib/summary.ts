@@ -164,6 +164,7 @@ const callGeminiAPI = async (systemPrompt: string, userMessage: string, language
     throw new Error('GEMINI_API_KEY is missing');
   }
 
+  const startTime = Date.now();
   try {
     console.log(`[callGeminiAPI] Gemini API 호출 시작`);
     
@@ -188,13 +189,15 @@ const callGeminiAPI = async (systemPrompt: string, userMessage: string, language
     });
 
     if (!response.ok) {
+      const duration = Date.now() - startTime;
+      
       if (response.status === 429) {
-        console.warn(`[callGeminiAPI] Gemini API 요청 한도 초과 (429)`);
+        console.warn(`[callGeminiAPI] Gemini API 요청 한도 초과 (429) - ${duration}ms`);
         throw new Error('Gemini API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요. (요청 한도 초과 - 429)');
       }
       
       const errorText = await response.text();
-      console.error('[callGeminiAPI] Gemini API 요청 중 오류 발생:', response.status, errorText);
+      console.error(`[callGeminiAPI] Gemini API 요청 중 오류 발생 (${duration}ms):`, response.status, errorText);
       throw new Error(`Gemini AI 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요. (오류 코드: ${response.status})`);
     }
 
@@ -202,19 +205,25 @@ const callGeminiAPI = async (systemPrompt: string, userMessage: string, language
     const result = data.candidates?.[0]?.content?.parts?.[0]?.text;
     
     if (!result) {
+      const duration = Date.now() - startTime;
+      console.error(`[callGeminiAPI] API 호출 실패 - 유효하지 않은 응답 (${duration}ms)`);
       throw new Error('Gemini AI에서 유효한 응답을 받지 못했습니다. 다시 시도해주세요.');
     }
     
-    console.log(`[callGeminiAPI] API 호출 성공 - 응답 길이: ${result.length}자`);
+    const duration = Date.now() - startTime;
+    console.log(`[callGeminiAPI] API 호출 성공 - 응답 길이: ${result.length}자 (${duration}ms)`);
     return result;
     
   } catch (error) {
+    const duration = Date.now() - startTime;
+    
     if (error instanceof Error && error.message.includes('Gemini')) {
       // 이미 사용자 친화적인 메시지인 경우 그대로 throw
+      console.error(`[callGeminiAPI] API 호출 실패 (${duration}ms):`, error.message);
       throw error;
     }
     
-    console.error('[callGeminiAPI] 예상치 못한 오류:', error);
+    console.error(`[callGeminiAPI] 예상치 못한 오류 (${duration}ms):`, error);
     throw new Error('Gemini AI 서비스에 연결할 수 없습니다. 네트워크 연결을 확인하고 다시 시도해주세요.');
   }
 };
@@ -291,7 +300,7 @@ const callClaudeAPI = async (systemPrompt: string, userMessage: string, model: C
 };
 
 // 데이터베이스에서 시스템 프롬프트를 가져오는 함수
-const getSystemPromptFromDB = async (promptType: PromptType = 'general_summary', language?: string): Promise<string> => {
+const getSystemPromptFromDB = async (promptType: PromptType = 'general_summary'): Promise<string> => {
   try {
     console.log(`[getSystemPromptFromDB] 프롬프트 타입: ${promptType}`);
     
@@ -326,7 +335,7 @@ export const getSystemPrompt = async (promptType: PromptType = 'general_summary'
   try {
     // 1. 데이터베이스에서 프롬프트 가져오기 시도
     console.log(`[getSystemPrompt] DB에서 프롬프트 가져오기 시도: ${promptType}`);
-    return await getSystemPromptFromDB(promptType, language);
+    return await getSystemPromptFromDB(promptType);
   } catch (dbError) {
     console.warn('[getSystemPrompt] DB에서 프롬프트 가져오기 실패, 파일 시스템 시도:', dbError);
     throw dbError;
@@ -379,9 +388,9 @@ export async function generateSummary(
       summary = await callClaudeAPI(systemPrompt, userMessage, model as ClaudeModel, language);
       console.log(`[generateSummary] Claude API 응답 받음, 요약 길이: ${summary.length} 문자`);
     } else if (model.startsWith('gemini')) {
-      console.log(`[generateSummary] Gemini API (웹 검색 포함) 요청 시작...`);
-      // 웹 검색 활성화하여 최신 정보 포함
-      summary = await callGeminiAPIWithWebSearch(systemPrompt, userMessage, language, true);
+      console.log(`[generateSummary] Gemini API 요청 시작...`);
+      // 웹 검색 비활성화하여 순수한 요약 제공
+      summary = await callGeminiAPIWithWebSearch(systemPrompt, userMessage, language, false);
       console.log(`[generateSummary] Gemini API 응답 받음, 요약 길이: ${summary.length} 문자`);
     } else {
       console.log(`[generateSummary] OpenAI API 요청 시작...`);

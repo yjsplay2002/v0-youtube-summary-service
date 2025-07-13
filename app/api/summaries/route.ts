@@ -40,11 +40,13 @@ export async function GET(request: NextRequest) {
           .select(`
             created_at,
             video_summaries!inner(
-              video_id,
-              video_title,
-              video_thumbnail,
-              channel_title,
-              language
+              language,
+              video_info:video_info_id(
+                video_id,
+                video_title,
+                video_thumbnail,
+                channel_title
+              )
             )
           `)
           .eq('user_id', userId)
@@ -56,24 +58,24 @@ export async function GET(request: NextRequest) {
         }
 
         // Transform new structure data
-        data = newStructureData?.map(item => ({
-          video_id: item.video_summaries.video_id,
-          video_title: item.video_summaries.video_title,
-          video_thumbnail: item.video_summaries.video_thumbnail,
-          channel_title: item.video_summaries.channel_title,
-          language: item.video_summaries.language,
+        data = newStructureData?.map((item: any) => ({
+          video_id: item.video_summaries?.video_info?.video_id,
+          video_title: item.video_summaries?.video_info?.video_title,
+          video_thumbnail: item.video_summaries?.video_info?.video_thumbnail,
+          channel_title: item.video_summaries?.video_info?.channel_title,
+          language: item.video_summaries?.language,
           created_at: item.created_at,
           user_id: userId
-        })) || [];
+        })).filter(item => item.video_id) || []; // 유효한 데이터만 필터링
 
         console.log('[API /summaries] 새로운 구조 쿼리 성공:', { resultCount: data.length });
         
       } catch (newStructureError) {
         console.log('[API /summaries] 새로운 구조 실패, 기존 구조로 폴백:', newStructureError);
         
-        // Fallback to old structure: direct user_id in video_summaries
+        // Fallback to view that combines both tables
         const { data: oldStructureData, error: oldStructureError } = await supabaseAdmin
-          .from('video_summaries')
+          .from('video_summaries_with_info')
           .select(`
             video_id,
             video_title,
@@ -95,9 +97,9 @@ export async function GET(request: NextRequest) {
     } else {
       console.log('[API /summaries] 게스트 유저 쿼리 (user_id IS NULL)');
       
-      // For guests, use video_summaries with user_id IS NULL
+      // For guests, use view that combines both tables
       const { data: guestData, error: guestError } = await supabaseAdmin
-        .from('video_summaries')
+        .from('video_summaries_with_info')
         .select(`
           video_id,
           video_title,
@@ -146,9 +148,9 @@ export async function GET(request: NextRequest) {
       } catch (countError) {
         console.log('[API /summaries] 새로운 구조 카운트 실패, 기존 구조로 폴백');
         
-        // Fallback to old structure count
+        // Fallback to view count
         const { count: oldStructureCount } = await supabaseAdmin
-          .from('video_summaries')
+          .from('video_summaries_with_info')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', userId);
         
@@ -156,9 +158,9 @@ export async function GET(request: NextRequest) {
         console.log('[API /summaries] 기존 구조 카운트:', totalCount);
       }
     } else {
-      // For guests, count video_summaries with user_id IS NULL
+      // For guests, count view with user_id IS NULL
       const { count: guestCount } = await supabaseAdmin
-        .from('video_summaries')
+        .from('video_summaries_with_info')
         .select('*', { count: 'exact', head: true })
         .is('user_id', null);
       
@@ -171,7 +173,7 @@ export async function GET(request: NextRequest) {
     const hasPreviousPage = page > 1;
 
     // Transform data for frontend
-    const summaries = (data || []).map(item => ({
+    const summaries = (data || []).map((item: any) => ({
       video_id: item.video_id,
       title: item.video_title || item.video_summaries?.video_title,
       thumbnail_url: item.video_thumbnail || item.video_summaries?.video_thumbnail,
