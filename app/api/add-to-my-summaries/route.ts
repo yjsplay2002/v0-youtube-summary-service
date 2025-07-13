@@ -3,7 +3,7 @@ import { supabaseAdmin } from '@/app/lib/supabase';
 
 export async function POST(request: NextRequest) {
   try {
-    const { videoId, userId } = await request.json();
+    const { videoId, userId, language } = await request.json();
     
     if (!videoId || !userId) {
       return NextResponse.json(
@@ -12,21 +12,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[API /add-to-my-summaries] 요청 - videoId: ${videoId}, userId: ${userId}`);
+    console.log(`[API /add-to-my-summaries] 요청 - videoId: ${videoId}, userId: ${userId}, language: ${language}`);
 
-    // 1. 해당 비디오의 요약이 존재하는지 확인 (언어 무관하게 가장 최신 요약 선택)
-    const { data: existingSummary } = await supabaseAdmin
+    // 1. 해당 비디오의 특정 언어 요약이 존재하는지 확인
+    let query = supabaseAdmin
       .from('video_summaries')
       .select('id, language')
-      .eq('video_id', videoId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
+      .eq('video_id', videoId);
+    
+    // 언어가 지정된 경우 해당 언어 요약만, 아니면 가장 최신 요약 선택
+    if (language) {
+      query = query.eq('language', language);
+    } else {
+      query = query.order('created_at', { ascending: false }).limit(1);
+    }
+    
+    const { data: existingSummary } = await query.single();
 
     if (!existingSummary) {
-      console.log(`[API /add-to-my-summaries] 해당 비디오의 요약이 존재하지 않음`);
+      const errorMsg = language 
+        ? `해당 비디오의 ${language} 언어 요약을 찾을 수 없습니다.`
+        : '해당 비디오의 요약을 찾을 수 없습니다.';
+      console.log(`[API /add-to-my-summaries] ${errorMsg}`);
       return NextResponse.json(
-        { success: false, error: '해당 비디오의 요약을 찾을 수 없습니다.' },
+        { success: false, error: errorMsg },
         { status: 404 }
       );
     }
