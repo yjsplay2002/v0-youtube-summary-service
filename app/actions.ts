@@ -989,7 +989,8 @@ export async function getAllSummaries(userId?: string) {
               video_id,
               video_title,
               video_thumbnail,
-              channel_title
+              channel_title,
+              language
             )
           `)
           .eq('user_id', userId)
@@ -1007,7 +1008,8 @@ export async function getAllSummaries(userId?: string) {
           title: item.video_summaries.video_title,
           thumbnail_url: item.video_summaries.video_thumbnail,
           channel_title: item.video_summaries.channel_title,
-          created_at: item.created_at
+          created_at: item.created_at,
+          language: item.video_summaries.language
         })) || [];
         
         console.log(`[getAllSummaries] 새로운 구조로 로그인한 사용자(${userId}) 요약 조회 결과: ${summaries.length}개 레코드`);
@@ -1021,7 +1023,7 @@ export async function getAllSummaries(userId?: string) {
         // 기존 구조로 폴백
         const { data, error } = await supabaseAdmin
           .from('video_summaries')
-          .select('video_id, title:video_title, thumbnail_url:video_thumbnail, channel_title, created_at')
+          .select('video_id, title:video_title, thumbnail_url:video_thumbnail, channel_title, created_at, language')
           .eq('user_id', userId)
           .order('created_at', { ascending: false });
         
@@ -1040,7 +1042,7 @@ export async function getAllSummaries(userId?: string) {
       // 서버 액션에서는 supabaseAdmin 사용
       const { data, error } = await supabaseAdmin
         .from('video_summaries')
-        .select('video_id, title:video_title, thumbnail_url:video_thumbnail, channel_title, created_at')
+        .select('video_id, title:video_title, thumbnail_url:video_thumbnail, channel_title, created_at, language')
         .order('created_at', { ascending: false })
         .limit(20);
       

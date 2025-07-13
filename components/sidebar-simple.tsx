@@ -23,6 +23,7 @@ import { getUserSubscriptionTier } from "@/app/lib/auth-utils";
 import { UsageTracker } from "@/components/usage-tracker";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useSummaryContext } from "@/components/summary-context";
+import { SUPPORTED_LANGUAGES } from "@/components/language-selector";
 
 interface Summary {
   video_id: string;
@@ -30,6 +31,7 @@ interface Summary {
   thumbnail_url: string;
   channel_title: string;
   created_at: string;
+  language: string;
 }
 
 interface SidebarSimpleProps {
@@ -224,6 +226,11 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
     return title.length > maxLength ? `${title.substring(0, maxLength)}...` : title;
   };
 
+  const getLanguageDisplayName = (languageCode: string) => {
+    const language = SUPPORTED_LANGUAGES.find(lang => lang.code === languageCode);
+    return language ? language.nativeName : languageCode;
+  };
+
   return (
     <>
       {/* 모바일 토글 버튼 */}
@@ -365,8 +372,8 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
             <div className="p-2 space-y-1">
               {summaries.map((summary, index) => (
                 <Link
-                  key={`${summary.video_id}-${index}`}
-                  href={`/?videoId=${summary.video_id}`}
+                  key={`${summary.video_id}-${summary.language || 'unknown'}-${index}`}
+                  href={`/?videoId=${summary.video_id}&language=${summary.language || 'en'}`}
                   onClick={() => {
                     if (isMobile) {
                       setIsCollapsed(true);
@@ -398,6 +405,11 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
                       <div className="flex items-center text-xs text-sidebar-muted-foreground mt-1">
                         <Calendar className="h-3 w-3 mr-1 flex-shrink-0" />
                         <span>{formatDate(summary.created_at)}</span>
+                        {summary.language && (
+                          <span className="ml-2 px-1.5 py-0.5 bg-primary/10 text-primary rounded text-xs font-medium">
+                            {getLanguageDisplayName(summary.language)}
+                          </span>
+                        )}
                       </div>
                     </div>
                   )}

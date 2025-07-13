@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect, useRef, useCallback, useMemo } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -17,9 +17,10 @@ import { createContext } from "react"
 import { useSummaryContext } from "@/components/summary-context"
 import { useResetContext } from "@/components/reset-context"
 import { useAuth } from "@/components/auth-context"
-import { getAvailableModels, getDefaultModel, isUserAdmin, getUserSubscriptionTier, getSubscriptionLimits } from "@/app/lib/auth-utils"
+import { getAvailableModels, getDefaultModel, isUserAdmin } from "@/app/lib/auth-utils"
 import { supabase } from "@/app/lib/supabase"
-import { LanguageSelector, type SupportedLanguage } from "@/components/language-selector"
+import { type SupportedLanguage, SUPPORTED_LANGUAGES } from "@/components/language-selector"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
 
 export const LoadingContext = createContext(false)
@@ -44,6 +45,11 @@ export function SimpleYoutubeForm() {
   const [isSpecialUser, setIsSpecialUser] = useState(false)
   const [availableModels, setAvailableModels] = useState<AIModel[]>([])
   const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>('en')
+  const [languageSummaryStates, setLanguageSummaryStates] = useState<Record<string, {
+    hasMySummary: boolean;
+    hasOtherSummary: boolean;
+    otherSummaryInfo?: { isGuest: boolean; created_at: string; };
+  }>>({})
   
   // 이전 상태를 추적하여 중복 호출 방지
   const prevUserState = useRef<{user?: any, authLoading: boolean}>({
@@ -127,8 +133,92 @@ export function SimpleYoutubeForm() {
     }
   }, [authLoading])
 
+  // Check summary states for all popular languages (optimized single query)
+  const checkAllLanguageSummaryStates = useCallback(async (videoId: string, userId?: string) => {
+    if (authLoading) return
+
+    const popularLanguages = ['ko', 'en', 'ja', 'zh', 'es', 'fr', 'de']
+    const newStates: Record<string, {
+      hasMySummary: boolean;
+      hasOtherSummary: boolean;
+      otherSummaryInfo?: { isGuest: boolean; created_at: string; };
+    }> = {}
+
+    try {
+      console.log(`[checkAllLanguageSummaryStates] Fetching all language summaries for videoId: ${videoId}, userId: ${userId}`)
+      
+      // Single query to get all language summaries for this video
+      const { data: videoSummaries, error: summaryError } = await supabase
+        .from('video_summaries')
+        .select('id, user_id, created_at, language')
+        .eq('video_id', videoId)
+        .in('language', popularLanguages)
+      
+      console.log(`[checkAllLanguageSummaryStates] Video summaries result:`, { videoSummaries, summaryError })
+      
+      if (summaryError) {
+        console.error('Error fetching video summaries:', summaryError)
+        return
+      }
+
+      // If user is logged in, fetch all user summary connections at once
+      let userSummaryConnections: any[] = []
+      if (userId && videoSummaries && videoSummaries.length > 0) {
+        const summaryIds = videoSummaries.map(s => s.id)
+        const { data: connections, error: userError } = await supabase
+          .from('user_summaries')
+          .select('summary_id')
+          .eq('user_id', userId)
+          .in('summary_id', summaryIds)
+        
+        console.log(`[checkAllLanguageSummaryStates] User summary connections:`, { connections, userError })
+        
+        if (!userError && connections) {
+          userSummaryConnections = connections
+        }
+      }
+
+      // Initialize all languages as not having summaries
+      popularLanguages.forEach(language => {
+        newStates[language] = {
+          hasMySummary: false,
+          hasOtherSummary: false
+        }
+      })
+
+      // Process the results
+      if (videoSummaries) {
+        videoSummaries.forEach(summary => {
+          const language = summary.language
+          const hasUserConnection = userSummaryConnections.some(conn => conn.summary_id === summary.id)
+          
+          if (hasUserConnection) {
+            newStates[language] = {
+              hasMySummary: true,
+              hasOtherSummary: false
+            }
+          } else {
+            newStates[language] = {
+              hasMySummary: false,
+              hasOtherSummary: true,
+              otherSummaryInfo: {
+                isGuest: summary.user_id === null,
+                created_at: summary.created_at
+              }
+            }
+          }
+        })
+      }
+
+      console.log(`[checkAllLanguageSummaryStates] Final states:`, newStates)
+      setLanguageSummaryStates(newStates)
+    } catch (error) {
+      console.error('Error checking all language summary states:', error)
+    }
+  }, [authLoading])
+
   // Handle URL input changes
-  const handleUrlChange = useCallback(async (url: string, skipUrlUpdate: boolean = false) => {
+  const handleUrlChange = useCallback(async (url: string) => {
     setError(null)
     // Clear previous summary state instead of calling resetSummary
     setSummaryExists(false)
@@ -151,17 +241,10 @@ export function SimpleYoutubeForm() {
         setSummaryState(summaryInfo)
         setSummaryExists(summaryInfo.hasMySummary)
         
-        // Update URL parameters only if they're different and not skipping URL update
-        if (!skipUrlUpdate) {
-          const currentVideoId = searchParams.get('videoId')
-          const currentLanguage = searchParams.get('language')
-          if (currentVideoId !== videoId || currentLanguage !== selectedLanguage) {
-            const newUrl = new URL(window.location.href)
-            newUrl.searchParams.set('videoId', videoId)
-            newUrl.searchParams.set('language', selectedLanguage)
-            router.replace(newUrl.pathname + newUrl.search, { scroll: false })
-          }
-        }
+        // Check summary states for all languages
+        await checkAllLanguageSummaryStates(videoId, user?.id)
+        
+        // Removed URL update logic - no automatic page navigation
         
       } catch (err) {
         setVideoInfo(null)
@@ -177,15 +260,9 @@ export function SimpleYoutubeForm() {
         hasMySummary: false,
         hasOtherSummary: false
       })
-      // Clear URL parameters if no valid video ID and not skipping URL update
-      if (!skipUrlUpdate) {
-        const newUrl = new URL(window.location.href)
-        newUrl.searchParams.delete('videoId')
-        newUrl.searchParams.delete('language')
-        router.replace(newUrl.pathname + newUrl.search, { scroll: false })
-      }
+      // Removed URL parameter deletion logic - no automatic page navigation
     }
-  }, [selectedLanguage, searchParams, user?.id, router, checkDetailedSummaryState])
+  }, [selectedLanguage, searchParams, user?.id, router, checkDetailedSummaryState, checkAllLanguageSummaryStates])
 
   // Initialize form with URL parameters if present (URL 파라미터 → 상태만, 순환 참조 방지)
   useEffect(() => {
@@ -196,7 +273,7 @@ export function SimpleYoutubeForm() {
       const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`
       setYoutubeUrl(youtubeUrl)
       // URL 파라미터에서 온 변경은 router.replace 하지 않음
-      handleUrlChange(youtubeUrl, true) // skipUrlUpdate flag 추가
+      handleUrlChange(youtubeUrl) // URL 파라미터에서 온 변경은 router.replace 하지 않음
     }
     
     // Set language from URL parameter if present
@@ -213,27 +290,13 @@ export function SimpleYoutubeForm() {
         setSummaryExists(summaryInfo.hasMySummary)
         // URL 업데이트 제거 - 사용자 액션에서만 URL 업데이트
       })
+      
+      // Also check all languages when video changes
+      checkAllLanguageSummaryStates(debouncedVideoId, user?.id)
     }
-  }, [debouncedLanguage, debouncedVideoId, user?.id, authLoading, checkDetailedSummaryState])
+  }, [debouncedLanguage, debouncedVideoId, user?.id, authLoading, checkDetailedSummaryState, checkAllLanguageSummaryStates])
 
-  // Update URL when user manually changes language (not from URL params)
-  const prevLanguageRef = useRef(selectedLanguage)
-  useEffect(() => {
-    const prevLanguage = prevLanguageRef.current
-    prevLanguageRef.current = selectedLanguage
-    
-    // Only update URL if language changed and it's different from URL param (user action)
-    const urlLanguage = searchParams.get('language') || 'en'
-    if (prevLanguage !== selectedLanguage && selectedLanguage !== urlLanguage) {
-      const videoId = extractYoutubeVideoId(youtubeUrl)
-      if (videoId) {
-        const newUrl = new URL(window.location.href)
-        newUrl.searchParams.set('videoId', videoId)
-        newUrl.searchParams.set('language', selectedLanguage)
-        router.replace(newUrl.pathname + newUrl.search, { scroll: false })
-      }
-    }
-  }, [selectedLanguage, searchParams, youtubeUrl, router])
+  // Language selection no longer triggers page navigation - removed URL update logic
 
   // Initialize user permissions and models (중복 호출 방지)
   useEffect(() => {
@@ -341,6 +404,42 @@ export function SimpleYoutubeForm() {
       window.removeEventListener('clearVideoInput', handleClearVideoInput);
     };
   }, []);
+
+  // Listen for summaryUpdated events to refresh language states
+  useEffect(() => {
+    const handleSummaryUpdated = (event: CustomEvent) => {
+      const { videoId: updatedVideoId, language } = event.detail || {};
+      const currentVideoId = extractYoutubeVideoId(youtubeUrl);
+      
+      console.log('[SimpleYoutubeForm] summaryUpdated 이벤트 수신:', { 
+        updatedVideoId, 
+        currentVideoId, 
+        language, 
+        shouldRefresh: updatedVideoId === currentVideoId 
+      });
+      
+      // Only refresh if the updated video matches current video
+      if (updatedVideoId === currentVideoId && currentVideoId) {
+        console.log('[SimpleYoutubeForm] Refreshing language summary states due to new summary');
+        // Refresh language summary states
+        checkAllLanguageSummaryStates(currentVideoId, user?.id);
+        
+        // Also refresh the current language state if it matches
+        if (language === selectedLanguage) {
+          checkDetailedSummaryState(currentVideoId, user?.id, language).then(summaryInfo => {
+            setSummaryState(summaryInfo);
+            setSummaryExists(summaryInfo.hasMySummary);
+          });
+        }
+      }
+    };
+
+    window.addEventListener('summaryUpdated', handleSummaryUpdated as EventListener);
+    
+    return () => {
+      window.removeEventListener('summaryUpdated', handleSummaryUpdated as EventListener);
+    };
+  }, [youtubeUrl, user?.id, selectedLanguage, checkAllLanguageSummaryStates, checkDetailedSummaryState]);
 
   // Handle form submission for new summarization
   const handleSubmit = async (e: React.FormEvent) => {
@@ -612,12 +711,62 @@ export function SimpleYoutubeForm() {
                 />
               </div>
 
-              {/* Language Selection */}
-              <LanguageSelector
-                value={selectedLanguage}
-                onChange={setSelectedLanguage}
-                disabled={isLoading}
-              />
+              {/* Enhanced Language Selection with Summary Status */}
+              <div className="space-y-2">
+                <Label htmlFor="language-select">언어 선택</Label>
+                <Select value={selectedLanguage} onValueChange={(value) => setSelectedLanguage(value as SupportedLanguage)} disabled={isLoading}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue>
+                      <span className="flex items-center gap-2">
+                        {SUPPORTED_LANGUAGES.find(lang => lang.code === selectedLanguage)?.nativeName || selectedLanguage}
+                        {(() => {
+                          const langState = languageSummaryStates[selectedLanguage]
+                          if (langState?.hasMySummary) {
+                            return <span className="text-xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded">내 요약</span>
+                          } else if (langState?.hasOtherSummary) {
+                            return <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">요약 존재</span>
+                          } else {
+                            return <span className="text-xs text-gray-600 bg-gray-50 px-1.5 py-0.5 rounded">요약 없음</span>
+                          }
+                        })()}
+                      </span>
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {['ko', 'en', 'ja', 'zh', 'es', 'fr', 'de'].map((langCode) => {
+                      const language = SUPPORTED_LANGUAGES.find(lang => lang.code === langCode)
+                      const langState = languageSummaryStates[langCode]
+                      
+                      return (
+                        <SelectItem key={langCode} value={langCode}>
+                          <div className="flex justify-between w-full items-center">
+                            <span className="font-medium">
+                              {language?.nativeName || langCode}
+                            </span>
+                            <div className="flex items-center gap-1 ml-2">
+                              {langState?.hasMySummary && (
+                                <span className="text-xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded">
+                                  내 요약
+                                </span>
+                              )}
+                              {langState?.hasOtherSummary && !langState?.hasMySummary && (
+                                <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
+                                  {langState.otherSummaryInfo?.isGuest ? '게스트' : '다른 사용자'} 요약
+                                </span>
+                              )}
+                              {!langState?.hasMySummary && !langState?.hasOtherSummary && (
+                                <span className="text-xs text-gray-600 bg-gray-50 px-1.5 py-0.5 rounded">
+                                  요약 없음
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </SelectItem>
+                      )
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
 
               {/* Model Selection */}
               {availableModels.length > 1 && (
@@ -641,8 +790,27 @@ export function SimpleYoutubeForm() {
 
               {/* Action Buttons */}
               <div className="flex flex-col gap-2">
-                {/* Show Summarize button only if no existing summary or user already has their own */}
-                {(!summaryState.hasOtherSummary || summaryState.hasMySummary) && (
+                {/* Show "View Summary" button if summary exists in selected language */}
+                {(summaryState.hasMySummary || summaryState.hasOtherSummary) && extractYoutubeVideoId(youtubeUrl) && (
+                  <Button 
+                    type="button" 
+                    className="shrink-0" 
+                    disabled={isLoading || videoLoading}
+                    onClick={() => {
+                      const videoId = extractYoutubeVideoId(youtubeUrl)
+                      if (videoId) {
+                        // Navigate to summary page with selected language
+                        window.location.href = `/?videoId=${videoId}&language=${selectedLanguage}`
+                      }
+                    }}
+                    style={{minWidth: 120}}
+                  >
+                    View Summary
+                  </Button>
+                )}
+
+                {/* Show "Summarize" button if no summary exists in selected language */}
+                {!summaryState.hasMySummary && !summaryState.hasOtherSummary && (
                   <Button 
                     type="submit" 
                     className="shrink-0" 
@@ -665,7 +833,7 @@ export function SimpleYoutubeForm() {
                   <Button
                     type="button"
                     className="shrink-0"
-                    variant="default"
+                    variant="outline"
                     disabled={isLoading || videoLoading}
                     onClick={handleAddToMySummaries}
                     style={{minWidth: 120}}
@@ -723,15 +891,28 @@ export function SimpleYoutubeForm() {
                 <div className="border rounded-md p-3 bg-muted/50">
                   <h3 className="font-medium">{videoInfo.snippet.title}</h3>
                   <p className="text-sm text-muted-foreground">{videoInfo.snippet.channelTitle}</p>
-                  {summaryState.hasMySummary && (
-                    <p className="text-sm text-green-600 mt-1">✓ 내 요약이 이미 존재합니다</p>
-                  )}
-                  {summaryState.hasOtherSummary && !summaryState.hasMySummary && (
-                    <p className="text-sm text-blue-600 mt-1">
-                      ℹ️ {summaryState.otherSummaryInfo?.isGuest ? '게스트' : '다른 사용자'}의 요약이 존재합니다
-                      {summaryState.otherSummaryInfo?.created_at && (
-                        ` (${new Date(summaryState.otherSummaryInfo.created_at).toLocaleDateString('ko-KR')})`
-                      )}
+                  
+                  {/* Language-specific summary status */}
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-sm font-medium">
+                      {SUPPORTED_LANGUAGES.find(lang => lang.code === selectedLanguage)?.nativeName || selectedLanguage} 요약:
+                    </span>
+                    {summaryState.hasMySummary && (
+                      <span className="text-sm text-green-600 bg-green-50 px-2 py-1 rounded">✓ 내 요약 존재</span>
+                    )}
+                    {summaryState.hasOtherSummary && !summaryState.hasMySummary && (
+                      <span className="text-sm text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                        {summaryState.otherSummaryInfo?.isGuest ? '게스트' : '다른 사용자'} 요약 존재
+                      </span>
+                    )}
+                    {!summaryState.hasMySummary && !summaryState.hasOtherSummary && (
+                      <span className="text-sm text-gray-600 bg-gray-50 px-2 py-1 rounded">요약 없음</span>
+                    )}
+                  </div>
+                  
+                  {summaryState.otherSummaryInfo?.created_at && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      생성일: {new Date(summaryState.otherSummaryInfo.created_at).toLocaleDateString('ko-KR')}
                     </p>
                   )}
                 </div>
