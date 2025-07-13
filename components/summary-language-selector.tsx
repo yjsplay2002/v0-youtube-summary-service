@@ -55,6 +55,14 @@ export function SummaryLanguageSelector({
           toast.success(`${languageName} 언어 요약이 완료되었습니다.`)
           onSummaryCreated(languageCode, result.summary)
           onLanguageChange(languageCode)
+          
+          // Dispatch event to notify other components about the new summary
+          setTimeout(() => {
+            console.log(`[SummaryLanguageSelector] Dispatching summaryUpdated event for ${videoId} in ${languageCode}`)
+            window.dispatchEvent(new CustomEvent('summaryUpdated', { 
+              detail: { videoId, language: languageCode } 
+            }))
+          }, 100)
         } else {
           throw new Error(result.error || "Failed to create summary.")
         }
