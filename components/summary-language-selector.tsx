@@ -6,6 +6,7 @@ import { getTranscriptLanguages, summarizeVideoInLanguage } from "@/app/actions"
 import { SUPPORTED_LANGUAGES } from "./language-selector"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
+import { useI18n } from "@/hooks/use-i18n"
 
 interface SummaryLanguageSelectorProps {
   videoId: string
@@ -23,6 +24,7 @@ export function SummaryLanguageSelector({
   onSummaryCreated,
 }: SummaryLanguageSelectorProps) {
   const { user } = useAuth()
+  const { t } = useI18n()
   const [isPending, startTransition] = useTransition()
   const [isSummarizing, setIsSummarizing] = useState<string | null>(null)
 
@@ -43,7 +45,7 @@ export function SummaryLanguageSelector({
     startTransition(async () => {
       try {
         const languageName = getLanguageName(languageCode)
-        toast.info(`${languageName} 언어로 요약을 시작합니다...`)
+        toast.info(`${languageName} ${t('language.startingSummary')}`)
         const result = await summarizeVideoInLanguage(
           videoId,
           languageCode,
@@ -52,7 +54,7 @@ export function SummaryLanguageSelector({
           false
         )
         if (result.success && result.summary) {
-          toast.success(`${languageName} 언어 요약이 완료되었습니다.`)
+          toast.success(`${languageName} ${t('language.summaryCompleted')}`)
           onSummaryCreated(languageCode, result.summary)
           onLanguageChange(languageCode)
           
@@ -68,7 +70,7 @@ export function SummaryLanguageSelector({
         }
       } catch (error) {
         console.error(error)
-        toast.error(`요약 생성 실패: ${error instanceof Error ? error.message : String(error)}`)
+        toast.error(`${t('language.summaryFailed')}: ${error instanceof Error ? error.message : String(error)}`)
       } finally {
         setIsSummarizing(null)
       }
@@ -93,7 +95,7 @@ export function SummaryLanguageSelector({
     <div className="flex items-center gap-2">
       <Select value={currentLanguage} onValueChange={onLanguageChange} disabled={isPending || !!isSummarizing}>
         <SelectTrigger className="w-[200px]">
-          <SelectValue placeholder="언어 선택" />
+          <SelectValue placeholder={t('language.selectPlaceholder')} />
           {isSummarizing && (
             <div className="ml-2 flex items-center">
               <div className="animate-spin rounded-full h-3 w-3 border-b border-primary"></div>
@@ -127,12 +129,12 @@ export function SummaryLanguageSelector({
                   <div className="flex items-center gap-1">
                     {isSummarized && (
                       <span className="text-xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded">
-                        완료
+                        {t('language.completed')}
                       </span>
                     )}
                     {!isSummarized && user && (
                       <span className="text-xs text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded font-semibold">
-                        {isSummarizing === langCode ? "요약 중..." : "요약하기"}
+                        {isSummarizing === langCode ? t('summary.summarizing') : t('language.summarize')}
                       </span>
                     )}
                   </div>

@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--read-only",
+        "--project-ref=hffgrebfohhhegkreakn"
+      ],
+      "env": {
+        "SUPABASE_ACCESS_TOKEN": "${process.env.SUPABASE_ACCESS_TOKEN}"
+      },
+      "cwd": "${workspaceFolder}",
+      "name": "Supabase MCP",
+      "description": "Read-only access to Supabase project"
+    }
+  }
+}

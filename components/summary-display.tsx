@@ -17,6 +17,7 @@ import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
 import { toast } from 'sonner'
 import { useVideoLanguages } from "@/hooks/use-video-languages"
+import { useI18n } from "@/hooks/use-i18n"
 
 // Import the shared type instead of defining locally
 import type { LanguageOption } from "@/hooks/use-video-languages"
@@ -51,6 +52,9 @@ export function SummaryDisplayClient({
   const { user } = useAuth()
   const [selectedModel, setSelectedModel] = useState<AIModel>('gemini-2.5-flash')
   const [isSpecialUser, setIsSpecialUser] = useState(false)
+  
+  // i18n hook
+  const { t } = useI18n()
 
   // Initialize user settings
   useEffect(() => {
@@ -137,7 +141,7 @@ export function SummaryDisplayClient({
     setIsSummarizing(true)
 
     const languageName = getLanguageDisplayName(targetLanguage)
-    toast.info(`${languageName} 언어로 요약을 시작합니다...`)
+    toast.info(`${languageName} ${t('summary.startingSummary')}`)
 
     // Update URL to target language immediately
     const newUrl = new URL(window.location.href)
@@ -161,7 +165,7 @@ export function SummaryDisplayClient({
 
       if (result.success && result.videoId) {
         console.log(`[SummaryDisplayClient] 언어별 요약 성공: ${targetLanguage}`)
-        toast.success(`${languageName} 언어 요약이 완료되었습니다!`)
+        toast.success(`${languageName} ${t('summary.summaryCompleted')}`)
         
         // Fetch the new summary
         const response = await fetch(`/api/video-summary-by-language?videoId=${encodeURIComponent(videoId)}&language=${encodeURIComponent(targetLanguage)}`)
@@ -182,11 +186,11 @@ export function SummaryDisplayClient({
         
       } else {
         console.error(`[SummaryDisplayClient] 언어별 요약 실패:`, result.error)
-        toast.error(`${languageName} 요약 생성에 실패했습니다: ${result.error}`)
+        toast.error(`${languageName} ${t('summary.summaryFailed')}: ${result.error}`)
       }
     } catch (error) {
       console.error('Error summarizing in specific language:', error)
-      toast.error(`${languageName} 요약 생성 중 오류가 발생했습니다.`)
+      toast.error(`${languageName} ${t('summary.errorOccurred')}`)
     } finally {
       setIsSummarizing(false)
       setSummarizingLanguage(null)
@@ -345,6 +349,12 @@ export function SummaryDisplayClient({
         console.log('[SummaryDisplayClient] URL 클립보드에 복사 완료')
       }
     } catch (error) {
+      // Check if the error is a user cancellation (AbortError)
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('[SummaryDisplayClient] 사용자가 공유를 취소했습니다')
+        return // Don't treat user cancellation as an error
+      }
+      
       console.error('[SummaryDisplayClient] 공유 실패:', error)
       
       // 에러 발생 시 폴백: URL을 클립보드에 복사
@@ -361,10 +371,63 @@ export function SummaryDisplayClient({
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle>Video Summary</CardTitle>
-        <div className="flex items-center gap-2">
-          {/* Enhanced Language Selector - show available and creatable languages */}
+      <CardHeader className="flex flex-row items-center justify-between overflow-hidden">
+        <div className="flex items-center justify-between w-full min-w-0">
+          <CardTitle className="flex-shrink-0 mr-2">Video Summary</CardTitle>
+          {/* Mobile Language Selector - next to title */}
+          <div className="md:hidden flex-shrink-0">
+            <Select
+              value={currentLanguage}
+              onValueChange={handleLanguageChange}
+              disabled={isLoadingLanguages || isLoadingSummary || summarizingLanguage !== null}
+            >
+              <SelectTrigger className="w-[100px] h-8">
+                <SelectValue>
+                  {isLoadingSummary || summarizingLanguage !== null ? (
+                    <div className="flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    </div>
+                  ) : (
+                    <span className="text-xs truncate">{getLanguageDisplayName(currentLanguage)}</span>
+                  )}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent align="end">
+                {getExpandedLanguageList().map((langOption) => (
+                  <SelectItem key={langOption.language} value={langOption.language}>
+                    <div className="flex justify-between w-full items-center">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-medium">{getLanguageDisplayName(langOption.language)}</span>
+                        {langOption.hasSummary ? (
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(langOption.created_at).toLocaleDateString('ko-KR')}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-blue-500">
+                            {t('summary.available')}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 ml-2">
+                        {langOption.hasSummary ? (
+                          <span className="text-xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded">
+                            {t('summary.completed')}
+                          </span>
+                        ) : user && (
+                          <span className="text-xs text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">
+                            {summarizingLanguage === langOption.language ? t('summary.generating') : t('summary.generate')}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div className="hidden md:flex items-center gap-2">
+          {/* Enhanced Language Selector - show available and creatable languages - Desktop */}
           <Select
             value={currentLanguage}
             onValueChange={handleLanguageChange}
@@ -376,7 +439,7 @@ export function SummaryDisplayClient({
                   <div className="flex items-center gap-1">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     <span className="text-xs">
-                      {summarizingLanguage ? `${getLanguageDisplayName(summarizingLanguage)} 요약중...` : '로딩중...'}
+                      {summarizingLanguage ? `${getLanguageDisplayName(summarizingLanguage)} ${t('summary.summarizing')}` : t('summary.loading')}
                     </span>
                   </div>
                 ) : (
@@ -396,18 +459,18 @@ export function SummaryDisplayClient({
                         </span>
                       ) : (
                         <span className="text-xs text-blue-500">
-                          요약 생성 가능
+                          {t('summary.available')}
                         </span>
                       )}
                     </div>
                     <div className="flex items-center gap-1 ml-2">
                       {langOption.hasSummary ? (
                         <span className="text-xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded">
-                          완료
+                          {t('summary.completed')}
                         </span>
                       ) : user && (
                         <span className="text-xs text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded">
-                          {summarizingLanguage === langOption.language ? "요약 중..." : "생성"}
+                          {summarizingLanguage === langOption.language ? t('summary.generating') : t('summary.generate')}
                         </span>
                       )}
                     </div>
@@ -456,7 +519,7 @@ export function SummaryDisplayClient({
         {(!summary || summary.trim() === '') ? (
           <div className="text-center py-12">
             <div className="text-muted-foreground mb-4">
-              선택한 언어({getLanguageDisplayName(currentLanguage)})에 대한 요약이 없습니다.
+              {t('summary.noSummaryForLanguage')} ({getLanguageDisplayName(currentLanguage)})
             </div>
             <Button
               onClick={handleSummarizeInLanguage}
@@ -466,19 +529,55 @@ export function SummaryDisplayClient({
               {isSummarizing ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {currentLanguage}로 요약 중...
+                  {getLanguageDisplayName(currentLanguage)}{t('summary.summarizingIn')}
                 </>
               ) : (
-                `${getLanguageDisplayName(currentLanguage)}로 요약하기`
+                `${getLanguageDisplayName(currentLanguage)}${t('summary.summarizeIn')}`
               )}
             </Button>
           </div>
         ) : (
           <Tabs defaultValue="preview">
-            <TabsList className="mb-4">
-              <TabsTrigger value="preview">Preview</TabsTrigger>
-              <TabsTrigger value="chat">Ask to AI</TabsTrigger>
-            </TabsList>
+            <div className="flex justify-between items-center mb-4 overflow-hidden">
+              <TabsList className="flex-shrink-0">
+                <TabsTrigger value="preview" className="text-xs px-3">Preview</TabsTrigger>
+                <TabsTrigger value="chat" className="text-xs px-3">Ask to AI</TabsTrigger>
+              </TabsList>
+              {/* Mobile Action Buttons - next to tabs */}
+              <div className="md:hidden flex gap-1 ml-2 flex-shrink-0">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleCopy} 
+                  className="flex items-center gap-1 h-8 px-2 min-w-0"
+                >
+                  {copied ? (
+                    <Check className="h-3 w-3 flex-shrink-0" />
+                  ) : (
+                    <Copy className="h-3 w-3 flex-shrink-0" />
+                  )}
+                  <span className="hidden sm:inline text-xs whitespace-nowrap">
+                    {copied ? 'Copied' : 'Copy'}
+                  </span>
+                </Button>
+                <Button 
+                  variant="default" 
+                  size="sm" 
+                  onClick={handleShare} 
+                  className="flex items-center gap-1 bg-blue-600 hover:bg-blue-700 text-white h-8 px-2 min-w-0"
+                  disabled={!videoId}
+                >
+                  {shared ? (
+                    <Check className="h-3 w-3 flex-shrink-0" />
+                  ) : (
+                    <Share2 className="h-3 w-3 flex-shrink-0" />
+                  )}
+                  <span className="hidden sm:inline text-xs whitespace-nowrap">
+                    {shared ? 'Shared' : 'Share'}
+                  </span>
+                </Button>
+              </div>
+            </div>
             <TabsContent value="preview" className="prose prose-sm max-w-none dark:prose-invert prose-headings:font-bold prose-h1:text-xl prose-h2:text-lg prose-h3:text-base prose-p:mb-4 prose-li:mb-1 prose-ul:my-4 prose-ol:my-4 prose-blockquote:border-l-4 prose-blockquote:border-gray-300 prose-blockquote:pl-4 prose-blockquote:italic prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-pre:bg-muted prose-pre:p-4 prose-pre:rounded-md prose-pre:overflow-auto prose-a:text-blue-600 hover:prose-a:text-blue-800 prose-strong:font-bold prose-em:italic">
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkBreaks]}

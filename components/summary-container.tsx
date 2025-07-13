@@ -12,6 +12,7 @@ import { generateVideoSummaryStructuredData, injectStructuredData } from "@/app/
 import { SUPPORTED_LANGUAGES } from "@/components/language-selector";
 import { supabase } from "@/app/lib/supabase";
 import { SummaryLanguageSelector } from "./summary-language-selector";
+import { useI18n } from "@/hooks/use-i18n";
 
 export default function SummaryContainer() {
   const router = useRouter();
@@ -35,6 +36,9 @@ export default function SummaryContainer() {
   const [playerRef, setPlayerRef] = useState<YouTubePlayer | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);
   const { user } = useAuth();
+  
+  // i18n hook
+  const { t } = useI18n();
   
   const retryCountRef = useRef(0);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -180,7 +184,7 @@ export default function SummaryContainer() {
           <div className="flex flex-col items-center space-y-4">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             <p className="text-muted-foreground">
-              {isRetrying ? `요약을 불러오는 중...` : "요약을 준비하고 있습니다..."}
+              {isRetrying ? t('container.fetching') : t('container.preparing')}
             </p>
           </div>
         </div>
@@ -221,7 +225,7 @@ export default function SummaryContainer() {
       
       {summary.trim() === "" ? (
         <div className="text-center text-muted-foreground py-8">
-          이 언어에 대한 요약이 없습니다.
+          {t('container.noSummary')}
         </div>
       ) : (
         <SummaryDisplayClient summary={summary} seekTo={handleSeek} videoId={videoId} />

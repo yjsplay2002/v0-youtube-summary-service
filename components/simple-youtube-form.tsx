@@ -22,6 +22,7 @@ import { supabase } from "@/app/lib/supabase"
 import { type SupportedLanguage, SUPPORTED_LANGUAGES } from "@/components/language-selector"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
+import { useI18n } from "@/hooks/use-i18n"
 
 export const LoadingContext = createContext(false)
 
@@ -99,6 +100,7 @@ const loadUserPreferredLanguage = async (userId: string): Promise<SupportedLangu
 }
 
 export function SimpleYoutubeForm() {
+  const { t } = useI18n()
   const [youtubeUrl, setYoutubeUrl] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -328,7 +330,7 @@ export function SimpleYoutubeForm() {
       } catch (err) {
         setVideoInfo(null)
         setSummaryExists(false)
-        setError("비디오 정보를 가져올 수 없습니다.")
+        setError(t('form.videoNotFound'))
       } finally {
         setVideoLoading(false)
       }
@@ -534,13 +536,13 @@ export function SimpleYoutubeForm() {
     e.preventDefault()
     
     if (!youtubeUrl.trim()) {
-      setError("YouTube URL을 입력해주세요.")
+      setError(t('form.enterUrl'))
       return
     }
 
     const videoId = extractYoutubeVideoId(youtubeUrl)
     if (!videoId) {
-      setError("유효한 YouTube URL을 입력해주세요.")
+      setError(t('form.invalidUrl'))
       return
     }
 
@@ -603,11 +605,11 @@ export function SimpleYoutubeForm() {
           refreshSummaries()
         }, 300)
       } else {
-        setError(result.error || "요약 생성에 실패했습니다.")
+        setError(result.error || t('form.summaryFailed'))
       }
     } catch (err) {
       console.error("Summarization error:", err)
-      setError("요약 생성 중 오류가 발생했습니다.")
+      setError(t('form.summaryError'))
     } finally {
       setIsLoading(false)
     }
@@ -616,7 +618,7 @@ export function SimpleYoutubeForm() {
   // Handle adding summary to my list
   const handleAddToMySummaries = async () => {
     if (!videoInfo?.id || !user?.id) {
-      setError("로그인이 필요합니다.")
+      setError(t('form.loginRequired'))
       return
     }
 
@@ -675,11 +677,11 @@ export function SimpleYoutubeForm() {
         
       } else {
         console.error('[handleAddToMySummaries] API 오류:', result.error)
-        setError(result.error || "요약 추가에 실패했습니다.")
+        setError(result.error || t('form.addFailed'))
       }
     } catch (err) {
       console.error("[handleAddToMySummaries] 요약 추가 중 오류:", err)
-      setError("요약 추가 중 오류가 발생했습니다.")
+      setError(t('form.addError'))
     } finally {
       setIsLoading(false)
       console.log('[handleAddToMySummaries] 요약 추가 프로세스 완료')
@@ -694,7 +696,7 @@ export function SimpleYoutubeForm() {
     
     if (!videoInfo?.id) {
       console.error("[handleResummarize] 비디오 정보 없음")
-      setError("비디오 정보가 없습니다.")
+      setError(t('form.noVideoInfo'))
       return
     }
 
@@ -795,11 +797,11 @@ export function SimpleYoutubeForm() {
         }, 300)
       } else {
         console.error("[handleResummarize] 재요약 실패:", result.error)
-        setError(result.error || "재요약에 실패했습니다.")
+        setError(result.error || t('form.resummaryFailed'))
       }
     } catch (err) {
       console.error("Re-summarization error:", err)
-      setError("재요약 중 오류가 발생했습니다.")
+      setError(t('form.resummaryError'))
     } finally {
       setIsLoading(false)
     }
@@ -829,7 +831,7 @@ export function SimpleYoutubeForm() {
 
               {/* Enhanced Language Selection with Summary Status */}
               <div className="space-y-2">
-                <Label htmlFor="language-select">언어 선택</Label>
+                <Label htmlFor="language-select">{t('form.languageSelect')}</Label>
                 <Select value={selectedLanguage} onValueChange={(value) => setSelectedLanguage(value as SupportedLanguage)} disabled={isLoading}>
                   <SelectTrigger className="w-full">
                     <SelectValue>
@@ -838,11 +840,11 @@ export function SimpleYoutubeForm() {
                         {(() => {
                           const langState = languageSummaryStates[selectedLanguage]
                           if (langState?.hasMySummary) {
-                            return <span className="text-xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded">내 요약</span>
+                            return <span className="text-xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded">{t('form.mySummary')}</span>
                           } else if (langState?.hasOtherSummary) {
-                            return <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">요약 존재</span>
+                            return <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">{t('form.summaryExists')}</span>
                           } else {
-                            return <span className="text-xs text-gray-600 bg-gray-50 px-1.5 py-0.5 rounded">요약 없음</span>
+                            return <span className="text-xs text-gray-600 bg-gray-50 px-1.5 py-0.5 rounded">{t('form.noSummary')}</span>
                           }
                         })()}
                       </span>
@@ -862,17 +864,17 @@ export function SimpleYoutubeForm() {
                             <div className="flex items-center gap-1 ml-2">
                               {langState?.hasMySummary && (
                                 <span className="text-xs text-green-600 bg-green-50 px-1.5 py-0.5 rounded">
-                                  내 요약
+                                  {t('form.mySummary')}
                                 </span>
                               )}
                               {langState?.hasOtherSummary && !langState?.hasMySummary && (
                                 <span className="text-xs text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
-                                  {langState.otherSummaryInfo?.isGuest ? '게스트' : '다른 사용자'} 요약
+                                  {langState.otherSummaryInfo?.isGuest ? t('form.guestSummary') : t('form.otherUserSummary')} {t('summary.summary')}
                                 </span>
                               )}
                               {!langState?.hasMySummary && !langState?.hasOtherSummary && (
                                 <span className="text-xs text-gray-600 bg-gray-50 px-1.5 py-0.5 rounded">
-                                  요약 없음
+                                  {t('form.noSummary')}
                                 </span>
                               )}
                             </div>
@@ -976,7 +978,7 @@ export function SimpleYoutubeForm() {
                     {isLoading ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        처리중...
+                        {t('form.processing')}
                       </>
                     ) : (
                       "Summarize"
@@ -997,10 +999,10 @@ export function SimpleYoutubeForm() {
                     {isLoading ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        추가 중...
+                        {t('form.adding')}
                       </>
                     ) : (
-                      "내 요약에 추가"
+                      t('form.addToMySummaries')
                     )}
                   </Button>
                 )}
@@ -1016,7 +1018,7 @@ export function SimpleYoutubeForm() {
                     {isLoading ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        재요약 중...
+                        {t('form.resummaryProgress')}
                       </>
                     ) : (
                       "Re-Summarize"
@@ -1039,7 +1041,7 @@ export function SimpleYoutubeForm() {
               {videoLoading && (
                 <div className="flex items-center space-x-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  <span className="text-sm text-muted-foreground">비디오 정보를 불러오는 중...</span>
+                  <span className="text-sm text-muted-foreground">{t('form.loadingVideoInfo')}</span>
                 </div>
               )}
 
@@ -1051,24 +1053,24 @@ export function SimpleYoutubeForm() {
                   {/* Language-specific summary status */}
                   <div className="mt-2 flex items-center gap-2">
                     <span className="text-sm font-medium">
-                      {SUPPORTED_LANGUAGES.find(lang => lang.code === selectedLanguage)?.nativeName || selectedLanguage} 요약:
+                      {SUPPORTED_LANGUAGES.find(lang => lang.code === selectedLanguage)?.nativeName || selectedLanguage} {t('summary.summary')}:
                     </span>
                     {summaryState.hasMySummary && (
-                      <span className="text-sm text-green-600 bg-green-50 px-2 py-1 rounded">✓ 내 요약 존재</span>
+                      <span className="text-sm text-green-600 bg-green-50 px-2 py-1 rounded">{t('form.mySummaryExists')}</span>
                     )}
                     {summaryState.hasOtherSummary && !summaryState.hasMySummary && (
                       <span className="text-sm text-blue-600 bg-blue-50 px-2 py-1 rounded">
-                        {summaryState.otherSummaryInfo?.isGuest ? '게스트' : '다른 사용자'} 요약 존재
+                        {summaryState.otherSummaryInfo?.isGuest ? t('form.guestSummary') : t('form.otherUserSummary')} {t('summary.summary')} {t('common.exists')}
                       </span>
                     )}
                     {!summaryState.hasMySummary && !summaryState.hasOtherSummary && (
-                      <span className="text-sm text-gray-600 bg-gray-50 px-2 py-1 rounded">요약 없음</span>
+                      <span className="text-sm text-gray-600 bg-gray-50 px-2 py-1 rounded">{t('form.noSummary')}</span>
                     )}
                   </div>
                   
                   {summaryState.otherSummaryInfo?.created_at && (
                     <p className="text-xs text-muted-foreground mt-1">
-                      생성일: {new Date(summaryState.otherSummaryInfo.created_at).toLocaleDateString('ko-KR')}
+                      {t('form.createdAt')}: {new Date(summaryState.otherSummaryInfo.created_at).toLocaleDateString()}
                     </p>
                   )}
                 </div>
@@ -1078,7 +1080,7 @@ export function SimpleYoutubeForm() {
               {error && (
                 <Alert variant="destructive">
                   <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>오류</AlertTitle>
+                  <AlertTitle>{t('form.error')}</AlertTitle>
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
               )}

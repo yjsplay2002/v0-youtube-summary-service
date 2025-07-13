@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useAuth } from "@/components/auth-context"
 import { supabase } from "@/app/lib/supabase"
+import { useI18n } from "@/hooks/use-i18n"
 
 export type SupportedLanguage = 'en' | 'ko' | 'ja' | 'zh' | 'es' | 'fr' | 'de' | 'it' | 'pt' | 'ru'
 
@@ -35,6 +36,7 @@ interface LanguageSelectorProps {
 
 export function LanguageSelector({ value, onChange, disabled }: LanguageSelectorProps) {
   const { user } = useAuth()
+  const { t } = useI18n()
   const [isLoading, setIsLoading] = useState(false)
 
   // Function to detect browser language
@@ -137,14 +139,14 @@ export function LanguageSelector({ value, onChange, disabled }: LanguageSelector
 
   return (
     <div className="space-y-2">
-      <Label htmlFor="language-select">요약 언어 / Summary Language</Label>
+      <Label htmlFor="language-select">{t('language.summaryLanguageLabel')}</Label>
       <Select
         value={value}
         onValueChange={handleLanguageChange}
         disabled={disabled || isLoading}
       >
         <SelectTrigger id="language-select">
-          <SelectValue placeholder="언어를 선택하세요 / Select language" />
+          <SelectValue placeholder={t('language.selectPlaceholder2')} />
         </SelectTrigger>
         <SelectContent>
           {SUPPORTED_LANGUAGES.map((lang) => (

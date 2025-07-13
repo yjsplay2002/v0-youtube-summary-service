@@ -11,6 +11,7 @@ import { AuthErrorHandler } from "@/components/auth-error-handler"
 import { generateWebApplicationStructuredData } from "@/app/lib/structured-data"
 import { Toaster } from "@/components/ui/toaster"
 import { Toaster as SonnerToaster } from "@/components/ui/sonner"
+import { I18nProvider } from "@/hooks/use-i18n"
 
 export const metadata: Metadata = {
   title: "YouTube Video Summarizer - AI-Powered Video Summary Tool",
@@ -87,24 +88,26 @@ export default function RootLayout({
         />
         <ThemeProvider
           attribute="class"
-          defaultTheme="dark"
-          enableSystem={false}
+          defaultTheme="system"
+          enableSystem={true}
           disableTransitionOnChange
         >
-          <AuthProvider>
-            <AuthErrorHandler />
-            <SummaryProvider>
-              <ResetProvider>
-                <Suspense fallback={<div>Loading...</div>}>
-                  <LayoutWrapper>
-                    {children}
-                  </LayoutWrapper>
-                </Suspense>
-              </ResetProvider>
-            </SummaryProvider>
-          </AuthProvider>
-          <Toaster />
-          <SonnerToaster />
+          <I18nProvider>
+            <AuthProvider>
+              <AuthErrorHandler />
+              <SummaryProvider>
+                <ResetProvider>
+                  <Suspense fallback={<div>Loading...</div>}>
+                    <LayoutWrapper>
+                      {children}
+                    </LayoutWrapper>
+                  </Suspense>
+                </ResetProvider>
+              </SummaryProvider>
+            </AuthProvider>
+            <Toaster />
+            <SonnerToaster />
+          </I18nProvider>
         </ThemeProvider>
       </body>
     </html>
