@@ -22,8 +22,10 @@ import { AuthButton } from "@/components/auth-button";
 import { getUserSubscriptionTier } from "@/app/lib/auth-utils";
 import { UsageTracker } from "@/components/usage-tracker";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { LanguageToggle } from "@/components/language-toggle";
 import { useSummaryContext } from "@/components/summary-context";
-import { SUPPORTED_LANGUAGES } from "@/components/language-selector";
+import { SUPPORTED_LANGUAGES } from "@/components/language-selector"
+import { useI18n } from "@/hooks/use-i18n";
 
 interface Summary {
   video_id: string;
@@ -51,6 +53,7 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
   const { user, isAuthenticated, loading: authLoading } = useAuth();
   const userTier = getUserSubscriptionTier(user);
   const { registerRefreshCallback } = useSummaryContext();
+  const { t } = useI18n();
   const router = useRouter();
   
   // 이전 상태를 추적하여 중복 호출 방지
@@ -135,7 +138,7 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
 
     } catch (err) {
       console.error('[SidebarSimple] 에러 발생:', err);
-      setError(err instanceof Error ? err.message : '요약 데이터를 불러오는데 실패했습니다.');
+      setError(err instanceof Error ? err.message : t('sidebar.error.fetch'));
     } finally {
       setLoading(false);
       isRequestInProgress.current = false;
@@ -375,7 +378,7 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
         <div className="p-4 flex items-center justify-between">
           {!isCollapsed && (
             <h2 className="text-xl font-semibold text-sidebar-foreground">
-              {isAuthenticated ? "내 요약 기록" : "최근 요약"}
+              {isAuthenticated ? t('sidebar.myHistory') : t('sidebar.recentSummaries')}
             </h2>
           )}
           {!isMobile && (
@@ -390,7 +393,12 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
           <div className="flex items-center justify-between">
             {!isCollapsed && <AuthButton />}
             <div className="flex items-center gap-1">
-              {isCollapsed && <ThemeToggle />}
+              {isCollapsed && (
+                <>
+                  <ThemeToggle />
+                  <LanguageToggle />
+                </>
+              )}
               <Button 
                 variant="ghost" 
                 size={isCollapsed ? "icon" : "default"} 
@@ -399,7 +407,7 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
                 className="text-sidebar-muted-foreground"
               >
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-                {!isCollapsed && <span className="ml-2">새로고침</span>}
+                {!isCollapsed && <span className="ml-2">{t('sidebar.refresh')}</span>}
               </Button>
             </div>
           </div>
@@ -411,7 +419,7 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
               className="w-full justify-start gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
             >
               <Plus className="h-4 w-4" />
-              새로운 영상 요약하기
+              {t('sidebar.newSummary')}
             </Button>
           )}
           
@@ -422,7 +430,7 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
                 size="icon"
                 onClick={handleNewSummary}
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
-                title="새로운 영상 요약하기"
+                title={t('sidebar.newSummary')}
               >
                 <Plus className="h-4 w-4" />
               </Button>
@@ -437,8 +445,8 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
         {!isCollapsed && (
           <p className="px-4 text-xs text-sidebar-muted-foreground mb-2">
             {isAuthenticated 
-              ? "개인 요약 기록이 표시됩니다." 
-              : "모든 사용자의 요약 기록이 표시됩니다."
+              ? t('sidebar.personalHistory')
+              : t('sidebar.publicHistory')
             }
           </p>
         )}
@@ -456,10 +464,10 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
         {error && !loading && (
           <div className="flex-grow flex flex-col items-center justify-center p-4 text-center">
             <FileText className="h-12 w-12 text-red-400 mb-4" />
-            <p className="text-red-600 font-semibold mb-2">오류 발생</p>
+            <p className="text-red-600 font-semibold mb-2">{t('sidebar.error.title')}</p>
             <p className="text-sm text-red-500 mb-4">{error}</p>
             <Button onClick={handleRefresh} size="sm" variant="outline">
-              다시 시도
+              {t('sidebar.retry')}
             </Button>
           </div>
         )}
@@ -468,11 +476,11 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
         {!loading && !error && summaries.length === 0 && (
           <div className="flex-grow flex flex-col items-center justify-center p-4 text-center">
             <FileText className="h-12 w-12 text-sidebar-muted-foreground mb-4" />
-            <p className="text-sidebar-foreground font-semibold">요약된 비디오 없음</p>
+            <p className="text-sidebar-foreground font-semibold">{t('sidebar.noVideos.public')}</p>
             <p className="text-sm text-sidebar-muted-foreground">
               {isAuthenticated 
-                ? "아직 요약한 비디오가 없습니다. 새 비디오를 요약해보세요!"
-                : "요약된 비디오가 없습니다."}
+                ? t('sidebar.noVideos.personal')
+                : t('sidebar.noVideos.public')}
             </p>
           </div>
         )}
@@ -536,7 +544,7 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
                   {loadingMore && (
                     <div className="flex items-center gap-2 text-sidebar-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      {!isCollapsed && <span className="text-sm">더 많은 요약을 불러오는 중...</span>}
+                      {!isCollapsed && <span className="text-sm">{t('sidebar.loadingMore')}</span>}
                     </div>
                   )}
                 </div>
@@ -546,7 +554,7 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
               {!hasMore && summaries.length > 20 && !isCollapsed && (
                 <div className="flex items-center justify-center p-4">
                   <span className="text-xs text-sidebar-muted-foreground">
-                    모든 요약을 불러왔습니다
+                    {t('sidebar.allLoaded')}
                   </span>
                 </div>
               )}
@@ -566,7 +574,11 @@ export function SidebarSimple({ currentVideoId }: SidebarSimpleProps) {
               )}
               <div className="flex items-center gap-2 mb-2">
                 <ThemeToggle />
-                <span className="text-xs text-sidebar-muted-foreground">테마 변경</span>
+                <span className="text-xs text-sidebar-muted-foreground">{t('sidebar.changeTheme')}</span>
+              </div>
+              <div className="flex items-center gap-2 mb-2">
+                <LanguageToggle />
+                <span className="text-xs text-sidebar-muted-foreground">{t('sidebar.changeLanguage')}</span>
               </div>
               <Link href="/feedback">
                 <Button 

@@ -20,6 +20,7 @@ import { FAQSection } from "@/components/faq-section"
 import CurationSection from "@/components/curation-section"
 import { Suspense } from "react"
 import { useVideoLanguages } from "@/hooks/use-video-languages"
+import { useI18n } from "@/hooks/use-i18n"
 
 interface HomeClientProps {
   currentVideoId?: string;
@@ -27,6 +28,7 @@ interface HomeClientProps {
 
 const HomeClient = memo(function HomeClient({ currentVideoId: initialVideoId }: HomeClientProps) {
   const { user, loading } = useAuth();
+  const { t } = useI18n();
   const searchParams = useSearchParams();
   const router = useRouter();
   
@@ -228,7 +230,7 @@ const HomeClient = memo(function HomeClient({ currentVideoId: initialVideoId }: 
               }}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium"
             >
-              새로운 영상 요약하기
+              {t('home.newVideoSummary')}
             </button>
           </div>
 

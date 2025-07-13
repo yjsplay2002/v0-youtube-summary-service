@@ -7,6 +7,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Send, MessageCircle, Loader2 } from "lucide-react"
 import { useAuth } from "@/components/auth-context"
+import { useI18n } from "@/hooks/use-i18n"
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkBreaks from 'remark-breaks'
@@ -35,10 +36,12 @@ interface SummaryChatProps {
 
 export function SummaryChat({ summary, videoId }: SummaryChatProps) {
   const { user } = useAuth()
+  const { t } = useI18n()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [inputMessage, setInputMessage] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [isInitialized, setIsInitialized] = useState(false)
+  const [generatingSuggestionsFor, setGeneratingSuggestionsFor] = useState<string | null>(null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom when messages change
@@ -123,9 +126,9 @@ export function SummaryChat({ summary, videoId }: SummaryChatProps) {
         const welcomeMessage: ChatMessage = {
           id: `system-${Date.now()}`,
           type: 'system',
-          content: '비디오 요약을 바탕으로 질문해 주세요.',
+          content: t('chat.initialMessage'),
           timestamp: new Date(),
-          suggested_questions: data.questions
+          suggested_questions: data.questions || []
         }
         setMessages([welcomeMessage])
       }
@@ -168,13 +171,16 @@ export function SummaryChat({ summary, videoId }: SummaryChatProps) {
       if (response.ok) {
         const data = await response.json()
         
-        // Add AI response
+        // Generate unique ID for AI message
+        const aiMessageId = `ai-${Date.now()}`
+        
+        // Add AI response without follow-up questions initially
         const aiMessage: ChatMessage = {
-          id: `ai-${Date.now()}`,
+          id: aiMessageId,
           type: 'ai',
           content: data.response,
           timestamp: new Date(),
-          suggested_questions: data.followUpQuestions,
+          suggested_questions: [], // Will be populated asynchronously
           metadata: data.metadata
         }
         
@@ -194,6 +200,10 @@ export function SummaryChat({ summary, videoId }: SummaryChatProps) {
             processingTime: data.metadata.processingTime
           });
         }
+        
+        // Generate follow-up questions asynchronously after user message is sent
+        generateFollowUpQuestions(aiMessageId, message, data.response)
+        
       } else {
         throw new Error('Failed to send message')
       }
@@ -203,12 +213,51 @@ export function SummaryChat({ summary, videoId }: SummaryChatProps) {
       const errorMessage: ChatMessage = {
         id: `error-${Date.now()}`,
         type: 'system',
-        content: '죄송합니다. 메시지 전송에 실패했습니다. 다시 시도해 주세요.',
+        content: t('chat.errorMessage'),
         timestamp: new Date()
       }
       setMessages(prev => [...prev, errorMessage])
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  // Generate follow-up questions asynchronously
+  const generateFollowUpQuestions = async (aiMessageId: string, userMessage: string, aiResponse: string) => {
+    if (!summary || !videoId) return
+
+    setGeneratingSuggestionsFor(aiMessageId)
+    
+    try {
+      const response = await fetch('/api/chat/follow-up-questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userMessage,
+          aiResponse,
+          summary,
+          videoId,
+          userId: user?.id,
+          conversationHistory: messages
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        
+        if (data.followUpQuestions && data.followUpQuestions.length > 0) {
+          // Update the AI message with follow-up questions
+          setMessages(prev => prev.map(msg => 
+            msg.id === aiMessageId 
+              ? { ...msg, suggested_questions: data.followUpQuestions }
+              : msg
+          ))
+        }
+      }
+    } catch (error) {
+      console.error('Failed to generate follow-up questions:', error)
+    } finally {
+      setGeneratingSuggestionsFor(null)
     }
   }
 
@@ -228,11 +277,11 @@ export function SummaryChat({ summary, videoId }: SummaryChatProps) {
     <div className="space-y-4">
       <div className="flex items-center gap-2 mb-4">
         <MessageCircle className="h-5 w-5" />
-        <h3 className="text-lg font-semibold">AI와 대화하기</h3>
+        <h3 className="text-lg font-semibold">{t('chat.title')}</h3>
       </div>
       {showSaveNotice && (
         <div className="text-sm text-muted-foreground bg-muted p-2 rounded-md mb-4">
-          💡 로그인하시면 대화 기록이 저장됩니다.
+          {t('chat.loginNotice')}
         </div>
       )}
         {/* Chat Messages */}
@@ -273,17 +322,17 @@ export function SummaryChat({ summary, videoId }: SummaryChatProps) {
                         <span className="flex items-center gap-1">
                           {message.metadata.source === 'rag' && (
                             <span className="bg-green-100 text-green-800 px-1.5 py-0.5 rounded text-xs font-medium dark:bg-green-900 dark:text-green-200">
-                              RAG ({message.metadata.chunksUsed}개 청크)
+                              {t('chat.rag')} ({message.metadata.chunksUsed}{t('chat.chunks')})
                             </span>
                           )}
                           {message.metadata.source === 'summary' && (
                             <span className="bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded text-xs font-medium dark:bg-yellow-900 dark:text-yellow-200">
-                              요약 사용
+                              {t('chat.summaryUsed')}
                             </span>
                           )}
                           {message.metadata.source === 'none' && (
                             <span className="bg-gray-100 text-gray-800 px-1.5 py-0.5 rounded text-xs font-medium dark:bg-gray-900 dark:text-gray-200">
-                              일반 응답
+                              {t('chat.generalResponse')}
                             </span>
                           )}
                         </span>
@@ -293,20 +342,29 @@ export function SummaryChat({ summary, videoId }: SummaryChatProps) {
                 </div>
                 
                 {/* Suggested Questions */}
-                {message.suggested_questions && message.suggested_questions.length > 0 && (
-                  <div className="flex flex-wrap gap-2 ml-4">
-                    {message.suggested_questions.map((question, index) => (
-                      <Button
-                        key={index}
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleSuggestedQuestion(question)}
-                        disabled={isLoading}
-                        className="text-xs h-8"
-                      >
-                        {question}
-                      </Button>
-                    ))}
+                {message.type === 'ai' && (
+                  <div className="ml-4">
+                    {message.suggested_questions && message.suggested_questions.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {message.suggested_questions.map((question, index) => (
+                          <Button
+                            key={index}
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleSuggestedQuestion(question)}
+                            disabled={isLoading}
+                            className="text-xs h-8"
+                          >
+                            {question}
+                          </Button>
+                        ))}
+                      </div>
+                    ) : generatingSuggestionsFor === message.id ? (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-2">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <span>{t('chat.generatingQuestions')}</span>
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </div>
@@ -331,7 +389,7 @@ export function SummaryChat({ summary, videoId }: SummaryChatProps) {
           <Input
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
-            placeholder="질문을 입력하세요..."
+            placeholder={t('chat.placeholder')}
             disabled={isLoading}
             className="flex-1"
           />

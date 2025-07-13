@@ -14,10 +14,12 @@ import { useAuth } from '@/components/auth-context';
 import { SubscriptionManager } from '@/components/subscription-manager';
 import { supabase } from '@/app/lib/supabase';
 import { LogIn, LogOut, User, Settings } from 'lucide-react';
+import { useI18n } from '@/hooks/use-i18n';
 
 export function AuthButton() {
   const { user, loading, signOut } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
+  const { t } = useI18n();
 
   const handleSignIn = async () => {
     setIsLoading(true);
@@ -64,7 +66,7 @@ export function AuthButton() {
         className="gap-2"
       >
         <LogIn className="w-4 h-4" />
-        {isLoading ? '로그인 중...' : 'Google 로그인'}
+        {isLoading ? t('auth.loggingIn') : t('auth.login')}
       </Button>
     );
   }
@@ -95,7 +97,7 @@ export function AuthButton() {
           className="gap-2"
         >
           <LogOut className="w-4 h-4" />
-          {isLoading ? '로그아웃 중...' : '로그아웃'}
+          {isLoading ? t('auth.loggingOut') : t('auth.logout')}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
