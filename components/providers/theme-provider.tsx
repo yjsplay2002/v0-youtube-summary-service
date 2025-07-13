@@ -1,7 +1,7 @@
 "use client";
 
 import { ThemeProvider as NextThemesProvider } from "next-themes";
-import { type ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 interface ThemeProviderProps {
   children: ReactNode;
@@ -18,6 +18,17 @@ export function ThemeProvider({
   enableSystem = true,
   disableTransitionOnChange = false,
 }: ThemeProviderProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    // During SSR and initial client render, don't show theme-dependent content
+    return <>{children}</>;
+  }
+
   return (
     <NextThemesProvider
       attribute={attribute}
