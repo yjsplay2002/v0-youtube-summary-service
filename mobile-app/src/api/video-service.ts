@@ -1,10 +1,10 @@
 import { supabase } from '../lib/supabase'
+import { apiClient } from '../lib/api-client'
 import { extractYoutubeVideoId } from '../lib/youtube-utils'
 import type { AIModel, PromptType, SupportedLanguage, SummaryResult, VideoSummary } from '../types'
 
 /**
- * Summarize YouTube video - mobile version
- * This would need to call the web app's API endpoints or replicate the logic
+ * Summarize YouTube video by calling the web app's API
  */
 export async function summarizeYoutubeVideo(
   url: string,
@@ -21,25 +21,34 @@ export async function summarizeYoutubeVideo(
       }
     }
 
-    // For now, this is a placeholder - we would need to implement the actual API call
-    // In a real implementation, this would either:
-    // 1. Call the existing web app's API endpoints
-    // 2. Replicate the server actions logic
-    // 3. Use a shared backend service
+    // Call the web app's summarization API
+    const result = await apiClient.post<SummaryResult>('/api/video-summaries', {
+      url,
+      model,
+      language,
+      promptType,
+    })
 
-    console.log('Summarizing video:', { videoId, model, language, promptType })
-    
-    // Placeholder response
-    return {
-      success: false,
-      error: 'API integration not yet implemented'
-    }
+    return result
   } catch (error) {
     console.error('Error summarizing video:', error)
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: error instanceof Error ? error.message : 'Failed to summarize video'
     }
+  }
+}
+
+/**
+ * Get video details from YouTube
+ */
+export async function getVideoDetails(videoId: string) {
+  try {
+    const result = await apiClient.get(`/api/video-details`, { videoId })
+    return result
+  } catch (error) {
+    console.error('Error fetching video details:', error)
+    return null
   }
 }
 
@@ -121,5 +130,27 @@ export async function getVideoSummary(
   } catch (error) {
     console.error('Error fetching video summary:', error)
     return null
+  }
+}
+
+/**
+ * Delete a video summary
+ */
+export async function deleteVideoSummary(summaryId: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('video_summaries')
+      .delete()
+      .eq('id', summaryId)
+
+    if (error) {
+      console.error('Error deleting summary:', error)
+      return false
+    }
+
+    return true
+  } catch (error) {
+    console.error('Error deleting summary:', error)
+    return false
   }
 }

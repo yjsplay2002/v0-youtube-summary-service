@@ -4,10 +4,10 @@ import {
   Text,
   ScrollView,
   StyleSheet,
-  Image,
   TouchableOpacity,
   Linking,
 } from 'react-native'
+import VideoPlayer from './VideoPlayer'
 import type { VideoSummary } from '../types'
 
 interface SummaryDisplayProps {
@@ -32,12 +32,10 @@ export default function SummaryDisplay({ summary, onClose }: SummaryDisplayProps
           </TouchableOpacity>
         )}
         
-        {summary.video_info?.video_thumbnail && (
-          <Image
-            source={{ uri: summary.video_info.video_thumbnail }}
-            style={styles.thumbnail}
-            resizeMode="cover"
-          />
+        {summary.video_info?.video_id && (
+          <View style={styles.videoPlayerContainer}>
+            <VideoPlayer videoId={summary.video_info.video_id} />
+          </View>
         )}
         
         <Text style={styles.title}>{summary.video_info?.video_title}</Text>
@@ -47,7 +45,7 @@ export default function SummaryDisplay({ summary, onClose }: SummaryDisplayProps
         )}
         
         <TouchableOpacity style={styles.watchButton} onPress={handleOpenVideo}>
-          <Text style={styles.watchButtonText}>Watch Video</Text>
+          <Text style={styles.watchButtonText}>Open in YouTube</Text>
         </TouchableOpacity>
       </View>
       
@@ -102,10 +100,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
   },
-  thumbnail: {
+  videoPlayerContainer: {
     width: '100%',
-    height: 200,
-    borderRadius: 12,
     marginBottom: 16,
   },
   title: {
