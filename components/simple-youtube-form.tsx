@@ -11,7 +11,7 @@ import { summarizeYoutubeVideo, fetchVideoDetailsServer, resummarizeYoutubeVideo
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useRouter, useSearchParams } from "next/navigation"
 import type { AIModel, PromptType } from "@/app/lib/summary"
-import { extractYoutubeVideoId } from "./youtube-form-utils"
+import { extractYoutubeVideoId, generateYoutubeUrl } from "./youtube-form-utils"
 import { VideoPlayerProvider } from "@/components/VideoPlayerContext"
 import { createContext } from "react"
 import { useSummaryContext } from "@/components/summary-context"
@@ -24,6 +24,79 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
 
 export const LoadingContext = createContext(false)
+
+// Function to save user's preferred language to database
+const saveUserPreferredLanguage = async (language: SupportedLanguage, userId: string) => {
+  try {
+    console.log('[saveUserPreferredLanguage] Saving language preference:', { language, userId })
+    
+    // Check if user preference already exists
+    const { data: existingPreference } = await supabase
+      .from('user_preferences')
+      .select('id')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (existingPreference) {
+      // Update existing preference
+      const { error } = await supabase
+        .from('user_preferences')
+        .update({ preferred_language: language })
+        .eq('user_id', userId)
+
+      if (error) {
+        console.error('Error updating user language preference:', error)
+      } else {
+        console.log('[saveUserPreferredLanguage] Updated existing preference')
+      }
+    } else {
+      // Insert new preference
+      const { error } = await supabase
+        .from('user_preferences')
+        .insert({
+          user_id: userId,
+          preferred_language: language
+        })
+
+      if (error) {
+        console.error('Error inserting user language preference:', error)
+      } else {
+        console.log('[saveUserPreferredLanguage] Created new preference')
+      }
+    }
+  } catch (err) {
+    console.error('Error saving user language preference:', err)
+  }
+}
+
+// Function to load user's preferred language from database
+const loadUserPreferredLanguage = async (userId: string): Promise<SupportedLanguage> => {
+  try {
+    console.log('[loadUserPreferredLanguage] Loading language preference for user:', userId)
+    
+    const { data, error } = await supabase
+      .from('user_preferences')
+      .select('preferred_language')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (error) {
+      console.error('Error loading user language preference:', error)
+      return 'en' // Default fallback
+    }
+
+    if (data?.preferred_language) {
+      console.log('[loadUserPreferredLanguage] Found preference:', data.preferred_language)
+      return data.preferred_language as SupportedLanguage
+    } else {
+      console.log('[loadUserPreferredLanguage] No preference found, using default')
+      return 'en' // Default fallback
+    }
+  } catch (err) {
+    console.error('Error loading user language preference:', err)
+    return 'en' // Default fallback
+  }
+}
 
 export function SimpleYoutubeForm() {
   const [youtubeUrl, setYoutubeUrl] = useState("")
@@ -232,6 +305,12 @@ export function SimpleYoutubeForm() {
       try {
         setVideoLoading(true)
         
+        // If the input URL is not a standard YouTube URL, show normalization info
+        const normalizedUrl = generateYoutubeUrl(videoId)
+        if (url !== normalizedUrl && url.indexOf('youtube.com') === -1 && url.indexOf('youtu.be') === -1) {
+          console.log('[handleUrlChange] Non-YouTube URL detected, extracted video ID:', videoId)
+        }
+        
         // Get video info
         const info = await fetchVideoDetailsServer(videoId)
         setVideoInfo(info.items[0])
@@ -270,7 +349,7 @@ export function SimpleYoutubeForm() {
     const language = searchParams.get("language")
     
     if (videoId) {
-      const youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`
+      const youtubeUrl = generateYoutubeUrl(videoId)
       setYoutubeUrl(youtubeUrl)
       // URL 파라미터에서 온 변경은 router.replace 하지 않음
       handleUrlChange(youtubeUrl) // URL 파라미터에서 온 변경은 router.replace 하지 않음
@@ -340,6 +419,15 @@ export function SimpleYoutubeForm() {
           setAvailableModels(models)
           setSelectedModel(defaultModel)
           setIsSpecialUser(adminStatus || user.email === 'yjs@lnrgame.com')
+          
+          // Load user's preferred language if not set from URL parameters
+          const urlLanguage = searchParams.get("language")
+          if (!urlLanguage) {
+            const userLanguage = await loadUserPreferredLanguage(user.id)
+            console.log('[SimpleYoutubeForm] Setting user preferred language:', userLanguage)
+            setSelectedLanguage(userLanguage)
+          }
+          
           console.log('[SimpleYoutubeForm] 로그인 사용자 초기화 완료:', { 
             email: user.email, 
             userMetadataRole: user.user_metadata?.role,
@@ -362,7 +450,7 @@ export function SimpleYoutubeForm() {
     }
 
     initializeUserSettings()
-  }, [user, authLoading])
+  }, [user, authLoading, searchParams])
 
   // Register reset callback
   useEffect(() => {
@@ -460,8 +548,18 @@ export function SimpleYoutubeForm() {
     setError(null)
 
     try {
+      // 비디오 ID 추출 후 정규 YouTube URL 생성
+      const videoId = extractYoutubeVideoId(youtubeUrl)
+      const normalizedYoutubeUrl = videoId ? generateYoutubeUrl(videoId) : youtubeUrl
+      
+      console.log('[handleSubmit] URL 정규화:', { 
+        original: youtubeUrl, 
+        videoId, 
+        normalized: normalizedYoutubeUrl 
+      })
+      
       const result = await summarizeYoutubeVideo(
-        youtubeUrl,
+        normalizedYoutubeUrl,
         selectedModel,
         undefined, // summaryPrompt
         user?.id,
@@ -477,6 +575,17 @@ export function SimpleYoutubeForm() {
           ...prev,
           hasMySummary: true
         }))
+        
+        // Save user's preferred language after successful summarization
+        if (user?.id) {
+          console.log('[SimpleYoutubeForm] Saving language preference after successful summarization:', selectedLanguage)
+          await saveUserPreferredLanguage(selectedLanguage, user.id)
+        }
+        
+        // Update the input field to show the normalized YouTube URL
+        const normalizedUrl = generateYoutubeUrl(result.videoId)
+        setYoutubeUrl(normalizedUrl)
+        
         // Update URL parameters to trigger summary container refresh
         const newUrl = new URL(window.location.href)
         newUrl.searchParams.set('videoId', result.videoId)
@@ -661,6 +770,13 @@ export function SimpleYoutubeForm() {
 
       if (result.success && result.videoId) {
         console.log("[handleResummarize] 재요약 성공, URL 파라미터 업데이트")
+        
+        // Save user's preferred language after successful re-summarization
+        if (user?.id) {
+          console.log('[handleResummarize] Saving language preference after successful re-summarization:', selectedLanguage)
+          await saveUserPreferredLanguage(selectedLanguage, user.id)
+        }
+        
         // Update URL parameters to trigger summary container refresh
         const newUrl = new URL(window.location.href)
         newUrl.searchParams.set('videoId', result.videoId)
@@ -796,9 +912,49 @@ export function SimpleYoutubeForm() {
                     type="button" 
                     className="shrink-0" 
                     disabled={isLoading || videoLoading}
-                    onClick={() => {
+                    onClick={async () => {
                       const videoId = extractYoutubeVideoId(youtubeUrl)
                       if (videoId) {
+                        // If user is logged in and this is not their summary, add it to their list
+                        if (user?.id && summaryState.hasOtherSummary && !summaryState.hasMySummary) {
+                          console.log('[View Summary] Adding summary to user list before viewing')
+                          try {
+                            setIsLoading(true)
+                            const response = await fetch('/api/add-to-my-summaries', {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                              },
+                              body: JSON.stringify({
+                                videoId: videoId,
+                                userId: user.id,
+                                language: selectedLanguage
+                              })
+                            })
+
+                            if (response.ok) {
+                              const result = await response.json()
+                              if (result.success) {
+                                console.log('[View Summary] Successfully added to user summaries')
+                                // Update local state
+                                setSummaryState(prev => ({
+                                  ...prev,
+                                  hasMySummary: true,
+                                  hasOtherSummary: false
+                                }))
+                                // Refresh sidebar
+                                setTimeout(() => {
+                                  refreshSummaries()
+                                }, 100)
+                              }
+                            }
+                          } catch (error) {
+                            console.error('[View Summary] Error adding to summaries:', error)
+                          } finally {
+                            setIsLoading(false)
+                          }
+                        }
+                        
                         // Navigate to summary page with selected language
                         window.location.href = `/?videoId=${videoId}&language=${selectedLanguage}`
                       }
