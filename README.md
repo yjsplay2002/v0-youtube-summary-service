@@ -1,183 +1,187 @@
-# Supabase CLI
+# YouTube Summary Service - Universal Monorepo
 
-[![Coverage Status](https://coveralls.io/repos/github/supabase/cli/badge.svg?branch=main)](https://coveralls.io/github/supabase/cli?branch=main) [![Bitbucket Pipelines](https://img.shields.io/bitbucket/pipelines/supabase-cli/setup-cli/master?style=flat-square&label=Bitbucket%20Canary)](https://bitbucket.org/supabase-cli/setup-cli/pipelines) [![Gitlab Pipeline Status](https://img.shields.io/gitlab/pipeline-status/sweatybridge%2Fsetup-cli?label=Gitlab%20Canary)
-](https://gitlab.com/sweatybridge/setup-cli/-/pipelines)
+A comprehensive YouTube video summarization service built with Next.js, React Native, and shared TypeScript utilities.
 
-[Supabase](https://supabase.io) is an open source Firebase alternative. We're building the features of Firebase using enterprise-grade open source tools.
+## Project Structure
 
-This repository contains all the functionality for Supabase CLI.
+This is a monorepo containing four main packages:
 
-- [x] Running Supabase locally
-- [x] Managing database migrations
-- [x] Creating and deploying Supabase Functions
-- [x] Generating types directly from your database schema
-- [x] Making authenticated HTTP requests to [Management API](https://supabase.com/docs/reference/api/introduction)
+```
+youtube-summary-service/
+├── packages/
+│   ├── server/          # Next.js backend API server
+│   ├── web/             # Next.js web client  
+│   ├── mobile/          # React Native mobile app
+│   └── shared/          # Shared TypeScript types and utilities
+├── package.json         # Root workspace configuration
+└── README.md
+```
 
-## Getting started
+## Packages
 
-### Install the CLI
+### 🖥️ Server (`packages/server`)
+- **Framework**: Next.js 15.2.4
+- **Purpose**: Backend API server with database integration
+- **Key Features**:
+  - RESTful API endpoints for video summaries
+  - Supabase database integration
+  - YouTube transcript processing
+  - RAG (Retrieval-Augmented Generation) support
+  - Multi-language summary support
 
-Available via [NPM](https://www.npmjs.com) as dev dependency. To install:
+### 🌐 Web (`packages/web`)
+- **Framework**: Next.js 15.2.4 (Client-only)
+- **Purpose**: Web-based frontend client
+- **Key Features**:
+  - Responsive web interface
+  - API client for server communication
+  - Modern React with TypeScript
+  - Tailwind CSS styling
 
+### 📱 Mobile (`packages/mobile`)
+- **Framework**: React Native with Expo
+- **Purpose**: Native mobile application
+- **Key Features**:
+  - Cross-platform iOS/Android support
+  - Native UI components
+  - API client integration
+  - Expo Router for navigation
+
+### 📦 Shared (`packages/shared`)
+- **Purpose**: Common types, utilities, and constants
+- **Key Features**:
+  - TypeScript type definitions
+  - API response interfaces
+  - Utility functions (YouTube URL parsing, date formatting, etc.)
+  - Zod validation schemas
+
+## Getting Started
+
+### Prerequisites
+- Node.js 18+ 
+- npm or yarn
+- For mobile development: Expo CLI
+
+### Installation
+
+1. Clone the repository:
 ```bash
-npm i supabase --save-dev
+git clone <repository-url>
+cd v0-youtube-summary-service
 ```
 
-To install the beta release channel:
-
+2. Install dependencies:
 ```bash
-npm i supabase@beta --save-dev
+npm install
 ```
 
-When installing with yarn 4, you need to disable experimental fetch with the following nodejs config.
+This will install dependencies for all packages in the monorepo.
 
-```
-NODE_OPTIONS=--no-experimental-fetch yarn add supabase
-```
+### Development
 
-> **Note**
-For Bun versions below v1.0.17, you must add `supabase` as a [trusted dependency](https://bun.sh/guides/install/trusted) before running `bun add -D supabase`.
-
-<details>
-  <summary><b>macOS</b></summary>
-
-  Available via [Homebrew](https://brew.sh). To install:
-
-  ```sh
-  brew install supabase/tap/supabase
-  ```
-
-  To install the beta release channel:
-  
-  ```sh
-  brew install supabase/tap/supabase-beta
-  brew link --overwrite supabase-beta
-  ```
-  
-  To upgrade:
-
-  ```sh
-  brew upgrade supabase
-  ```
-</details>
-
-<details>
-  <summary><b>Windows</b></summary>
-
-  Available via [Scoop](https://scoop.sh). To install:
-
-  ```powershell
-  scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
-  scoop install supabase
-  ```
-
-  To upgrade:
-
-  ```powershell
-  scoop update supabase
-  ```
-</details>
-
-<details>
-  <summary><b>Linux</b></summary>
-
-  Available via [Homebrew](https://brew.sh) and Linux packages.
-
-  #### via Homebrew
-
-  To install:
-
-  ```sh
-  brew install supabase/tap/supabase
-  ```
-
-  To upgrade:
-
-  ```sh
-  brew upgrade supabase
-  ```
-
-  #### via Linux packages
-
-  Linux packages are provided in [Releases](https://github.com/supabase/cli/releases). To install, download the `.apk`/`.deb`/`.rpm`/`.pkg.tar.zst` file depending on your package manager and run the respective commands.
-
-  ```sh
-  sudo apk add --allow-untrusted <...>.apk
-  ```
-
-  ```sh
-  sudo dpkg -i <...>.deb
-  ```
-
-  ```sh
-  sudo rpm -i <...>.rpm
-  ```
-
-  ```sh
-  sudo pacman -U <...>.pkg.tar.zst
-  ```
-</details>
-
-<details>
-  <summary><b>Other Platforms</b></summary>
-
-  You can also install the CLI via [go modules](https://go.dev/ref/mod#go-install) without the help of package managers.
-
-  ```sh
-  go install github.com/supabase/cli@latest
-  ```
-
-  Add a symlink to the binary in `$PATH` for easier access:
-
-  ```sh
-  ln -s "$(go env GOPATH)/bin/cli" /usr/bin/supabase
-  ```
-
-  This works on other non-standard Linux distros.
-</details>
-
-<details>
-  <summary><b>Community Maintained Packages</b></summary>
-
-  Available via [pkgx](https://pkgx.sh/). Package script [here](https://github.com/pkgxdev/pantry/blob/main/projects/supabase.com/cli/package.yml).
-  To install in your working directory:
-
-  ```bash
-  pkgx install supabase
-  ```
-
-  Available via [Nixpkgs](https://nixos.org/). Package script [here](https://github.com/NixOS/nixpkgs/blob/master/pkgs/development/tools/supabase-cli/default.nix).
-</details>
-
-### Run the CLI
-
+#### Start the server:
 ```bash
-supabase bootstrap
+npm run dev
+# or
+cd packages/server && npm run dev
 ```
+Server runs on http://localhost:3000
 
-Or using npx:
-
+#### Start the web client:
 ```bash
-npx supabase bootstrap
+cd packages/web && npm run dev
+```
+Web client runs on http://localhost:3001
+
+#### Start the mobile app:
+```bash
+cd packages/mobile && npm run start
+```
+Follow the Expo CLI instructions to run on iOS/Android simulator or device.
+
+#### Build shared package:
+```bash
+cd packages/shared && npm run build
 ```
 
-The bootstrap command will guide you through the process of setting up a Supabase project using one of the [starter](https://github.com/supabase-community/supabase-samples/blob/main/samples.json) templates.
+### Environment Variables
 
-## Docs
+Create `.env.local` files in the server and web packages:
 
-Command & config reference can be found [here](https://supabase.com/docs/reference/cli/about).
-
-## Breaking changes
-
-We follow semantic versioning for changes that directly impact CLI commands, flags, and configurations.
-
-However, due to dependencies on other service images, we cannot guarantee that schema migrations, seed.sql, and generated types will always work for the same CLI major version. If you need such guarantees, we encourage you to pin a specific version of CLI in package.json.
-
-## Developing
-
-To run from source:
-
-```sh
-# Go >= 1.22
-go run . help
+**packages/server/.env.local:**
 ```
+SUPABASE_URL=your_supabase_url
+SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_key
+ANTHROPIC_API_KEY=your_anthropic_api_key
+OPENAI_API_KEY=your_openai_api_key
+```
+
+**packages/web/.env.local:**
+```
+NEXT_PUBLIC_SERVER_URL=http://localhost:3000
+```
+
+## API Endpoints
+
+The server provides the following REST API endpoints:
+
+- `GET /api/summaries` - Get paginated list of summaries
+- `GET /api/video-summary-by-language` - Get summary for specific video/language
+- `GET /api/video-languages` - Get available languages for a video
+- `POST /api/rag/process-video` - Process video for RAG functionality
+- `POST /api/add-to-my-summaries` - Add summary to user's collection
+
+## Architecture
+
+### Monorepo Benefits
+- **Code Sharing**: Common types and utilities in `shared` package
+- **Consistent Dependencies**: Centralized dependency management
+- **Unified Development**: Single repository for all components
+- **Type Safety**: Shared TypeScript definitions across all packages
+
+### Communication Flow
+```
+Mobile App ──HTTP API──> Server ──Database──> Supabase
+Web Client ──HTTP API──> Server ──Database──> Supabase
+     │                      │
+     └──shared types────────┘
+```
+
+## Scripts
+
+### Root Level
+- `npm run dev` - Start web development server
+- `npm run build` - Build all packages
+- `npm run start` - Start production server
+- `npm run lint` - Run linting on all packages
+
+### Package Level
+Each package has its own scripts accessible via:
+```bash
+cd packages/<package-name>
+npm run <script>
+```
+
+## Technologies
+
+- **Frontend**: React, Next.js, TypeScript, Tailwind CSS
+- **Mobile**: React Native, Expo, TypeScript
+- **Backend**: Next.js API Routes, TypeScript
+- **Database**: Supabase (PostgreSQL)
+- **AI/ML**: OpenAI GPT, Anthropic Claude
+- **Validation**: Zod
+- **Styling**: Tailwind CSS, Radix UI components
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make changes in the appropriate package(s)
+4. Update shared types if needed
+5. Test across all affected packages
+6. Submit a pull request
+
+## License
+
+This project is licensed under the MIT License.

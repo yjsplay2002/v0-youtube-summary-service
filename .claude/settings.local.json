@@ -50,7 +50,16 @@
       "Bash(npm run typecheck:*)",
       "Bash(npm run:*)",
       "Bash(ping:*)",
-      "Bash(env)"
+      "Bash(env)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(yarn install)",
+      "Bash(npm install)",
+      "Bash(npm cache clean:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run build:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": []
   }

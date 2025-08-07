@@ -1,0 +1,17 @@
+User-agent: *
+Allow: /
+
+# Main sitemap
+Sitemap: /sitemap.xml
+
+# Crawl delay (optional - helps with server load)
+Crawl-delay: 1
+
+# Disallow certain paths if needed (currently allowing all)
+# Disallow: /api/
+# Disallow: /admin/
+
+# Allow search engines to access important pages
+Allow: /
+Allow: /community
+Allow: /feedback
